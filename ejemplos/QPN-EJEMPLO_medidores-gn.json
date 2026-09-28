@@ -1,0 +1,179 @@
+{
+  "schema": "quempin-formulacion/v1",
+  "uid": "ejemplo00001",
+  "codigo": "QPN-EJEMPLO",
+  "version": 1,
+  "titulo": "Instalación de medidores de gas natural (ejemplo del Excel)",
+  "cliente": "Cliente de ejemplo",
+  "ubicacion": "Santiago",
+  "responsable": "",
+  "fecha": "2026-09-28",
+  "estado": "Borrador",
+  "descripcion": "Proyecto de ejemplo con los mismos datos del Excel original, para verificar que los resultados coinciden.",
+  "parametros": {
+    "iva": 19,
+    "gastosGenerales": 0,
+    "imprevistos": 0,
+    "tarifaN1": 45000,
+    "tarifaN2": 60000,
+    "tarifaN3": 75000,
+    "margenObjetivo": 30,
+    "margenMinimo": 20,
+    "metaUtilidadDH": 0,
+    "umbralAjustado": 95,
+    "presupuestoMaximo": null,
+    "presupuestoIncluyeIva": false,
+    "sensibilidad": {
+      "mat": 0,
+      "eq": 0,
+      "mo": 10,
+      "otros": 0
+    }
+  },
+  "catalogoOtros": [
+    {
+      "descripcion": "Desgaste de vehículo por km",
+      "unidad": "km",
+      "costoUnitario": 50
+    },
+    {
+      "descripcion": "Viático por persona diario",
+      "unidad": "día",
+      "costoUnitario": 10000
+    },
+    {
+      "descripcion": "Hospedaje por noche",
+      "unidad": "noche",
+      "costoUnitario": 25000
+    },
+    {
+      "descripcion": "Almuerzo por persona diario",
+      "unidad": "día",
+      "costoUnitario": 10000
+    }
+  ],
+  "partidas": [
+    {
+      "uid": "12e7ec303132",
+      "descripcion": "Instalación Medidores GN de 2''",
+      "unidad": "Un.",
+      "cantidad": 3,
+      "utilidadTipo": "pct",
+      "utilidadValor": 100
+    },
+    {
+      "uid": "c93949bf73ca",
+      "descripcion": "Instalación Medidores GN de 1''",
+      "unidad": "Un.",
+      "cantidad": 1,
+      "utilidadTipo": "pct",
+      "utilidadValor": 100
+    },
+    {
+      "uid": "1e4b583a8d2d",
+      "descripcion": "Instalación Medidores GN de 1 1/2''",
+      "unidad": "Un.",
+      "cantidad": 2,
+      "utilidadTipo": "pct",
+      "utilidadValor": 100
+    }
+  ],
+  "materiales": [
+    {
+      "uid": "d016f7b8863e",
+      "descripcion": "Flanges de 2''",
+      "partida": "12e7ec303132",
+      "unidad": "Un.",
+      "cantidad": 2,
+      "costoUnitario": 14580
+    },
+    {
+      "uid": "a74fb97f7c7b",
+      "descripcion": "Flanges de 1 1/2''",
+      "partida": "1e4b583a8d2d",
+      "unidad": "Un.",
+      "cantidad": 2,
+      "costoUnitario": 6131
+    },
+    {
+      "uid": "a3a318b00f3b",
+      "descripcion": "Flanges de 1''",
+      "partida": "c93949bf73ca",
+      "unidad": "Un.",
+      "cantidad": 2,
+      "costoUnitario": 7200
+    }
+  ],
+  "equipos": [],
+  "manoObra": [
+    {
+      "uid": "0f61bde2040e",
+      "descripcion": "Instalación Medidores GN de 2''",
+      "partida": "12e7ec303132",
+      "n1p": 0,
+      "n1d": 0,
+      "n2p": 0,
+      "n2d": 0,
+      "n3p": 2,
+      "n3d": 2
+    },
+    {
+      "uid": "539d7a53cad8",
+      "descripcion": "Instalación Medidores GN de 1''",
+      "partida": "c93949bf73ca",
+      "n1p": 0,
+      "n1d": 0,
+      "n2p": 0,
+      "n2d": 0,
+      "n3p": 2,
+      "n3d": 2
+    },
+    {
+      "uid": "2eddd3148c20",
+      "descripcion": "Instalación Medidores GN de 1 1/2''",
+      "partida": "1e4b583a8d2d",
+      "n1p": 0,
+      "n1d": 0,
+      "n2p": 0,
+      "n2d": 0,
+      "n3p": 2,
+      "n3d": 2
+    }
+  ],
+  "otros": [
+    {
+      "uid": "547c706eb245",
+      "descripcion": "Almuerzo por persona diario",
+      "partida": "12e7ec303132",
+      "unidad": "día",
+      "cantidad": 2,
+      "costoUnitario": 10000
+    },
+    {
+      "uid": "5f69ade1ee07",
+      "descripcion": "Almuerzo por persona diario",
+      "partida": "c93949bf73ca",
+      "unidad": "día",
+      "cantidad": 2,
+      "costoUnitario": 10000
+    },
+    {
+      "uid": "675ac96f66fb",
+      "descripcion": "Almuerzo por persona diario",
+      "partida": "1e4b583a8d2d",
+      "unidad": "día",
+      "cantidad": 2,
+      "costoUnitario": 10000
+    },
+    {
+      "uid": "7e150742a149",
+      "descripcion": "Desgaste de vehículo Citroen por km",
+      "partida": "",
+      "unidad": "km",
+      "cantidad": 0,
+      "costoUnitario": 0
+    }
+  ],
+  "creado": "2026-09-28T12:00:00.000Z",
+  "modificado": "2026-09-28T12:00:00.000Z"
+}
