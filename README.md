@@ -8,9 +8,10 @@ Es una página estática (HTML + CSS + JavaScript, sin servidor ni base de datos
 
 ## Qué hace
 
-- **Formula proyectos con la misma lógica del Excel.** Tiene partidas y detalle de materiales, equipos, mano de obra (3 niveles de tarifa) y otros costos, todo por unidad de partida. La utilidad se define por partida, como % o como monto fijo. Con los datos del Excel entrega exactamente los mismos resultados.
+- **Formula proyectos con la misma lógica del Excel.** Tiene partidas y detalle de materiales, equipos, mano de obra (3 niveles de tarifa) y otros costos, todo por unidad de partida. Con los datos del Excel entrega exactamente los mismos resultados.
+- **Define la utilidad junto a los KPI.** En *Resumen y KPIs* se ingresa la utilidad de cada partida (% de recargo o monto fijo) y el margen, el precio y los indicadores cambian al escribir. Incluye *Recargo para todas* y *Llevar al margen objetivo*, que calcula el recargo que deja el margen exactamente en la meta.
 - **Identifica cada proyecto** con código correlativo (`QPN-2026-001`), versión, cliente, ubicación, responsable, fecha y estado (Borrador, En revisión, Enviada, Adjudicada, Perdida, Descartada).
-- **Muestra KPI con semáforos y la descripción de cada uno:** margen, recargo, utilidad por día-hombre, incidencia y holgura de MO, sensibilidad por categoría y competitividad frente al presupuesto del mandante. La pestaña *Guía de KPIs* explica qué mide cada indicador y cómo aporta a la evaluación.
+- **Muestra KPI con semáforos y la descripción de cada uno** (tarjetas con borde de estado, medidores con las metas marcadas y gráficos de composición del precio y precio por partida): margen, recargo, utilidad por día-hombre, incidencia y holgura de MO, sensibilidad por categoría y competitividad frente al presupuesto del mandante. La pestaña *Guía de KPIs* explica qué mide cada indicador y cómo aporta a la evaluación.
 - **Valida los datos**, con alertas cuando un costo no tiene partida, una partida tiene cantidad cero o falta la utilidad.
 - **Exporta a Excel** (`.xlsx`). El archivo se llama `CÓDIGO_vN_titulo.xlsx` y contiene:
   - Hoja *Ficha*: identificación del proyecto, resultado económico, KPI con su evaluación y descripción, y alertas.
@@ -42,18 +43,19 @@ También funciona abriendo `index.html` directamente desde el computador (doble 
 ## Uso rápido
 
 1. **Nuevo proyecto** → completa la *Ficha* (título, cliente, responsable). Revisa IVA, tarifas y metas.
-2. **Partidas** → agrega cada partida con su unidad, cantidad y utilidad (% de recargo o $ fijo).
-3. **Materiales / Equipos / Mano de obra / Otros** → agrega los ítems, asócialos a una partida e ingresa las cantidades **por unidad de partida**. En *Otros* puedes agregar desde el catálogo de referencias.
-4. **Resumen y KPIs** → revisa los resultados, la composición del precio, los indicadores, la sensibilidad y las alertas.
+2. **Partidas** → agrega cada partida con su unidad y cantidad.
+3. **Materiales / Equipos / Mano de obra / Otros** → agrega los ítems, elige su partida en el selector e ingresa las cantidades **por unidad de partida**. En *Otros* puedes usar **Agregar desde catálogo**.
+4. **Resumen y KPIs** → define la **utilidad** de cada partida (% o $) y revisa al instante el precio, el margen, la composición del precio, los indicadores, la sensibilidad y las alertas.
 5. **Exportar Excel** para enviar o archivar. Para una revisión de la oferta usa **Crear nueva versión** (mismo código, v2, v3…).
 
-Atajo: en las tablas, **Enter** baja a la fila siguiente. En la última fila, agrega una nueva.
+Atajos: en las tablas, **Enter** baja a la fila siguiente (en la última fila agrega una nueva). En la columna de unidad, **↓** abre la lista de unidades. En el listado, **/** enfoca el buscador. Los menús y selectores se manejan con flechas, **Enter** y **Esc**.
 
 ## Estructura
 
 ```
 index.html              Página principal
-css/styles.css          Estilos (colores de marca, modo claro/oscuro, impresión)
+css/brand.css           Sistema de marca compartido con las demás herramientas QUEMPIN (no editar)
+css/styles.css          Estilos propios (componentes, gráficos, modo claro/oscuro, impresión)
 js/calc.js              Motor de cálculo (replica las fórmulas del Excel)
 js/kpis.js              Definición y descripción de cada KPI
 js/store.js             Modelo de datos, valores por defecto y guardado local
@@ -68,19 +70,18 @@ docs/ANALISIS_KPI.md    Evaluación de los KPI del Excel y puntos de mejora
 
 ## Identidad visual
 
-La herramienta sigue el *Manual de Identidad de Marca QUEMPIN*:
+La herramienta sigue el *Manual de Identidad de Marca QUEMPIN* y usa el mismo sistema visual que la [Calculadora Técnica](https://cristobal-monzo.github.io/calculadora-tecnica-quempin/) y los Tableros Financieros, para que se reconozcan como herramientas de la misma empresa:
 
+- **Sistema de marca compartido:** `css/brand.css` es una copia textual del de la Calculadora Técnica (Lato embebida, paleta oficial, tema claro/oscuro y cabecera). Si cambia allá, se vuelve a copiar; los ajustes propios van en `css/styles.css`.
+- **Cabecera negra con filete naranjo**, nombre QUEMPIN y botones *Configuración* y *Modo oscuro*, como en las demás herramientas. Debajo, la navegación de secciones con el mismo estilo del menú entre tableros de Finanzas.
+- **Componentes comunes:** tarjetas KPI con borde de estado (Análisis Financiero), barra de filtros con chips (Centro de Costos), pestañas fijas, control segmentado y columnas calculadas sombreadas (Calculadora Técnica).
 - **Colores:** Orange 021 C `#FF5100`, Black C `#000000`, Cool Gray 11 C `#54565A` y Cool Gray 7 C `#98989A`.
-  - Para texto naranjo sobre fondo blanco se usa un tono más profundo (`#C23D00`), porque `#FF5100` no alcanza el contraste mínimo de lectura en letra pequeña.
-  - Los botones naranjos llevan texto negro por la misma razón (contraste 6,4:1).
-- **Tipografía:** Lato, la sugerida por el manual para textos y documentos. También se usa en el Excel exportado.
-- **Logo:** se usan los archivos oficiales sin alterar el orden, las proporciones ni los colores de sus elementos.
-  - Pie de página: aplicación principal sobre fondo negro, a 170 px de ancho.
-  - Resumen impreso: versión fondo blanco a 4,2 cm.
-  - Excel exportado: versión fondo blanco a unos 4,5 cm.
-  - En los tres casos se respeta el tamaño mínimo de 4 cm.
-  - La barra superior usa solo el isotipo, como el sitio web de QUEMPIN.
-- **Gráfico de composición:** usa una paleta categórica validada para daltonismo. La paleta de marca (naranjo, negro y grises) no tiene suficientes tonos distinguibles para 6 categorías.
+  - Para texto naranjo sobre fondo claro se usa un tono más profundo del mismo naranjo (`#B23A00`), igual que en las demás herramientas.
+  - Los botones naranjos llevan texto negro (contraste 6,4:1).
+- **Gráficos solo con colores de marca:** cuando los cuatro colores no alcanzan se usan **rayas y puntos** con esos mismos colores (mismo criterio del Centro de Costos). Asignación fija: Materiales gris 11 · Equipos gris 7 · Mano de obra negro · Otros rayas naranjas · Gastos generales e imprevistos puntos grises · Utilidad naranjo. Todo gráfico lleva leyenda con valores o tabla, porque los grises no se distinguen por tono.
+- **Semáforos:** verde, ámbar y rojo se reservan para el estado de un indicador (nunca para una categoría) y siempre van con icono y texto.
+- **Menús desplegables propios** para partida, unidad, estado, catálogo y acciones: muestran las opciones completas (código, descripción y cantidad de la partida), con búsqueda cuando son muchas y manejo con teclado. Los filtros usan el selector del navegador con flecha y colores de la marca.
+- **Logo:** se usan los archivos oficiales sin alterar. Resumen impreso: versión fondo blanco a 4,2 cm; Excel exportado: versión fondo blanco a unos 4,5 cm (ambos sobre el mínimo de 4 cm). En pantalla, igual que las demás herramientas, la cabecera muestra el nombre QUEMPIN en texto.
 
 ## Mantención
 

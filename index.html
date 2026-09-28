@@ -3,62 +3,61 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Formulación de Proyectos · QUEMPIN</title>
+  <title>QUEMPIN — Formulación de Proyectos</title>
   <meta name="description" content="Herramienta de formulación y evaluación de costos de proyectos de QUEMPIN Soluciones Energéticas.">
   <link rel="icon" type="image/png" href="assets/favicon.png">
   <link rel="apple-touch-icon" href="assets/icono-180.png">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,400;0,700;0,900;1,400&display=swap" rel="stylesheet">
+  <!-- Sistema de marca compartido con la Calculadora Técnica y los Tableros Financieros -->
+  <link rel="stylesheet" href="css/brand.css">
   <link rel="stylesheet" href="css/styles.css">
   <script>
-    // Aplica el tema guardado antes de pintar (evita parpadeo)
-    try { var t = localStorage.getItem('qpn.tema'); if (t) document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+    // Aplica el tema guardado antes de pintar (evita parpadeo). 'qpn.tema' era la clave de la versión anterior.
+    try {
+      var t = localStorage.getItem('quempin_fp_theme') || localStorage.getItem('qpn.tema');
+      if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
   </script>
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="#/" aria-label="Inicio: listado de proyectos">
-      <span class="brand-iso"><img src="assets/isotipo.png" alt="QUEMPIN"></span>
-      <span class="brand-app">Formulación de proyectos</span>
-    </a>
-    <nav class="topnav" aria-label="Principal">
-      <a href="#/" class="topnav-link" data-nav="lista">Proyectos</a>
-      <a href="#/guia" class="topnav-link" data-nav="guia">Guía de KPIs</a>
-      <button type="button" class="icon-btn" data-act="config" title="Configuración por defecto" aria-label="Configuración">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
-      </button>
-      <button type="button" class="icon-btn" data-act="tema" title="Cambiar tema claro / oscuro" aria-label="Cambiar tema">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
-      </button>
+<div class="viz-root" id="root">
+  <header class="viz-header">
+    <div class="viz-container">
+      <a class="viz-logo" href="#/" aria-label="Inicio: proyectos formulados"><span class="viz-wordmark">QUEMP<span class="in">IN</span></span></a>
+      <div class="viz-titleblock">
+        <h1>Formulación de Proyectos</h1>
+        <p id="hdr-sub">Costos, precio y evaluación de ofertas por partida</p>
+      </div>
+      <button class="viz-theme-toggle" type="button" data-act="config">Configuración</button>
+      <button class="viz-theme-toggle" type="button" id="themeToggle" data-act="tema">Modo oscuro</button>
+    </div>
+    <nav class="viz-modnav" aria-label="Secciones de la herramienta">
+      <div class="viz-container viz-modnav-inner" id="modnav"></div>
     </nav>
   </header>
 
   <main id="app" tabindex="-1"></main>
 
-  <footer class="site-footer">
-    <div class="site-footer-in">
-      <img class="footer-logo" src="assets/logo-quempin-negativo.png" alt="QUEMPIN Soluciones Energéticas">
-      <div class="footer-text">
-        <strong>Herramienta interna de formulación y evaluación de proyectos</strong>
-        <span>Los datos se guardan en este navegador · <a href="https://www.quempin.cl" target="_blank" rel="noopener">www.quempin.cl</a></span>
-      </div>
-      <span class="footer-squares" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-    </div>
+  <footer class="viz-container viz-footer">
+    Herramienta interna de <strong>QUEMPIN Soluciones Energéticas</strong>. Los proyectos se guardan solo en este navegador:
+    respáldalos con «Exportar Excel» o «Respaldar todos los proyectos». Publicado en GitHub Pages ·
+    <a href="https://www.quempin.cl" target="_blank" rel="noopener">www.quempin.cl</a>
   </footer>
 
+  <!-- Capas flotantes: dentro de .viz-root para heredar los colores del tema -->
   <div id="toast" role="status" aria-live="polite"></div>
-  <div id="tooltip" role="tooltip" hidden></div>
+  <div id="tooltip" class="viz-tooltip" role="tooltip"></div>
+  <div id="pop" class="pop" hidden></div>
   <dialog id="modal"></dialog>
   <input type="file" id="file-import" accept=".json,.xlsx,.xlsm" hidden>
+</div>
 
-  <noscript><p style="padding:24px">Esta herramienta necesita JavaScript habilitado.</p></noscript>
+<noscript><p style="padding:24px;font-family:sans-serif">Esta herramienta necesita JavaScript habilitado.</p></noscript>
 
-  <script src="js/logo-data.js"></script>
-  <script src="js/kpis.js"></script>
-  <script src="js/calc.js"></script>
-  <script src="js/store.js"></script>
-  <script src="js/excel.js"></script>
-  <script src="js/app.js"></script>
+<script src="js/logo-data.js"></script>
+<script src="js/kpis.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/store.js"></script>
+<script src="js/excel.js"></script>
+<script src="js/app.js"></script>
 </body>
 </html>

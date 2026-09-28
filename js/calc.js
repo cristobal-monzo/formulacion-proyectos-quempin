@@ -120,6 +120,7 @@
     });
 
     // --- Totales por partida -------------------------------------------------
+    // (las alertas de utilidad apuntan a la pestaña Resumen, donde se ingresa la utilidad)
     let utilidadTotal = 0;
     partidas.forEach((pt) => {
       pt.cd = pt.mat + pt.eq + pt.mo + pt.otros;
@@ -136,10 +137,10 @@
         warn('warn', 'partidas', pt.uid, `${etiqueta} no tiene costos asociados.`);
       }
       if (pt.cd > 0 && pt.utilidad === 0) {
-        warn('warn', 'partidas', pt.uid, `${etiqueta} no tiene utilidad asignada.`);
+        warn('warn', 'resumen', pt.uid, `${etiqueta} no tiene utilidad asignada.`);
       }
       if (pt.utilidad < 0) {
-        warn('warn', 'partidas', pt.uid, `${etiqueta} tiene utilidad negativa (se vende bajo costo).`);
+        warn('warn', 'resumen', pt.uid, `${etiqueta} tiene utilidad negativa (se vende bajo costo).`);
       }
     });
 
