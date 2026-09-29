@@ -843,3 +843,31 @@ dialog#modal::backdrop { background: rgba(0, 0, 0, .55); }
   .print-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; border-bottom: 3px solid #ff5100; padding-bottom: 8px; margin-bottom: 14px; }
   .print-head img { width: 4.2cm; height: auto; margin: .3cm .6cm .3cm .2cm; } /* mínimo 4 cm y área de seguridad del manual */
 }
+
+/* ---- Nube: ingreso, cuenta, usuarios y papelera ------------------------------------ */
+.login-wrap { display: flex; justify-content: center; padding: 28px 0 12px; }
+.login-card { width: min(460px, 100%); gap: 12px; }
+.login-card:hover { transform: none; }
+.login-card h2 { font-size: 17px; font-weight: 900; }
+.login-card h3 { font-size: 15px; font-weight: 900; margin-top: 6px; }
+.login-card .campo { margin: 4px 0 0; }
+.login-card .btn { justify-content: center; }
+.login-google { width: 100%; min-height: 44px; font-weight: 700; }
+.login-google svg { width: 18px; height: 18px; }
+.login-sep { display: flex; align-items: center; gap: 10px; color: var(--text-muted); font-size: 12px; }
+.login-sep::before, .login-sep::after { content: ''; flex: 1; height: 1px; background: var(--gridline); }
+.login-msg { font-size: 12.5px; color: var(--text-secondary); margin: 4px 0 0; min-height: 1em; }
+.login-msg:empty { display: none; }
+.login-msg.err { color: var(--status-bad); font-weight: 700; }
+.login-msg.ok { color: var(--status-good); font-weight: 700; }
+.cuenta-btn { display: inline-flex; align-items: center; gap: 7px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cuenta-btn[hidden] { display: none; }
+.cuenta-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--status-good); }
+.cuenta-dot.pendiente { background: var(--brand-orange); }
+.page-head .back { display: inline-block; margin-bottom: 6px; font-size: 12.5px; color: var(--text-secondary); text-decoration: none; font-weight: 700; }
+.cell-actions .btn + .btn { margin-left: 6px; }
+.usr-tabla { width: 100%; }
+.usr-tabla td, .usr-tabla th { font-size: 13px; }
+.usr-tabla .link-btn + .link-btn { margin-left: 12px; }
+.link-btn.peligro { color: var(--status-bad); }
+.usr-form { margin-top: 8px; }

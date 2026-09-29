@@ -58,10 +58,14 @@
     version: svg('<path d="M8 4h11a1 1 0 0 1 1 1v11"/><rect x="4" y="8" width="12" height="12" rx="1"/><path d="M10 11v6M7 14h6"/>'),
     open: svg('<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>'),
     sparkle: svg('<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/>'),
-    restore: svg('<path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/>'),
     target: svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>'),
     x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
-    arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>')
+    arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
+    user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
+    users: svg('<circle cx="9" cy="8" r="3.5"/><path d="M2 20a7 7 0 0 1 14 0M16 4.5a3.5 3.5 0 0 1 0 7M18 13.5a7 7 0 0 1 4 6.5"/>'),
+    logout: svg('<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/>'),
+    restore: svg('<path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/>'),
+    google: '<svg viewBox="0 0 24 24" aria-hidden="true" style="stroke:none"><path fill="#4285F4" d="M22.6 12.3c0-.8-.1-1.5-.2-2.2H12v4.2h5.9a5 5 0 0 1-2.2 3.3v2.7h3.6c2.1-1.9 3.3-4.8 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.3-2.7l-3.6-2.7c-1 .7-2.2 1.1-3.7 1.1-2.9 0-5.3-1.9-6.2-4.5H2.1v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.8 14.2a6.6 6.6 0 0 1 0-4.3V7.1H2.1a11 11 0 0 0 0 9.9z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.2-3.2A11 11 0 0 0 2.1 7.1l3.7 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg>'
   };
 
   // ---------------------------------------------------------------------------
@@ -79,8 +83,11 @@
     /* Utilidad que había antes de "Aplicar" / "Llevar al margen objetivo", para "Deshacer":
        { puid, antes: Map(uid de partida → { utilidadTipo, utilidadValor }), accion } */
     utilUndo: null,
-    list: { q: '', estado: '', resp: '', sort: { k: 'mod', dir: -1 } }
+    list: { q: '', estado: '', resp: '', sort: { k: 'mod', dir: -1 } },
+    conflicto: false
   };
+  /* Modo nube: activa = hay configuración de Firebase; lista = sesión iniciada y proyectos cargados. */
+  const nube = { activa: false, lista: false, ultimo: '' };
 
   const DETALLE = {
     materiales: { titulo: 'Materiales', singular: 'material', total: 'mat', factory: S.newMaterial, cat: 'cat-mat' },
@@ -320,7 +327,8 @@
       items = [
         { head: 'Cartera' },
         { icon: ICON.sheet, title: 'Exportar cartera a Excel', desc: 'Todos los proyectos con sus KPI en una planilla', act: 'exportar-cartera', disabled: !n },
-        { icon: ICON.archive, title: 'Respaldar todos los proyectos', desc: 'Archivo JSON para restaurar o llevar a otro navegador', act: 'respaldar', disabled: !n },
+        { icon: ICON.archive, title: 'Respaldar todos los proyectos', desc: S.getMode() === 'nube' ? 'Copia en JSON de toda la cartera, para archivar fuera de la nube' : 'Archivo JSON para restaurar o llevar a otro navegador', act: 'respaldar', disabled: !n },
+        { icon: ICON.trash, title: `Papelera (${S.trash().length})`, desc: 'Proyectos eliminados: restaurar o eliminar definitivamente', act: 'papelera' },
         { sep: true },
         { icon: ICON.sparkle, title: 'Cargar proyecto de ejemplo', desc: 'Mismos datos del Excel original, para comparar resultados', act: 'ejemplo' }
       ];
@@ -336,6 +344,18 @@
         { sep: true },
         { icon: ICON.trash, title: enEditor ? 'Eliminar proyecto' : 'Eliminar', act: 'eliminar', id, danger: true }
       ].filter(Boolean);
+    } else if (key === 'cuenta') {
+      const u = S.getUser() || {};
+      const pend = window.QCloud.proyectosLocalesPendientes().length;
+      items = [
+        { head: `${u.nombre || u.email || ''} · ${u.rol === 'admin' ? 'Administrador' : 'Editor'}` },
+        { icon: ICON.user, title: u.email || '', desc: textoGuardado()[0], disabled: true },
+        { sep: true },
+        window.QCloud.esAdmin() ? { icon: ICON.users, title: 'Usuarios y permisos', desc: 'Quién puede entrar y con qué rol', act: 'usuarios' } : null,
+        pend ? { icon: ICON.upload, title: `Subir proyectos de este navegador (${pend})`, desc: 'Guardados aquí antes de usar la nube', act: 'subir-locales' } : null,
+        { icon: ICON.logout, title: 'Cerrar sesión', act: 'salir' }
+      ].filter(Boolean);
+      extra = { minWidth: 300 };
     } else if (key === 'catalogo') {
       const cat = state.project.catalogoOtros || [];
       items = cat.length ? cat.map((c, i) => ({ icon: ICON.plus, title: c.descripcion || 'Sin descripción', right: `${clp(num(c.costoUnitario))} / ${c.unidad || 'un'}`, catIdx: i }))
@@ -434,10 +454,68 @@
     clearTimeout(saveTimer);
     saveTimer = null;
     if (!state.project) return;
+    if (S.getMode() === 'nube') {
+      // Otra persona guardó este proyecto mientras se editaba: preguntar antes de sobrescribir.
+      const cur = S.get(state.project.uid);
+      if (cur && cur !== state.project) { resolverConflicto(cur); return; }
+    }
     const okSave = S.upsert(state.project);
-    setSaveState(okSave ? 'Guardado en este navegador' : 'No se pudo guardar en este navegador: exporta el proyecto', okSave ? '' : 'err');
+    if (!okSave) setSaveState('No se pudo guardar en este navegador: exporta el proyecto', 'err');
+    else showSyncState();
   }
   window.addEventListener('beforeunload', () => { if (saveTimer) saveNow(); });
+
+  /* Texto del indicador de guardado según el modo y la sincronización. */
+  function textoGuardado() {
+    if (S.getMode() !== 'nube') return ['Guardado en este navegador', ''];
+    const c = window.QCloud.info();
+    if (c.pendientes > 0) return c.enLinea ? ['Guardando en la nube…', 'saving'] : ['Sin conexión: se subirá al reconectar', 'saving'];
+    return c.enLinea ? ['Guardado en la nube', ''] : ['Sin conexión: guardado en este equipo', 'saving'];
+  }
+  function showSyncState() {
+    if (saveTimer || state.conflicto) return;
+    const [t, cls] = textoGuardado();
+    setSaveState(t, cls);
+  }
+
+  async function resolverConflicto(cur) {
+    if (state.conflicto) return;
+    state.conflicto = true;
+    setSaveState('Cambios sin guardar: otra persona modificó este proyecto', 'err');
+    const mio = state.project;
+    const quien = cur.modificadoPor && cur.modificadoPor !== (S.getUser() || {}).email ? cur.modificadoPor : 'Tú, desde otra ventana,';
+    const v = await ask({
+      title: 'Otra persona modificó este proyecto',
+      body: `<p><b>${esc(quien)}</b> guardó cambios en <b>${esc(cur.codigo)} v${esc(cur.version)}</b> (${esc(new Date(cur.modificado).toLocaleString('es-CL'))}) mientras tú lo editabas.</p>
+        <p>Elige qué hacer con tus cambios, que aún no se han guardado:</p>
+        <ul><li><b>Guardar los míos como copia:</b> tus cambios quedan en un proyecto nuevo y el original conserva los de la otra persona.</li>
+        <li><b>Ver su versión:</b> descarta tus cambios y carga la versión guardada.</li>
+        <li><b>Sobrescribir:</b> tus cambios reemplazan los de la otra persona.</li></ul>`,
+      buttons: [{ label: 'Sobrescribir', value: 'mia', danger: true, left: true }, { label: 'Ver su versión', value: 'suya' }, { label: 'Guardar los míos como copia', value: 'copia', primary: true }]
+    });
+    state.conflicto = false;
+    if (state.project !== mio) return;
+    if (v === 'mia') { S.upsert(mio); showSyncState(); toast('Tus cambios reemplazaron la versión guardada'); }
+    else if (v === 'suya') { recargarProyecto(S.get(mio.uid)); toast('Se cargó la versión guardada'); }
+    else if (v === 'copia') {
+      const cfg = S.getConfig();
+      const c = S.cloneProject(mio, { codigo: S.nextCodigo(cfg.prefijo, new Date().getFullYear()), version: 1, titulo: (mio.titulo || 'Proyecto') + ' (mis cambios)' });
+      S.upsert(c);
+      toast(`Tus cambios quedaron en ${c.codigo}`);
+      goProject(c, state.tab);
+    } else setSaveState('Cambios sin guardar: otra persona modificó este proyecto. Edita algo para decidir.', 'err');
+  }
+
+  /* Reemplaza el proyecto abierto por su versión guardada, manteniendo la pestaña y el foco. */
+  function recargarProyecto(p) {
+    if (!p) return;
+    const foco = document.activeElement && app.contains(document.activeElement) ? focusKeyOf(document.activeElement) : null;
+    state.project = p;
+    state.utilUndo = null;
+    recalc();
+    renderTab(foco);
+    showSyncState();
+  }
 
   // ---------------------------------------------------------------------------
   //  Cálculo
@@ -493,16 +571,21 @@
     if (saveTimer) saveNow();
     closePop();
     const parts = location.hash.replace(/^#\/?/, '').split('/');
+    if (nube.activa && !nube.lista && parts[0] !== 'guia') { state.project = null; renderNube(); return; }
     let where = 'lista';
     if (parts[0] === 'p' && parts[1]) {
       const p = S.get(parts[1]);
       if (!p) { toast('No se encontró el proyecto.', true); location.hash = '#/'; return; }
+      if (p.eliminado) { toast('Ese proyecto está en la papelera. Restáuralo para editarlo.', true); location.hash = '#/papelera'; return; }
       where = 'proyecto';
       openProject(p, parts[2]);
     } else if (parts[0] === 'guia') {
       where = 'guia';
       state.project = null;
       renderGuide();
+    } else if (parts[0] === 'papelera') {
+      state.project = null;
+      renderPapelera();
     } else {
       state.project = null;
       renderList();
@@ -514,6 +597,11 @@
 
   function renderModnav(where) {
     const p = state.project;
+    if (nube.activa && !nube.lista) {
+      $('#modnav').innerHTML = `<a class="viz-modnav-tab ${where === 'guia' ? '' : 'is-active'}" href="#/">Ingreso</a>
+        <a class="viz-modnav-tab ${where === 'guia' ? 'is-active' : ''}" href="#/guia">Guía de KPIs</a>`;
+      return;
+    }
     $('#modnav').innerHTML = `
       <a class="viz-modnav-tab ${where === 'lista' ? 'is-active' : ''}" href="#/" ${where === 'lista' ? 'aria-current="page"' : ''}>Proyectos</a>
       ${p ? `<a class="viz-modnav-tab is-active" id="modnav-proj" href="#/p/${p.uid}/${state.tab}" aria-current="page"><span></span></a>` : ''}
@@ -586,7 +674,7 @@
       ${card(ICON.sparkle, 'Proyecto de ejemplo', 'Mismos datos del Excel original', 'Tres partidas de instalación de medidores de gas natural, para revisar cómo funciona y comprobar que el resultado coincide con el Excel.', `<button class="btn btn-primario" data-act="ejemplo">Cargar ejemplo →</button>`)}
       ${card(ICON.upload, 'Importar archivo', '.xlsx · .xlsm · .json', 'Trae un proyecto exportado desde esta herramienta o migra un Excel de formulación antiguo (.xlsm) para seguir trabajándolo aquí.', `<button class="btn btn-primario" data-act="importar">Importar archivo →</button>`)}
     </div>
-    <p class="viz-footer" style="text-align:left;padding-top:14px">Los proyectos se guardan en este navegador. Para respaldarlos o compartirlos, expórtalos a Excel o JSON; ambos formatos se pueden volver a importar.</p>`;
+    <p class="viz-footer" style="text-align:left;padding-top:14px">${esc(textoDonde())}</p>`;
   }
 
   function listFiltered() {
@@ -753,7 +841,7 @@
               <button class="btn" data-act="imprimir">${ICON.print}Imprimir resumen</button>
               <button class="btn" data-menu="editor-more" data-id="${p.uid}" aria-haspopup="menu" aria-expanded="false" aria-label="Más acciones del proyecto">${ICON.more}</button>
             </div>
-            <span class="en-vivo" id="save-state">Guardado en este navegador</span>
+            <span class="en-vivo ${textoGuardado()[1]}" id="save-state">${textoGuardado()[0]}</span>
           </div>
         </div>
       </div>
@@ -1864,16 +1952,86 @@
           const target = S.get(id);
           const v = await ask({
             title: 'Eliminar proyecto',
-            body: `<p>¿Eliminar <b>${esc(target.codigo)} v${esc(target.version)}</b> «${esc(target.titulo || 'Sin título')}» de este navegador? Esta acción no se puede deshacer. Si lo necesitas después, expórtalo antes.</p>`,
-            buttons: [{ label: 'Cancelar', left: true }, { label: 'Exportar y eliminar', value: 'exp' }, { label: 'Eliminar', value: 'del', danger: true }]
+            body: `<p>¿Enviar <b>${esc(target.codigo)} v${esc(target.version)}</b> «${esc(target.titulo || 'Sin título')}» a la papelera?</p>
+              <p>${S.getMode() === 'nube' ? 'Deja de aparecer para todo el equipo.' : 'Deja de aparecer en la lista.'} Se puede restaurar desde <b>Más → Papelera</b>.</p>`,
+            buttons: [{ label: 'Cancelar', left: true }, { label: 'Exportar y eliminar', value: 'exp' }, { label: 'Enviar a la papelera', value: 'del', danger: true }]
           });
           if (!v) break;
+          if (saveTimer && state.project && state.project.uid === id) saveNow();
           if (v === 'exp') await X.exportProject(target);
           S.remove(id);
           if (state.project && state.project.uid === id) { state.project = null; location.hash = '#/'; } else renderList();
-          toast('Proyecto eliminado');
+          toast('Proyecto enviado a la papelera');
           break;
         }
+        case 'papelera': location.hash = '#/papelera'; break;
+        case 'restaurar': {
+          S.restore(id);
+          toast('Proyecto restaurado');
+          renderPapelera();
+          break;
+        }
+        case 'purgar': case 'vaciar': {
+          const ids = act === 'vaciar' ? S.trash().map((x) => x.uid) : [id];
+          if (!ids.length) break;
+          const t = act === 'purgar' ? S.get(id) : null;
+          const v = await ask({
+            title: act === 'vaciar' ? 'Vaciar la papelera' : 'Eliminar definitivamente',
+            body: `<p>${t ? `¿Eliminar definitivamente <b>${esc(t.codigo)} v${esc(t.version)}</b> «${esc(t.titulo || 'Sin título')}»?` : `¿Eliminar definitivamente ${ids.length === 1 ? 'el proyecto' : `los ${ids.length} proyectos`} de la papelera?`}
+              Esta acción <b>no se puede deshacer</b>${S.getMode() === 'nube' ? ' y afecta a todo el equipo' : ''}.</p>`,
+            buttons: [{ label: 'Cancelar', left: true }, { label: 'Eliminar definitivamente', value: 'si', danger: true }]
+          });
+          if (v !== 'si') break;
+          ids.forEach((x) => S.purge(x));
+          toast(ids.length === 1 ? 'Proyecto eliminado definitivamente' : `${ids.length} proyectos eliminados definitivamente`);
+          renderPapelera();
+          break;
+        }
+        case 'login-google': {
+          nubeMensaje('Abriendo la ventana de Google…');
+          try { await window.QCloud.entrarConGoogle(); } catch (err) { nubeMensaje(err.message, true); }
+          break;
+        }
+        case 'login-enlace': {
+          const inp = $('#login-correo');
+          try {
+            const email = await window.QCloud.enviarEnlace(inp && inp.value);
+            nubeMensaje(`Te enviamos un enlace a ${email}. Ábrelo en este mismo navegador para entrar. Si no llega en unos minutos, revisa la carpeta de spam.`);
+          } catch (err) { nubeMensaje(err.message, true); }
+          break;
+        }
+        case 'login-confirmar': {
+          const inp = $('#login-correo');
+          try { nubeMensaje('Verificando el enlace…'); await window.QCloud.completarEnlace(inp && inp.value); } catch (err) { nubeMensaje(err.message, true); }
+          break;
+        }
+        case 'salir': {
+          if (saveTimer) saveNow();
+          await window.QCloud.salir();
+          location.hash = '#/';
+          break;
+        }
+        case 'recargar': location.reload(); break;
+        case 'usuarios': await openUsuarios(); break;
+        case 'usr-agregar': {
+          const email = $('#usr-correo').value;
+          try {
+            await window.QCloud.guardarUsuario(email, { nombre: $('#usr-nombre').value.trim(), rol: $('#usr-rol').value });
+            $('#usr-correo').value = ''; $('#usr-nombre').value = '';
+            usrMensaje(`${email.trim().toLowerCase()} ya puede entrar.`);
+            $('#usr-correo').focus();
+          } catch (err) { usrMensaje(err.message, true); }
+          break;
+        }
+        case 'usr-rol': {
+          try { await window.QCloud.guardarUsuario(d.email, { nombre: d.nombre, rol: d.rol }); usrMensaje(`${d.email} ahora es ${d.rol === 'admin' ? 'administrador' : 'editor'}.`); } catch (err) { usrMensaje(err.message, true); }
+          break;
+        }
+        case 'usr-quitar': {
+          try { await window.QCloud.quitarUsuario(d.email); usrMensaje(`${d.email} ya no tiene acceso.`); } catch (err) { usrMensaje(err.message, true); }
+          break;
+        }
+        case 'subir-locales': await ofrecerSubida(true); break;
         case 'config': await openConfig(); break;
         case 'tema': toggleTheme(); break;
 
@@ -2014,6 +2172,7 @@
         case 'add-cat': p.catalogoOtros.push({ descripcion: '', unidad: 'Un.', costoUnitario: 0 }); renderTab(`[data-cat="${p.catalogoOtros.length - 1}"][data-k="descripcion"]`); scheduleSave(); break;
         case 'del-cat': p.catalogoOtros.splice(+d.i, 1); renderTab(); scheduleSave(); break;
         case 'save-defaults': {
+          if (S.getMode() === 'nube' && !window.QCloud.esAdmin()) { toast('Solo un administrador puede cambiar los valores predeterminados del equipo.', true); break; }
           const cfg = S.getConfig();
           cfg.parametros = S.clone(p.parametros);
           cfg.parametros.presupuestoMaximo = null;
@@ -2060,7 +2219,7 @@
         if (existing) {
           const v = await ask({
             title: 'El proyecto ya existe',
-            body: `<p><b>${esc(p.codigo)} v${esc(p.version)}</b> «${esc(p.titulo)}» ya está en este navegador (modificado el ${esc(new Date(existing.modificado).toLocaleString('es-CL'))}).</p>`,
+            body: `<p><b>${esc(p.codigo)} v${esc(p.version)}</b> «${esc(p.titulo)}» ya existe${existing.eliminado ? ' (en la papelera)' : ''} (modificado el ${esc(new Date(existing.modificado).toLocaleString('es-CL'))}).</p>`,
             buttons: [{ label: 'Omitir', left: true }, { label: 'Importar como copia', value: 'copy' }, { label: 'Reemplazar', value: 'replace', primary: true }]
           });
           if (!v) continue;
@@ -2087,16 +2246,18 @@
   async function openConfig() {
     const cfg = S.getConfig();
     const par = cfg.parametros;
+    const enNube = S.getMode() === 'nube';
+    const puede = !enNube || window.QCloud.esAdmin();
     const v = await ask({
       title: 'Configuración predeterminada',
-      body: `<p>Se aplica a los proyectos nuevos creados en este navegador.</p>
+      body: `<p>${enNube ? 'El prefijo y los parámetros se aplican a los proyectos nuevos de todo el equipo' + (puede ? '.' : ' y solo un administrador puede cambiarlos.') + ' El responsable por defecto es solo tuyo.' : 'Se aplica a los proyectos nuevos creados en este navegador.'}</p>
         <div class="fila-campos" style="margin:14px 0 0">
-          <div class="campo"><label for="cfg-prefijo">Prefijo del código</label><input class="input" id="cfg-prefijo" value="${esc(cfg.prefijo)}"><span class="hint">Ej.: ${esc(cfg.prefijo)}-${new Date().getFullYear()}-001</span></div>
+          <div class="campo"><label for="cfg-prefijo">Prefijo del código</label><input class="input" id="cfg-prefijo" value="${esc(cfg.prefijo)}" ${puede ? '' : 'disabled'}><span class="hint">Ej.: ${esc(cfg.prefijo)}-${new Date().getFullYear()}-001</span></div>
           <div class="campo"><label for="cfg-resp">Responsable por defecto</label><input class="input" id="cfg-resp" value="${esc(cfg.responsable)}"></div>
         </div>
         <p class="small muted">Parámetros actuales: IVA ${nf(par.iva)} % · GG ${nf(par.gastosGenerales)} % · imprevistos ${nf(par.imprevistos)} % · tarifas ${clp(par.tarifaN1)} / ${clp(par.tarifaN2)} / ${clp(par.tarifaN3)} · margen objetivo ${nf(par.margenObjetivo)} %.
-        Para cambiarlos, ajústalos en la ficha de un proyecto y usa «Usarlos como predeterminados».</p>`,
-      buttons: [{ label: 'Restablecer valores de fábrica', value: 'reset', danger: true, left: true }, { label: 'Cancelar' }, { label: 'Guardar', value: 'save', primary: true }]
+        ${puede ? 'Para cambiarlos, ajústalos en la ficha de un proyecto y usa «Usarlos como predeterminados».' : ''}</p>`,
+      buttons: [puede ? { label: 'Restablecer valores de fábrica', value: 'reset', danger: true, left: true } : null, { label: 'Cancelar' }, { label: 'Guardar', value: 'save', primary: true }]
     });
     if (v === 'save') {
       cfg.prefijo = ($('#cfg-prefijo').value || 'QPN').trim().toUpperCase();
@@ -2108,6 +2269,217 @@
       toast('Parámetros predeterminados restablecidos');
     }
     if (!state.project && !location.hash.startsWith('#/guia')) renderList();
+  }
+
+  // ---------------------------------------------------------------------------
+  //  NUBE: ingreso, cuenta, usuarios, papelera y cambios de otros usuarios
+  // ---------------------------------------------------------------------------
+  function textoDonde() {
+    return S.getMode() === 'nube'
+      ? 'Los proyectos se guardan en la nube de QUEMPIN y los ve todo el equipo. Para archivar una copia fuera de la nube usa Más → Respaldar todos los proyectos.'
+      : 'Los proyectos se guardan en este navegador. Para respaldarlos o compartirlos, expórtalos a Excel o JSON; ambos formatos se pueden volver a importar.';
+  }
+
+  /* Pantalla mientras no hay sesión: conectando, ingreso, sin acceso o error. */
+  function renderNube() {
+    const c = window.QCloud.info();
+    renderModnav('ingreso');
+    document.title = 'Ingreso — Formulación QUEMPIN';
+    $('#hdr-sub').textContent = 'Proyectos compartidos del equipo QUEMPIN';
+    let cuerpo;
+    if (c.estado === 'cargando' || c.estado === 'sincronizando') {
+      cuerpo = `<h3>Conectando…</h3><p class="desc">${c.estado === 'sincronizando' ? 'Cargando los proyectos del equipo.' : 'Verificando tu sesión.'}</p>`;
+    } else if (c.estado === 'sin-sesion' && c.detalle === 'confirmar-correo') {
+      cuerpo = `<h3>Confirma tu correo</h3>
+        <p class="desc">Abriste el enlace de ingreso en un navegador distinto al que lo pidió. Escribe el correo al que llegó para terminar de entrar.</p>
+        <div class="campo"><label for="login-correo">Correo</label><input class="input" id="login-correo" type="email" autocomplete="email" data-enter="login-confirmar"></div>
+        <button class="btn btn-primario" type="button" data-act="login-confirmar">Entrar</button>`;
+    } else if (c.estado === 'sin-sesion') {
+      cuerpo = `<h3>Ingresa para ver los proyectos</h3>
+        <p class="desc">Los proyectos formulados se comparten con todo el equipo. Solo pueden entrar las personas autorizadas por un administrador.</p>
+        <button class="btn login-google" type="button" data-act="login-google">${ICON.google}Continuar con Google</button>
+        <div class="login-sep"><span>o recibe un enlace en tu correo</span></div>
+        <div class="campo"><label for="login-correo">Correo</label><input class="input" id="login-correo" type="email" autocomplete="email" placeholder="nombre@empresa.cl" data-enter="login-enlace"></div>
+        <button class="btn" type="button" data-act="login-enlace">Enviarme el enlace</button>`;
+    } else if (c.estado === 'no-autorizado') {
+      cuerpo = `<h3>Tu cuenta no tiene acceso</h3>
+        <p class="desc">Entraste como <b>${esc(c.detalle)}</b>, pero ese correo no está en la lista de usuarios autorizados. Pide a un administrador que lo agregue en <b>Usuarios y permisos</b> y vuelve a intentarlo.</p>
+        <div class="actions"><button class="btn btn-primario" type="button" data-act="recargar">Reintentar</button><button class="btn" type="button" data-act="salir">Usar otra cuenta</button></div>`;
+    } else {
+      cuerpo = `<h3>No se pudo conectar con la nube</h3>
+        <p class="desc">${esc(c.detalle || 'Error desconocido.')}</p>
+        <div class="actions"><button class="btn btn-primario" type="button" data-act="recargar">Reintentar</button></div>`;
+    }
+    const aviso = c.estado === 'sin-sesion' && c.detalle && c.detalle !== 'confirmar-correo' ? c.detalle : '';
+    app.innerHTML = `<div class="viz-container page"><div class="login-wrap">
+      <article class="hub-card login-card">
+        <div class="hub-card-cabecera"><div class="icon" aria-hidden="true">${ICON.user}</div><div><h2>Formulación de proyectos</h2><div class="hub-normas">QUEMPIN · acceso del equipo</div></div></div>
+        ${cuerpo}
+        <p id="login-msg" class="login-msg ${aviso ? 'err' : ''}" role="status" aria-live="polite">${esc(aviso)}</p>
+      </article></div></div>`;
+    const inp = $('#login-correo');
+    if (inp) inp.focus();
+  }
+  function nubeMensaje(texto, esError) {
+    const el = $('#login-msg');
+    if (el) { el.textContent = texto; el.className = 'login-msg ' + (esError ? 'err' : ''); } else if (esError) toast(texto, true);
+  }
+  // Enter en el correo = botón principal de la pantalla de ingreso
+  document.addEventListener('keydown', (e) => {
+    const t = e.target;
+    if (e.key === 'Enter' && t && t.dataset && t.dataset.enter) { e.preventDefault(); doAct(t.dataset.enter, {}); }
+  });
+
+  /* Botón de cuenta del encabezado: nombre y punto de sincronización. */
+  function pintarCuenta(c) {
+    const b = $('#cuentaBtn');
+    if (!b) return;
+    const u = S.getUser();
+    b.hidden = !(nube.activa && u && c.estado === 'listo');
+    if (b.hidden) return;
+    const cls = c.pendientes > 0 || !c.enLinea ? 'pendiente' : 'ok';
+    const nombre = (u.nombre || u.email).split(/[\s@]/)[0];
+    b.innerHTML = `<span class="cuenta-dot ${cls}" aria-hidden="true"></span>${esc(nombre)}`;
+    b.title = `${u.email} · ${textoGuardado()[0]}`;
+    b.setAttribute('aria-label', `Cuenta de ${u.email}. ${textoGuardado()[0]}`);
+  }
+
+  function onCloudEstado(c) {
+    pintarCuenta(c);
+    if (c.estado === 'listo') {
+      $('#footer-datos').textContent = textoDonde();
+      if (!nube.lista) {
+        nube.lista = true;
+        nube.ultimo = '';
+        route();
+        setTimeout(() => ofrecerSubida(false), 400);
+      }
+      showSyncState();
+      return;
+    }
+    if (c.estado === 'error' && nube.lista) { toast(c.detalle, true); return; }
+    if (c.estado === 'sin-sesion' || c.estado === 'no-autorizado') nube.lista = false;
+    if (nube.lista) return;
+    const k = c.estado + '|' + c.detalle;
+    if (k === nube.ultimo) return;
+    nube.ultimo = k;
+    if (saveTimer) saveNow();
+    state.project = null;
+    if (!location.hash.startsWith('#/guia')) renderNube();
+  }
+
+  /* Cambios que llegan de otros usuarios (o de otra ventana del mismo usuario). */
+  S.on((ev) => {
+    if (ev.type === 'error') { toast(ev.mensaje, true); if (state.project) setSaveState(ev.mensaje, 'err'); return; }
+    if (ev.type === 'sync') { showSyncState(); if (nube.activa) pintarCuenta(window.QCloud.info()); return; }
+    if (!nube.lista || (ev.type !== 'remote' && ev.type !== 'config')) return;
+    const h = location.hash;
+    if (state.project) {
+      if (ev.type !== 'remote' || !ev.ids.includes(state.project.uid)) return;
+      const cur = S.get(state.project.uid);
+      if (cur === state.project || saveTimer || state.conflicto) return; // con cambios sin guardar: se resuelve al guardar
+      const quien = ev.autores.length ? ev.autores.join(', ') : 'otra ventana';
+      if (!cur || cur.eliminado) {
+        toast(`${quien} envió este proyecto a la papelera`, true);
+        state.project = null;
+        location.hash = '#/';
+        return;
+      }
+      recargarProyecto(cur);
+      toast(`Actualizado con cambios de ${quien}`);
+    } else if (h.startsWith('#/papelera')) renderPapelera();
+    else if (!h.startsWith('#/guia')) {
+      if ($('#list-body') && S.all().length) refreshList(); else renderList();
+    }
+  });
+
+  // ---- Papelera ---------------------------------------------------------------------
+  function renderPapelera() {
+    const list = S.trash().sort((a, b) => String(b.eliminadoEn || '').localeCompare(String(a.eliminadoEn || '')));
+    const puedePurgar = S.getMode() !== 'nube' || window.QCloud.esAdmin();
+    document.title = 'Papelera — Formulación QUEMPIN';
+    app.innerHTML = `<div class="viz-container page">
+      <div class="page-head">
+        <div>
+          <a class="back" href="#/">← Proyectos</a>
+          <h2>Papelera</h2>
+          <p>Los proyectos eliminados quedan aquí y se pueden restaurar. ${puedePurgar ? 'Eliminarlos definitivamente no se puede deshacer.' : 'Solo un administrador puede eliminarlos definitivamente.'}</p>
+        </div>
+        ${puedePurgar && list.length ? `<div class="actions"><button class="btn btn-danger" data-act="vaciar">${ICON.trash}Vaciar papelera</button></div>` : ''}
+      </div>
+      ${list.length ? `<div class="tabla-contenedor"><table class="tbl" style="min-width:760px">
+        <thead><tr><th>Código</th><th>Proyecto</th><th>Eliminado</th><th></th></tr></thead>
+        <tbody>${list.map((p) => `<tr>
+          <td class="nowrap"><span class="code-badge">${esc(p.codigo || '—')}</span><span class="ver">v${esc(p.version)}</span></td>
+          <td style="min-width:220px"><div class="proj-title">${esc(p.titulo || 'Sin título')}</div><div class="proj-sub">${esc([p.cliente, p.estado].filter(Boolean).join(' · '))}</div></td>
+          <td class="nowrap">${p.eliminadoEn ? esc(new Date(p.eliminadoEn).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' })) : '—'}${p.eliminadoPor ? `<div class="proj-sub">${esc(p.eliminadoPor)}</div>` : ''}</td>
+          <td class="cell-actions nowrap">
+            <button type="button" class="btn" data-act="restaurar" data-id="${p.uid}">${ICON.restore}Restaurar</button>
+            ${puedePurgar ? `<button type="button" class="btn btn-danger" data-act="purgar" data-id="${p.uid}">Eliminar definitivamente</button>` : ''}
+          </td></tr>`).join('')}</tbody></table></div>`
+        : '<div class="panel"><p class="muted" style="margin:0">La papelera está vacía.</p></div>'}
+    </div>`;
+  }
+
+  // ---- Usuarios y permisos (administradores) --------------------------------------
+  function usrMensaje(texto, esError) {
+    const el = $('#usr-msg');
+    if (el) { el.textContent = texto; el.className = 'login-msg ' + (esError ? 'err' : 'ok'); }
+  }
+  async function openUsuarios() {
+    const yo = (S.getUser() || {}).email;
+    const pintar = (lista, err) => {
+      const el = $('#usr-lista');
+      if (!el) return;
+      if (err) { el.innerHTML = `<p class="login-msg err">${esc(err)}</p>`; return; }
+      el.innerHTML = `<table class="tbl usr-tabla"><thead><tr><th>Correo</th><th>Nombre</th><th>Rol</th><th></th></tr></thead><tbody>
+        ${lista.map((u) => `<tr><td>${esc(u.email)}${u.email === yo ? ' <span class="muted">(tú)</span>' : ''}</td><td>${esc(u.nombre || '—')}</td>
+          <td><span class="chip ${u.rol === 'admin' ? 'ok' : ''}">${u.rol === 'admin' ? 'Administrador' : 'Editor'}</span></td>
+          <td class="cell-actions nowrap">${u.email === yo ? '' : `
+            <button type="button" class="link-btn" data-act="usr-rol" data-email="${esc(u.email)}" data-nombre="${esc(u.nombre || '')}" data-rol="${u.rol === 'admin' ? 'editor' : 'admin'}">${u.rol === 'admin' ? 'Hacer editor' : 'Hacer administrador'}</button>
+            <button type="button" class="link-btn peligro" data-act="usr-quitar" data-email="${esc(u.email)}">Quitar acceso</button>`}</td></tr>`).join('')}
+        </tbody></table>`;
+    };
+    const cerrado = ask({
+      title: 'Usuarios y permisos',
+      wide: true,
+      body: `<p>Solo pueden entrar los correos de esta lista, con Google o con el enlace que reciben por correo.
+        <b>Editor</b>: crea, edita y envía proyectos a la papelera. <b>Administrador</b>: además administra usuarios, la configuración del equipo y la eliminación definitiva.</p>
+        <div id="usr-lista" style="margin:12px 0"><p class="muted">Cargando…</p></div>
+        <h3 class="seccion-titulo" style="margin-top:18px">Agregar usuario</h3>
+        <div class="fila-campos usr-form">
+          <div class="campo"><label for="usr-correo">Correo</label><input class="input" id="usr-correo" type="email" placeholder="nombre@empresa.cl" data-enter="usr-agregar"></div>
+          <div class="campo"><label for="usr-nombre">Nombre</label><input class="input" id="usr-nombre" placeholder="Opcional" data-enter="usr-agregar"></div>
+          <div class="campo"><label for="usr-rol">Rol</label><select class="input" id="usr-rol"><option value="editor">Editor</option><option value="admin">Administrador</option></select></div>
+        </div>
+        <button type="button" class="btn btn-primario" data-act="usr-agregar">${ICON.plus}Agregar</button>
+        <p id="usr-msg" class="login-msg" role="status" aria-live="polite"></p>`,
+      buttons: [{ label: 'Cerrar', primary: true }]
+    });
+    const parar = window.QCloud.escucharUsuarios(pintar);
+    await cerrado;
+    parar();
+  }
+
+  // ---- Proyectos guardados en el navegador antes de usar la nube ------------------
+  async function ofrecerSubida(manual) {
+    if (S.getMode() !== 'nube' || !nube.lista) return;
+    const pend = window.QCloud.proyectosLocalesPendientes();
+    const KEY = 'qpn.formulacion.subidaOmitida';
+    if (!pend.length) { if (manual) toast('No hay proyectos de este navegador pendientes de subir'); return; }
+    if (!manual) { try { if (localStorage.getItem(KEY) === String(pend.length)) return; } catch (e) { /* sin almacenamiento */ } }
+    const v = await ask({
+      title: 'Proyectos guardados solo en este navegador',
+      body: `<p>Este navegador tiene ${plural(pend.length, 'proyecto')} de antes de usar la nube que no ${pend.length === 1 ? 'está' : 'están'} en la nube:</p>
+        <ul>${pend.slice(0, 8).map((p) => `<li><b>${esc(p.codigo)} v${esc(p.version)}</b> ${esc(p.titulo || 'Sin título')}</li>`).join('')}${pend.length > 8 ? `<li>y ${pend.length - 8} más</li>` : ''}</ul>
+        <p>Al subirlos los verá todo el equipo. La copia de este navegador no se borra. Si después ves códigos repetidos, la ficha del proyecto lo avisa.</p>`,
+      buttons: [{ label: 'Ahora no', value: 'no', left: true }, { label: `Subir ${plural(pend.length, 'proyecto')}`, value: 'si', primary: true }]
+    });
+    if (v === 'si') {
+      const n = window.QCloud.subirLocales(pend);
+      toast(n === 1 ? '1 proyecto subido a la nube' : `${n} proyectos subidos a la nube`);
+      if (!state.project) route();
+    } else if (!manual) { try { localStorage.setItem(KEY, String(pend.length)); } catch (e) { /* sin almacenamiento */ } }
   }
 
   // ---- Tema claro / oscuro (botón igual al de las demás herramientas QUEMPIN) ------------
@@ -2129,5 +2501,14 @@
     if (mq.addEventListener) mq.addEventListener('change', syncThemeBtn);
   }
 
-  route();
+  // Arranque: con Firebase configurado se espera la sesión; si no, modo local de siempre.
+  if (window.QCloud && window.QCloud.configurado) {
+    nube.activa = true;
+    $('#footer-datos').textContent = 'Los proyectos se guardan en la nube de QUEMPIN y los ve todo el equipo.';
+    window.QCloud.onEstado(onCloudEstado);
+    window.QCloud.iniciar();
+    if (location.hash.startsWith('#/guia')) route();
+  } else {
+    route();
+  }
 })();
