@@ -45,6 +45,7 @@
     up: svg('<path d="M12 19V5M6 11l6-6 6 6"/>'),
     down: svg('<path d="M12 5v14M6 13l6 6 6-6"/>'),
     copy: svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/>'),
+    check: svg('<path d="M5 12.5l4.5 4.5L19 7"/>'),
     print: svg('<path d="M6 9V3h12v6M6 18H4v-7h16v7h-2M8 14h8v7H8z"/>'),
     more: svg('<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>'),
     chev: '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
@@ -57,6 +58,7 @@
     version: svg('<path d="M8 4h11a1 1 0 0 1 1 1v11"/><rect x="4" y="8" width="12" height="12" rx="1"/><path d="M10 11v6M7 14h6"/>'),
     open: svg('<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>'),
     sparkle: svg('<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/>'),
+    restore: svg('<path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/>'),
     target: svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>'),
     x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
     arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>')
@@ -74,6 +76,9 @@
     filtro: { materiales: '', equipos: '', manoObra: '', otros: '' },
     apuOpen: new Set(),
     kpiOpen: new Set(),
+    /* Utilidad que había antes de "Aplicar" / "Llevar al margen objetivo", para "Deshacer":
+       { puid, antes: Map(uid de partida → { utilidadTipo, utilidadValor }), accion } */
+    utilUndo: null,
     list: { q: '', estado: '', resp: '', sort: { k: 'mod', dir: -1 } }
   };
 
@@ -126,6 +131,33 @@
     t.className = 'show' + (isErr ? ' err' : '');
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { t.className = ''; }, isErr ? 5000 : 2600);
+  }
+
+  /* Portapapeles: API moderna y, si no está disponible, el método antiguo */
+  async function copiarTexto(txt) {
+    try {
+      if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(txt); return true; }
+    } catch (e) { /* se intenta el método antiguo */ }
+    const prev = document.activeElement;
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:-1000px;left:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    let hecho = false;
+    try { hecho = document.execCommand('copy'); } catch (e) { hecho = false; }
+    ta.remove();
+    if (prev && prev.focus) prev.focus();
+    return hecho;
+  }
+  function marcarCopiado(btn) {
+    if (!btn) return;
+    const icono = btn.classList.contains('copiar');
+    btn.classList.add('hecho');
+    if (icono) btn.innerHTML = ICON.check;
+    clearTimeout(btn._copiado);
+    btn._copiado = setTimeout(() => { btn.classList.remove('hecho'); if (icono) btn.innerHTML = ICON.copy; }, 1500);
   }
 
   /* Diálogo modal. buttons: [{label, value, primary, danger, left}] → Promise(value | null) */
@@ -698,6 +730,7 @@
     if (!state.project || state.project.uid !== p.uid) {
       state.filtro = { materiales: '', equipos: '', manoObra: '', otros: '' };
       state.apuOpen = new Set();
+      state.utilUndo = null;
     }
     state.project = p;
     state.tab = valid ? tab : 'ficha';
@@ -1122,8 +1155,7 @@
           ${rowInput('partidas', it, 'utilidadValor', `Utilidad ${code} ${isPct ? 'en % de recargo' : 'en pesos'}`, 'num', true, `placeholder="${isPct ? '%' : '$'}"`)}
         </div></td>
         <td class="num calc" data-c="P:${it.uid}:utilidad" data-fmt="clp"></td>
-        <td class="num calc strong" data-c="P:${it.uid}:precio" data-fmt="clp"></td>
-        <td class="num calc" data-c="P:${it.uid}:margen" data-fmt="pct"></td>
+        <td class="num calc"><span class="dot na" data-sem-p="${it.uid}" aria-hidden="true"></span><span data-c="P:${it.uid}:margen" data-fmt="pct"></span></td>
       </tr>`;
     }).join('');
     return `
@@ -1131,42 +1163,49 @@
         <img src="assets/logo-quempin.png" alt="QUEMPIN Soluciones Energéticas">
         <div style="text-align:right"><b>${esc(p.codigo)} · v${esc(p.version)}</b><br>${esc(p.titulo)}<br>${esc([p.cliente, p.responsable, fechaCorta(p.fecha)].filter(Boolean).join(' · '))}</div>
       </div>
+      <div id="res-aviso"></div>
 
-      <div class="kpis" id="res-top"></div>
+      <section class="section section-first">
+        <div class="section-head"><h3 class="seccion-titulo">Precio de la oferta</h3><p>Cómo se forma, en pesos chilenos (CLP).</p></div>
+        <div class="eq" id="res-top"></div>
+      </section>
 
       <section class="section" id="utilidad">
-        <div class="section-head"><h3 class="seccion-titulo">Utilidad y precio de la oferta</h3><span class="en-vivo">Se actualizan al escribir</span></div>
+        <div class="section-head"><h3 class="seccion-titulo">Utilidad y valores por partida</h3><span class="en-vivo">Se actualizan al escribir</span></div>
         <div class="calc-layout">
           <div class="calc-entradas">
             <div class="tabla-contenedor">
               <div class="util-quick no-print">
                 <span class="lbl">Recargo para todas</span>
                 <div class="input-affix"><input class="input" id="util-all" type="number" step="any" placeholder="100" aria-label="Recargo en % a aplicar a todas las partidas"><span class="affix">%</span></div>
-                <button type="button" class="btn btn-sm" data-act="apply-util">Aplicar</button>
-                <span class="div" aria-hidden="true"></span>
-                <button type="button" class="btn btn-sm" data-act="util-objetivo" ${p.partidas.length ? '' : 'disabled'} data-tip="Calcula el recargo que deja el margen sobre venta exactamente en el objetivo definido en Ficha y parámetros, y lo aplica a todas las partidas.">${ICON.target}Llevar al margen objetivo (${esc(nf(mObj))} %)</button>
+                <button type="button" class="btn btn-sm" data-act="apply-util" ${p.partidas.length ? '' : 'disabled'}>Aplicar</button>
+                <span class="grupo-btn">
+                  <button type="button" class="btn btn-sm" data-act="util-objetivo" ${p.partidas.length ? '' : 'disabled'} data-tip="Calcula el recargo que deja el margen sobre venta exactamente en el objetivo definido en Ficha y parámetros, y lo aplica a todas las partidas.">${ICON.target}Llevar al margen objetivo (${esc(nf(mObj))} %)</button>
+                  <button type="button" class="btn btn-sm" id="util-undo" data-act="util-deshacer" aria-disabled="true">${ICON.restore}Deshacer</button>
+                </span>
               </div>
               <table class="tbl util-tbl">
-                <thead><tr><th>Partida</th><th>Utilidad<span class="th-sub">% de recargo sobre su costo o $ fijo</span></th><th class="num">Utilidad $</th><th class="num">Precio neto</th><th class="num">Margen</th></tr></thead>
-                <tbody>${utilRows || '<tr class="empty-row"><td colspan="5">Aún no hay partidas. <button type="button" class="link-btn" data-act="tab" data-tab="partidas">Crear la primera partida</button></td></tr>'}</tbody>
+                <thead><tr><th>Partida</th><th>Utilidad<span class="th-sub">% de recargo sobre su costo o $ fijo</span></th><th class="num">Utilidad $</th><th class="num">Margen</th></tr></thead>
+                <tbody>${utilRows || '<tr class="empty-row"><td colspan="4">Aún no hay partidas. <button type="button" class="link-btn" data-act="tab" data-tab="partidas">Crear la primera partida</button></td></tr>'}</tbody>
                 <tfoot><tr><td>Total</td><td class="small muted" style="font-weight:400">Recargo promedio <span data-c="K:markup" data-fmt="pct"></span></td>
-                  <td class="num" data-c="T:utilidad" data-fmt="clp"></td><td class="num" data-c="T:precioNeto" data-fmt="clp"></td><td class="num" data-c="K:margen" data-fmt="pct"></td></tr></tfoot>
+                  <td class="num" data-c="T:utilidad" data-fmt="clp"></td><td class="num" data-c="K:margen" data-fmt="pct"></td></tr></tfoot>
               </table>
             </div>
+            <div class="eval" id="res-eval"></div>
             <p class="small muted" style="margin:10px 2px 0">Un recargo de 100 % sobre el costo equivale a un margen de 50 % sobre la venta. Al cambiar entre % y $ se conserva el monto de utilidad.</p>
           </div>
-          <div class="calc-resultados" id="res-precio"></div>
+          <aside class="calc-resultados" id="res-precio" aria-label="Valores por partida para la cotización"></aside>
         </div>
       </section>
 
-      <section class="section">
+      <section class="section" id="indicadores">
         <div class="section-head"><h3 class="seccion-titulo">Indicadores de evaluación</h3><p>Abre «Qué mide y cómo aporta» en cada tarjeta, o revisa la <a href="#/guia">Guía de KPIs</a>.</p></div>
-        <div class="kpi-grid" id="res-kpis"></div>
+        <div id="res-kpis"></div>
       </section>
 
-      <section class="section">
-        <div class="section-head"><h3 class="seccion-titulo">Sensibilidad: ¿cuánto sobrecosto resiste la oferta?</h3><p>Simula alzas de costo con el precio ya ofertado.</p></div>
-        <div class="calc-layout">
+      <section class="section" id="sensibilidad">
+        <div class="section-head"><h3 class="seccion-titulo">Sensibilidad: ¿cuánto sobrecosto resiste la oferta?</h3><p>Simula alzas de costo manteniendo el precio ofertado.</p></div>
+        <div class="calc-layout parejo">
           <div class="panel">
             ${sensRow('mat', 'Materiales', 'cat-mat')}${sensRow('eq', 'Equipos', 'cat-eq')}${sensRow('mo', 'Mano de obra', 'cat-mo')}${sensRow('otros', 'Otros', 'cat-otros')}
             <button type="button" class="btn btn-sm no-print" data-act="sens-reset">Restablecer (MO +10 %)</button>
@@ -1176,8 +1215,15 @@
       </section>
 
       <section class="section">
-        <div class="section-head"><h3 class="seccion-titulo">Precio por partida</h3><p>Despliega una partida para ver su análisis de precio unitario.</p></div>
-        <div class="panel" id="res-pbar" style="margin-bottom:12px"></div>
+        <div class="section-head"><h3 class="seccion-titulo">Composición del precio</h3><p>Qué parte del precio neto es costo y qué parte es utilidad.</p></div>
+        <div class="grid-2 iguales">
+          <div class="panel"><h4 class="panel-t">Proyecto completo</h4><div id="res-comp"></div></div>
+          <div class="panel"><h4 class="panel-t">Por partida</h4><div id="res-pbar"></div></div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head"><h3 class="seccion-titulo">Detalle por partida</h3><p>Despliega una partida para ver su análisis de precio unitario.</p></div>
         <div id="res-partidas"></div>
       </section>
 
@@ -1187,6 +1233,62 @@
       </section>`;
   }
 
+  /* Valores para la cotización: precio unitario redondeado a pesos y total de la
+     línea = cantidad × precio unitario, para que la cotización cuadre al peso.
+     El IVA se calcula sobre la suma de las líneas, como en una factura. */
+  function cotizacion() {
+    const r = state.result;
+    const ivaPct = num(state.project.parametros.iva) / 100;
+    const lineas = r.partidas.map((pt) => {
+      const pu = pt.cantidad > 0 && ok(pt.pu) ? Math.round(pt.pu) : null;
+      const total = pu !== null ? Math.round(pu * pt.cantidad) : Math.round(pt.precio);
+      return { pt, pu, total };
+    });
+    const neto = lineas.reduce((a, l) => a + l.total, 0);
+    const iva = Math.round(neto * ivaPct);
+    return { lineas, neto, iva, bruto: neto + iva, dif: neto - Math.round(r.totals.precioNeto) };
+  }
+
+  /* Tabla separada por tabulaciones: al pegarla en Excel o Word queda en columnas */
+  function tablaCotizacion() {
+    const c = cotizacion();
+    const limpio = (x) => String(x || '').replace(/[\t\r\n]+/g, ' ').trim();
+    const filas = [['Ítem', 'Partida', 'Cantidad', 'Unidad', 'Precio unitario neto', 'Total neto']];
+    c.lineas.forEach(({ pt, pu, total }) => filas.push([pt.code, limpio(pt.descripcion), String(pt.cantidad).replace('.', ','), limpio(pt.unidad), pu === null ? '' : String(pu), String(total)]));
+    filas.push(['', '', '', '', 'Total neto', String(c.neto)]);
+    filas.push(['', '', '', '', `IVA ${nf(num(state.project.parametros.iva))} %`, String(c.iva)]);
+    filas.push(['', '', '', '', 'Total con IVA', String(c.bruto)]);
+    return filas.map((f) => f.join('\t')).join('\r\n');
+  }
+
+  const btnCopiar = (v, lbl) => `<button type="button" class="icon-btn copiar no-print" data-act="copiar" data-v="${Math.round(v || 0)}" data-lbl="${esc(lbl)}" aria-label="Copiar ${esc(lbl)}" data-tip="<b>Copiar ${esc(lbl)}</b>Se copia como número sin formato: ${Math.round(v || 0)}">${ICON.copy}</button>`;
+
+  // ---- Deshacer la utilidad aplicada a todas las partidas ------------------------
+  const fmtUtil = (x) => (x.utilidadTipo === 'monto' ? clp(num(x.utilidadValor)) : `${nf(num(x.utilidadValor))} %`);
+  function undoVigente() {
+    const u = state.utilUndo;
+    return u && state.project && u.puid === state.project.uid && u.antes.size ? u : null;
+  }
+  /* Guarda la utilidad ingresada a mano antes de una acción masiva. Si ya había un
+     respaldo (dos acciones seguidas), se conserva: lo manual es lo de antes de la primera. */
+  function guardarUndo(accion) {
+    const p = state.project;
+    let u = undoVigente();
+    if (!u) { u = { puid: p.uid, antes: new Map() }; state.utilUndo = u; }
+    p.partidas.forEach((pt) => { if (!u.antes.has(pt.uid)) u.antes.set(pt.uid, { utilidadTipo: pt.utilidadTipo, utilidadValor: pt.utilidadValor }); });
+    u.accion = accion;
+  }
+  function pintarDeshacer() {
+    const b = $('#util-undo');
+    if (!b) return;
+    const u = undoVigente();
+    b.setAttribute('aria-disabled', u ? 'false' : 'true');
+    if (!u) { b.dataset.tip = '<b>Nada que deshacer</b>Se activa después de usar «Aplicar» o «Llevar al margen objetivo».'; return; }
+    const lista = state.project.partidas.map((pt, i) => (u.antes.has(pt.uid) ? `P${i + 1}: ${fmtUtil(u.antes.get(pt.uid))}` : null)).filter(Boolean);
+    const txt = lista.slice(0, 6).join(' · ') + (lista.length > 6 ? ` y ${lista.length - 6} más` : '');
+    b.dataset.tip = `<b>Volver a la utilidad ingresada a mano</b>Deshace «${esc(u.accion)}»: ${esc(txt)}`;
+  }
+
   function refreshResumen() {
     const r = state.result;
     const t = r.totals, k = r.kpis, st = r.status;
@@ -1194,61 +1296,87 @@
     const hasGG = t.gg > 0 || t.imp > 0 || num(par.gastosGenerales) > 0 || num(par.imprevistos) > 0;
     const mObj = num(par.margenObjetivo) / 100, mMin = num(par.margenMinimo) / 100;
     const meta = num(par.metaUtilidadDH);
+    const pctShort = (x) => pct(x).replace(',0 ', ' ');
+    const semMargen = (m) => (!ok(m) ? 'na' : m >= mObj ? 'ok' : m >= mMin ? 'warn' : 'bad');
+    const ws = r.warnings;
 
-    // KPIs principales
+    // Aviso arriba cuando hay alertas (el detalle sigue al final)
+    const nErr = ws.filter((w) => w.level === 'error').length;
+    const nWarn = ws.filter((w) => w.level === 'warn').length;
+    $('#res-aviso').innerHTML = nErr || nWarn ? `<div class="aviso ${nErr ? 'bad' : 'warn'} no-print">
+        <span class="ico" aria-hidden="true">${nErr ? '✖' : '▲'}</span>
+        <span class="motivo">${nErr
+          ? `<b>${plural(nErr, 'error', 'errores')}:</b> hay costos que no se están sumando al precio${nWarn ? ` (y ${plural(nWarn, 'aviso')})` : ''}.`
+          : `<b>${plural(nWarn, 'aviso')}</b> por revisar.`} Revísalos antes de copiar los valores a la cotización.</span>
+        <button type="button" class="ir" data-act="scroll" data-to="alertas">Ver alertas →</button>
+      </div>` : '';
+
+    // Precio de la oferta: costo + utilidad = neto; neto + IVA = precio con IVA
+    const eqCard = (cls, label, value, sub, tipText) => `<div class="eq-card ${cls}">
+        <div class="l">${label}${tipText ? info(tipText) : ''}</div><div class="v">${value}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>`;
+    const op = (c) => `<span class="eq-op" aria-hidden="true">${c}</span>`;
     $('#res-top').innerHTML = [
-      kpiTop('Costo directo', clp(t.cd), hasGG ? `Costo total con GG e imprevistos: ${clp(t.costoTotal)}` : 'Materiales + equipos + MO + otros', '', KP.byKey.cd.queMide),
-      kpiTop('Utilidad', clp(t.utilidad), `Recargo de ${pct(k.markup)} sobre el costo`, 'accent', KP.byKey.utilidad.queMide),
-      kpiTop('Precio de venta neto', clp(t.precioNeto), `Con IVA: ${clp(t.precioBruto)}`, 'hero', KP.byKey.precioNeto.queMide),
-      kpiTop('Margen sobre venta', pct(k.margen), `Objetivo ${pct(mObj)} · mínimo ${pct(mMin)}`, SEM[st.margen] || '', KP.byKey.margen.queMide),
-      kpiTop('Utilidad por DH', clp(k.rentDH), k.dh ? `${nf(k.dh)} DH${meta > 0 ? ` · meta ${clp(meta)}` : ' · sin meta definida'}` : 'Sin mano de obra registrada', SEM[st.rentDH] || '', KP.byKey.rentDH.queMide)
+      eqCard('', 'Costo directo', clp(t.cd), 'Materiales, equipos, MO y otros', KP.byKey.cd.queMide),
+      hasGG ? op('+') + eqCard('', 'GG e imprevistos', clp(t.gg + t.imp), `${nf(num(par.gastosGenerales))} % + ${nf(num(par.imprevistos))} % del costo directo`, KP.byKey.costoTotal.queMide) : '',
+      op('+'), eqCard('util', 'Utilidad', clp(t.utilidad), `Recargo de ${pct(k.markup)} sobre el costo${hasGG ? ' total' : ''}`, KP.byKey.utilidad.queMide),
+      op('='), eqCard('hero', 'Precio de venta neto', clp(t.precioNeto), 'Sin IVA: el monto a ofertar', KP.byKey.precioNeto.queMide),
+      op('+'), eqCard('', `IVA ${nf(num(par.iva))} %`, clp(t.iva), 'No es ingreso de la empresa', KP.byKey.iva.queMide),
+      op('='), eqCard('', 'Precio con IVA', clp(t.precioBruto), 'Lo que paga el cliente', KP.byKey.precioBruto.queMide)
     ].join('');
 
-    // Precio de la oferta (columna de resultados)
-    const segs = [
-      { ...CATS[0], v: t.mat }, { ...CATS[1], v: t.eq }, { ...CATS[2], v: t.mo }, { ...CATS[3], v: t.otros },
-      { ...CATS[4], v: t.gg + t.imp }, { ...CATS[5], v: t.utilidad }
-    ].filter((sg) => sg.k !== 'gg' || hasGG);
-    const base = segs.reduce((a, sg) => a + Math.max(0, sg.v), 0);
-    const bar = base > 0 ? `<div class="stack lg" role="img" aria-label="Composición del precio neto">${segs.filter((sg) => sg.v > 0).map((sg) =>
-      `<div class="seg ${sg.cls}" style="flex:${sg.v} 1 0" data-tip="<b>${esc(sg.n)}</b>${esc(clp(sg.v))} · ${esc(pct(t.precioNeto ? sg.v / t.precioNeto : null))} del precio neto"></div>`).join('')}</div>` : '';
-    const compHtml = base > 0 ? `${bar}
-      <table class="leyenda"><tbody>${segs.map((sg) => `<tr class="${sg.v ? '' : 'cero'}"><td><span class="nombre"><span class="swatch ${sg.cls}"></span>${sg.n}</span></td><td class="num">${clp(sg.v)}</td><td class="num" style="width:70px">${pct(t.precioNeto ? sg.v / t.precioNeto : null)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td>Precio de venta neto</td><td class="num">${clp(t.precioNeto)}</td><td class="num">${t.precioNeto ? '100,0 %' : '—'}</td></tr></tfoot></table>
-      ${t.utilidad < 0 ? '<p class="small tone-bad" style="margin:8px 0 0;font-weight:700">La utilidad es negativa: el precio no cubre los costos.</p>' : ''}`
-      : '<p class="small muted" style="margin:0">Agrega partidas y costos para ver la composición del precio.</p>';
-    let compet;
-    if (k.competitividad === null) {
-      compet = `<div class="resultado-tile ancho"><div class="valor" style="font-size:15px">Sin presupuesto del mandante</div>
-        <div class="etiqueta">Ingresa el presupuesto máximo en <button type="button" class="link-btn" data-act="tab" data-tab="ficha">Ficha y parámetros</button> para saber si la oferta cabe.</div></div>`;
-    } else {
-      const um = num(par.umbralAjustado || 95) / 100;
-      compet = `<div class="resultado-tile ancho ${TILE[st.competitividad] || ''}">
-        <div class="valor">${pct(k.competitividad)} <span class="small" style="font-weight:700;color:var(--text-secondary)">del presupuesto</span></div>
-        <div class="etiqueta">Oferta ${par.presupuestoIncluyeIva ? 'con IVA' : 'neta'} de ${clp(k.precioComparable)} frente a ${clp(k.presupuesto)} · ${chip(st.competitividad, 'competitividad')}</div>
-        ${medidor({ v: k.competitividad, max: Math.max(1.2, Math.ceil(k.competitividad * 10) / 10), fill: st.competitividad, fmt: (x) => pct(x).replace(',0 ', ' '), label: 'Competitividad frente al presupuesto',
-          ticks: [{ at: um, dash: true, tip: `Ajustada desde ${pct(um)}` }, { at: 1, show: true, tip: '100 % del presupuesto' }] })}</div>`;
-    }
-    $('#res-precio').innerHTML = `
-      <div class="resultados-encabezado"><h3 class="seccion-titulo" style="font-size:12px">Resultado</h3></div>
-      <div class="grupo-resultados">
-        <div class="resultado-tile marca ancho"><div class="valor">${clp(t.precioNeto)}</div><div class="etiqueta">Precio de venta neto (a ofertar sin IVA)</div></div>
-        <div class="resultado-tile ${TILE[st.margen] || ''}"><div class="valor">${pct(k.margen)}</div><div class="etiqueta">Margen sobre venta · ${chip(st.margen, 'margen')}</div></div>
-        <div class="resultado-tile"><div class="valor">${clp(t.precioBruto)}</div><div class="etiqueta">Precio con IVA (${nf(num(par.iva))} %: ${clp(t.iva)})</div></div>
-        ${compet}
-        <div class="panel ancho" style="grid-column:1/-1;padding:14px 16px">
-          <div class="resultados-encabezado" style="margin-bottom:10px"><span class="small" style="font-weight:700;color:var(--text-secondary)">Composición del precio neto</span></div>
-          ${compHtml}
+    // Semáforo de margen por partida (contra las metas del proyecto)
+    $$('[data-sem-p]', app).forEach((el) => {
+      const pt = state.partIdx.get(el.dataset.semP);
+      el.className = 'dot ' + semMargen(pt && pt.precio ? pt.utilidad / pt.precio : null);
+    });
+    pintarDeshacer();
+
+    // Evaluación inmediata bajo la tabla de utilidad: margen y competitividad
+    const medMargen = (extra) => medidor(Object.assign({ v: Math.max(0, k.margen), max: Math.max(0.6, Math.ceil((k.margen + 0.05) * 10) / 10), fill: st.margen, fmt: pctShort, label: 'Margen frente a las metas',
+      ticks: [{ at: mMin, dash: true, show: true, tip: `Mínimo ${pct(mMin)}` }, { at: mObj, show: true, tip: `Objetivo ${pct(mObj)}` }] }, extra));
+    const um = num(par.umbralAjustado || 95) / 100;
+    const medComp = () => medidor({ v: k.competitividad, max: Math.max(1.2, Math.ceil(k.competitividad * 10) / 10), fill: st.competitividad, fmt: pctShort, label: 'Competitividad frente al presupuesto',
+      ticks: [{ at: um, dash: true, tip: `Ajustada desde ${pct(um)}` }, { at: 1, show: true, tip: '100 % del presupuesto' }] });
+    const compEval = k.competitividad === null
+      ? `<div class="eval-item s-na"><div class="eval-top"><span class="eval-n">Competitividad</span>${chip('na', 'competitividad')}</div>
+          <p class="eval-txt">Ingresa el presupuesto del mandante en <button type="button" class="link-btn" data-act="tab" data-tab="ficha">Ficha y parámetros</button> para saber si la oferta cabe.</p></div>`
+      : `<div class="eval-item s-${st.competitividad}"><div class="eval-top"><span class="eval-n">Competitividad</span>${chip(st.competitividad, 'competitividad')}</div>
+          <div class="eval-v">${pct(k.competitividad)}<span class="eval-sub">de ${clp(k.presupuesto)}${par.presupuestoIncluyeIva ? ' (con IVA)' : ''}</span></div>${medComp()}</div>`;
+    $('#res-eval').innerHTML = `<div class="eval-item s-${st.margen}"><div class="eval-top"><span class="eval-n">Margen sobre venta</span>${chip(st.margen, 'margen')}</div>
+        <div class="eval-v">${pct(k.margen)}<span class="eval-sub">objetivo ${pctShort(mObj)} · mínimo ${pctShort(mMin)}</span></div>${ok(k.margen) ? medMargen() : ''}</div>${compEval}`;
+
+    // Valores por partida, antes de IVA, con botón para copiar cada monto
+    const cot = cotizacion();
+    const filasCot = cot.lineas.map(({ pt, pu, total }) => `<li>
+        <span class="pcode">${pt.code}</span>
+        <div class="cotiz-nom"><div class="t ${pt.descripcion ? '' : 'muted'}">${esc(pt.descripcion || 'Partida sin descripción')}</div>
+          <div class="s">${esc(nf(pt.cantidad))} ${esc(pt.unidad)}${pu !== null && pt.cantidad !== 1
+            ? ` × <button type="button" class="copiar-txt" data-act="copiar" data-v="${pu}" data-lbl="${pt.code} · precio unitario" aria-label="Copiar precio unitario de ${pt.code}" data-tip="<b>Copiar precio unitario de ${pt.code}</b>Se copia como número sin formato: ${pu}">${clp(pu)}</button> c/u` : ''}</div></div>
+        <div class="cotiz-v">${clp(total)}</div>
+        ${btnCopiar(total, `${pt.code} · total neto`)}
+      </li>`).join('');
+    $('#res-precio').innerHTML = `<div class="panel cotiz">
+        <div class="cotiz-head">
+          <div><h3 class="seccion-titulo">Valores por partida</h3><p class="cotiz-sub">Neto, antes de IVA · para la cotización</p></div>
+          <button type="button" class="btn btn-sm no-print" data-act="copiar-tabla" ${cot.lineas.length ? '' : 'disabled'} data-tip="<b>Copiar la tabla completa</b>Partidas, cantidades, precios unitarios y totales, lista para pegar en Excel o Word.">${ICON.copy}Copiar tabla</button>
         </div>
+        ${cot.lineas.length ? `<ul class="cotiz-list">${filasCot}</ul>` : '<p class="small muted" style="margin:10px 0">Aún no hay partidas.</p>'}
+        <div class="cotiz-tot">
+          <div class="fila principal"><span>Total neto</span><span class="v">${clp(cot.neto)}</span>${btnCopiar(cot.neto, 'total neto')}</div>
+          <div class="fila"><span>IVA ${nf(num(par.iva))} %</span><span class="v">${clp(cot.iva)}</span>${btnCopiar(cot.iva, 'IVA')}</div>
+          <div class="fila"><span>Total con IVA</span><span class="v">${clp(cot.bruto)}</span>${btnCopiar(cot.bruto, 'total con IVA')}</div>
+        </div>
+        ${cot.dif ? `<p class="cotiz-nota">Montos redondeados a pesos por partida (cantidad × precio unitario), por eso difieren en ${clp(Math.abs(cot.dif))} del precio calculado.</p>` : ''}
       </div>`;
 
-    // Indicadores de evaluación
+    // Indicadores de evaluación, agrupados
     const kpiCard = (key, value, unit, statusKey, reading, extra) => {
       const d = KP.byKey[key];
       const s = st[statusKey || key] || 'info';
       const open = state.kpiOpen.has(key);
+      const origen = d.origen === 'Nuevo' ? 'Indicador nuevo: no existía en el Excel original.' : `En el Excel original: ${esc(d.origen)}.`;
       return `<article class="kpi s-${s}">
-        <div class="kpi-top"><div><div class="kpi-name">${d.nombre}</div><div class="kpi-origin">${d.origen === 'Nuevo' ? '<span class="tag new">Nuevo</span>' : `Excel: ${esc(d.origen)}`}</div></div>${chip(s, statusKey || key)}</div>
+        <div class="kpi-top"><div class="kpi-name">${d.nombre}</div>${chip(s, statusKey || key)}</div>
         <div class="kpi-value">${value}${unit ? `<span class="unit">${unit}</span>` : ''}</div>
         ${extra || ''}
         <div class="kpi-read">${reading}</div>
@@ -1257,48 +1385,86 @@
           <p><strong>Qué mide:</strong> ${esc(d.queMide)}</p>
           <p><strong>Cómo aporta:</strong> ${esc(d.aporte)}</p>
           ${d.lectura ? `<p class="muted">${esc(d.lectura)}</p>` : ''}
+          <p class="kpi-origin">${origen}</p>
         </details>
       </article>`;
     };
-    const pctShort = (x) => pct(x).replace(',0 ', ' ');
+    // Metas de recargo equivalentes a las de margen: r = m / (1 − m)
+    const rMin = mMin < 1 ? mMin / (1 - mMin) : null, rObj = mObj < 1 ? mObj / (1 - mObj) : null;
     const compRead = k.competitividad === null
       ? 'Ingresa el presupuesto máximo del mandante en Ficha y parámetros para evaluar la oferta.'
       : `La oferta ${par.presupuestoIncluyeIva ? 'con IVA' : 'neta'} (${clp(k.precioComparable)}) equivale al ${pct(k.competitividad)} del presupuesto de ${clp(k.presupuesto)}.`;
+    const sv = par.sensibilidad || {};
+    const SENS_N = { mat: 'materiales', eq: 'equipos', mo: 'MO', otros: 'otros' };
+    const escenario = Object.keys(SENS_N).filter((x) => num(sv[x]) !== 0).map((x) => `${SENS_N[x]} ${num(sv[x]) > 0 ? '+' : ''}${nf(num(sv[x]))} %`);
+    const grupo = (titulo, cards) => `<div class="kpi-grupo"><div class="kpi-grupo-t">${titulo}</div><div class="kpi-grid">${cards.join('')}</div></div>`;
     $('#res-kpis').innerHTML = [
-      kpiCard('margen', pct(k.margen), '', 'margen',
-        ok(k.margen) ? `De cada $100 vendidos quedan $${fNum.format(Math.round(k.margen * 1000) / 10)} de utilidad.` : 'Sin ventas aún.',
-        ok(k.margen) ? medidor({ v: k.margen, max: Math.max(0.6, Math.ceil((k.margen + 0.05) * 10) / 10), fill: st.margen, fmt: pctShort, label: 'Margen frente a las metas',
-          ticks: [{ at: mMin, dash: true, show: true, tip: `Mínimo ${pct(mMin)}` }, { at: mObj, show: true, tip: `Objetivo ${pct(mObj)}` }] }) : ''),
-      kpiCard('markup', pct(k.markup), '', 'markup',
-        ok(k.markup) ? `Los costos pueden subir hasta ${pct(k.markup)} antes de que el proyecto pierda dinero.` : '—'),
-      kpiCard('rentDH', clp(k.rentDH), '/ DH', 'rentDH',
-        ok(k.rentDH) ? `Venta por día-hombre: ${clp(k.ventaDH)}.${meta > 0 ? ` Meta: ${clp(meta)}.` : ' Define una meta en Ficha y parámetros para activar el semáforo.'}` : 'No hay días-hombre registrados.',
-        ok(k.rentDH) && meta > 0 ? medidor({ v: k.rentDH, max: Math.max(meta * 1.5, k.rentDH * 1.1), fill: st.rentDH, fmt: (x) => clp(x), label: 'Utilidad por DH frente a la meta',
-          ticks: [{ at: meta * 0.8, dash: true, tip: `80 % de la meta: ${clp(meta * 0.8)}` }, { at: meta, show: true, tip: `Meta ${clp(meta)}` }] }) : ''),
-      kpiCard('dh', nf(k.dh), 'DH', 'dh',
-        k.dh ? `Costo promedio de mano de obra: ${clp(k.costoMODH)} por día-hombre.` : 'Registra tareas en Mano de obra.'),
-      kpiCard('incidenciaMO', pct(k.incidenciaMO), '', 'incidenciaMO',
-        ok(k.incidenciaMO) ? `La MO es ${pct(k.incidenciaMO)} del precio y ${pct(t.cd ? t.mo / t.cd : null)} del costo directo.` : '—',
-        ok(k.incidenciaMO) ? `<div class="stack" style="height:10px;margin:8px 0 4px" role="img" aria-label="Peso de la mano de obra en el precio">${k.incidenciaMO > 0 ? `<div class="seg cat-mo" style="flex:${k.incidenciaMO} 1 0"></div>` : ''}<div class="seg" style="flex:${Math.max(0, 1 - k.incidenciaMO)} 1 0;background:var(--surface-1);box-shadow:inset 0 0 0 1px var(--gridline)"></div></div>` : ''),
-      kpiCard('holguraMO', pct(k.holguraMO), '', 'holguraMO',
-        ok(k.holguraMO) ? `Si la mano de obra cuesta más de ${pct(k.holguraMO)} sobre lo presupuestado, el proyecto pierde dinero.` : 'No hay costo de mano de obra.'),
-      kpiCard('competitividad', k.competitividad === null ? '—' : pct(k.competitividad), '', 'competitividad', compRead)
+      grupo('Rentabilidad', [
+        kpiCard('margen', pct(k.margen), '', 'margen',
+          ok(k.margen) ? `De cada $100 vendidos quedan $${fNum.format(Math.round(k.margen * 1000) / 10)} de utilidad.` : 'Sin ventas aún.',
+          ok(k.margen) ? medMargen() : ''),
+        kpiCard('markup', pct(k.markup), '', 'markup',
+          ok(k.markup) ? `Los costos pueden subir hasta ${pct(k.markup)} antes de que el proyecto pierda dinero.` : '—',
+          ok(k.markup) && rObj !== null ? medidor({ v: Math.max(0, k.markup), max: Math.max(rObj * 1.5, Math.ceil((k.markup + 0.1) * 10) / 10), fill: st.markup, fmt: pctShort, label: 'Recargo frente a las metas',
+            ticks: [{ at: rMin, dash: true, show: true, tip: `Equivale al margen mínimo: ${pct(rMin)}` }, { at: rObj, show: true, tip: `Equivale al margen objetivo: ${pct(rObj)}` }] }) : ''),
+        kpiCard('rentDH', clp(k.rentDH), '/ DH', 'rentDH',
+          ok(k.rentDH) ? `Venta por día-hombre: ${clp(k.ventaDH)}.${meta > 0 ? ` Meta: ${clp(meta)}.` : ' Define una meta en Ficha y parámetros para activar el semáforo.'}` : 'No hay días-hombre registrados.',
+          ok(k.rentDH) && meta > 0 ? medidor({ v: k.rentDH, max: Math.max(meta * 1.5, k.rentDH * 1.1), fill: st.rentDH, fmt: (x) => clp(x), label: 'Utilidad por DH frente a la meta',
+            ticks: [{ at: meta * 0.8, dash: true, tip: `80 % de la meta: ${clp(meta * 0.8)}` }, { at: meta, show: true, tip: `Meta ${clp(meta)}` }] }) : '')
+      ]),
+      grupo('Mano de obra', [
+        kpiCard('dh', nf(k.dh), 'DH', 'dh',
+          k.dh ? `Costo promedio de mano de obra: ${clp(k.costoMODH)} por día-hombre.` : 'Registra tareas en Mano de obra.'),
+        kpiCard('incidenciaMO', pct(k.incidenciaMO), '', 'incidenciaMO',
+          ok(k.incidenciaMO) ? `La MO es ${pct(k.incidenciaMO)} del precio y ${pct(t.cd ? t.mo / t.cd : null)} del costo directo.` : '—',
+          ok(k.incidenciaMO) ? `<div class="stack barra-kpi" role="img" aria-label="Peso de la mano de obra en el precio">${k.incidenciaMO > 0 ? `<div class="seg cat-mo" style="flex:${k.incidenciaMO} 1 0"></div>` : ''}<div class="seg resto" style="flex:${Math.max(0, 1 - k.incidenciaMO)} 1 0"></div></div>` : ''),
+        kpiCard('holguraMO', pct(k.holguraMO), '', 'holguraMO',
+          ok(k.holguraMO) ? `Si la mano de obra cuesta más de ${pct(k.holguraMO)} sobre lo presupuestado, el proyecto pierde dinero.` : 'No hay costo de mano de obra.')
+      ]),
+      grupo('Frente al mandante y al riesgo', [
+        kpiCard('competitividad', k.competitividad === null ? '—' : pct(k.competitividad), '', 'competitividad', compRead,
+          k.competitividad === null ? '' : medComp()),
+        kpiCard('sensibilidad', pct(k.sensVarUtilidad), '', 'sensibilidad',
+          (escenario.length && ok(k.sensVarUtilidad)
+            ? `Con ${esc(escenario.join(', '))} la utilidad queda en ${clp(k.sensUtilidad)} y el margen en ${pct(k.sensMargen)}.`
+            : 'No hay alzas de costo simuladas.') + ` <button type="button" class="link-btn no-print" data-act="scroll" data-to="sensibilidad">Ajustar escenario</button>`)
+      ])
     ].join('');
 
-    // Sensibilidad
+    // Sensibilidad: oferta actual frente al escenario simulado
     const sd = KP.byKey.sensibilidad;
-    const ts = TILE[st.sensibilidad] || '';
-    $('#res-sens').innerHTML = `<div class="grupo-resultados dos">
-        <div class="resultado-tile"><div class="valor">${clp(k.sensDeltaCosto)}</div><div class="etiqueta">Sobrecosto simulado</div></div>
-        <div class="resultado-tile"><div class="valor">${pct(k.sensVarUtilidad)}</div><div class="etiqueta">Variación de la utilidad · Excel: ${esc(sd.origen)}</div></div>
-        <div class="resultado-tile ${ts}"><div class="valor">${clp(k.sensUtilidad)}</div><div class="etiqueta">Utilidad en el escenario</div></div>
-        <div class="resultado-tile ${ts}"><div class="valor">${pct(k.sensMargen)}</div><div class="etiqueta">Margen en el escenario</div></div>
-        <div class="resultado-tile ancho"><div class="etiqueta" style="margin:0">${chip(st.sensibilidad, 'sensibilidad')} ${esc(sd.lectura)}</div></div>
+    const signo = (v, f) => (!ok(v) ? '—' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${f(Math.abs(v))}`);
+    const dMargen = ok(k.sensMargen) && ok(k.margen) ? Math.round((k.sensMargen - k.margen) * 1000) / 10 : null;
+    $('#res-sens').innerHTML = `<div class="panel">
+        <table class="comp-tbl">
+          <thead><tr><th></th><th class="num">Oferta actual</th><th class="num">Con el escenario</th><th class="num">Diferencia</th></tr></thead>
+          <tbody>
+            <tr><td>Precio neto</td><td class="num">${clp(t.precioNeto)}</td><td class="num">${clp(t.precioNeto)}</td><td class="num muted">Se mantiene</td></tr>
+            <tr><td>Costo total</td><td class="num">${clp(t.costoTotal)}</td><td class="num">${clp(t.costoTotal + k.sensDeltaCosto)}</td><td class="num">${signo(k.sensDeltaCosto, clp)}</td></tr>
+            <tr><td>Utilidad</td><td class="num">${clp(t.utilidad)}</td><td class="num">${clp(k.sensUtilidad)}</td><td class="num">${signo(k.sensVarUtilidad, pct)}</td></tr>
+            <tr class="clave"><td>Margen sobre venta</td><td class="num">${pct(k.margen)}</td><td class="num tone-${st.sensibilidad}">${pct(k.sensMargen)}</td><td class="num">${dMargen === null ? '—' : signo(dMargen, (x) => `${nf(x)} pts`)}</td></tr>
+          </tbody>
+        </table>
+        <p class="sens-lectura">${chip(st.sensibilidad, 'sensibilidad')}<span>${esc(sd.lectura)}</span></p>
       </div>`;
 
-    // Precio por partida: barras apiladas con la misma paleta
+    // Composición del precio: proyecto completo
+    const segs = [
+      { ...CATS[0], v: t.mat }, { ...CATS[1], v: t.eq }, { ...CATS[2], v: t.mo }, { ...CATS[3], v: t.otros },
+      { ...CATS[4], v: t.gg + t.imp }, { ...CATS[5], v: t.utilidad }
+    ].filter((sg) => sg.k !== 'gg' || hasGG);
+    const base = segs.reduce((a, sg) => a + Math.max(0, sg.v), 0);
+    const bar = base > 0 ? `<div class="stack lg" role="img" aria-label="Composición del precio neto">${segs.filter((sg) => sg.v > 0).map((sg) =>
+      `<div class="seg ${sg.cls}" style="flex:${sg.v} 1 0" data-tip="<b>${esc(sg.n)}</b>${esc(clp(sg.v))} · ${esc(pct(t.precioNeto ? sg.v / t.precioNeto : null))} del precio neto"></div>`).join('')}</div>` : '';
+    $('#res-comp').innerHTML = base > 0 ? `${bar}
+      <table class="leyenda"><tbody>${segs.map((sg) => `<tr class="${sg.v ? '' : 'cero'}"><td><span class="nombre"><span class="swatch ${sg.cls}"></span>${sg.n}</span></td><td class="num">${clp(sg.v)}</td><td class="num" style="width:70px">${pct(t.precioNeto ? sg.v / t.precioNeto : null)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td>Precio de venta neto</td><td class="num">${clp(t.precioNeto)}</td><td class="num">${t.precioNeto ? '100,0 %' : '—'}</td></tr></tfoot></table>
+      ${t.utilidad < 0 ? '<p class="small tone-bad" style="margin:8px 0 0;font-weight:700">La utilidad es negativa: el precio no cubre los costos.</p>' : ''}`
+      : '<p class="small muted" style="margin:0">Agrega partidas y costos para ver la composición del precio.</p>';
+
+    // Composición del precio: por partida, con la misma paleta
     const maxP = r.partidas.reduce((a, pt) => Math.max(a, pt.precio), 0);
-    $('#res-pbar').innerHTML = r.partidas.length && maxP > 0 ? `${r.partidas.map((pt) => {
+    $('#res-pbar').innerHTML = r.partidas.length && maxP > 0 ? r.partidas.map((pt) => {
       const vals = [
         { ...CATS[0], v: pt.mat }, { ...CATS[1], v: pt.eq }, { ...CATS[2], v: pt.mo }, { ...CATS[3], v: pt.otros },
         { ...CATS[4], v: pt.ggimp }, { ...CATS[5], v: pt.utilidad }
@@ -1310,11 +1476,9 @@
           `<div class="seg ${x.cls}" style="flex:${x.v} 1 0" data-tip="<b>${esc(pt.code)} · ${esc(x.n)}</b>${esc(clp(x.v))} · ${esc(pct(pt.precio ? x.v / pt.precio : null))} de la partida"></div>`).join('')}</div></div>
         <div class="val">${clp(pt.precio)}</div>
       </div>`;
-    }).join('')}
-      <div class="leyenda-inline">${CATS.filter((c) => c.k !== 'gg' || hasGG).map((c) => `<span><span class="swatch ${c.cls}"></span>${c.n}</span>`).join('')}</div>`
-      : '<p class="small muted" style="margin:0">Agrega partidas con costos para comparar su precio.</p>';
+    }).join('') : '<p class="small muted" style="margin:0">Agrega partidas con costos para comparar su precio.</p>';
 
-    // Resumen por partida (con APU)
+    // Detalle por partida (con APU)
     const rowsP = r.partidas.map((pt) => {
       const open = state.apuOpen.has(pt.uid);
       const apu = open ? `<tr class="apu-row"><td colspan="13"><div class="apu-panel">${apuTable(pt)}</div></td></tr>` : '';
@@ -1336,7 +1500,6 @@
     </table></div>`;
 
     // Alertas
-    const ws = r.warnings;
     const tabLabel = (id) => (TABS.find((x) => x.id === id) || {}).label || id;
     $('#res-alerts').innerHTML = ws.length ? `<ul class="lista-atencion">${ws.map((w) => `
       <li><span class="marca ${w.level}" aria-hidden="true"></span><span class="motivo"><span class="visualmente-oculto">${w.level === 'error' ? 'Error: ' : 'Aviso: '}</span>${esc(w.msg)}</span>
@@ -1476,6 +1639,8 @@
       }
       const same = it[el.dataset.k] === v;
       if (!same) it[el.dataset.k] = v;
+      // Una partida editada a mano ya no se toca al "Deshacer" una acción masiva
+      if (!same && el.dataset.list === 'partidas' && /^utilidad(Tipo|Valor)$/.test(el.dataset.k) && undoVigente()) state.utilUndo.antes.delete(it.uid);
       if (e.type === 'change' && el.hasAttribute('data-rerender')) { recalc(); renderTab(focusKeyOf(el)); scheduleSave(); return; }
       if (same) return;
       touched = true;
@@ -1797,9 +1962,10 @@
         case 'apply-util': {
           const v = parseFloat($('#util-all').value);
           if (!Number.isFinite(v)) { toast('Ingresa el % de recargo a aplicar.', true); $('#util-all').focus(); break; }
+          guardarUndo(`Recargo de ${nf(v)} % para todas`);
           p.partidas.forEach((pt) => { pt.utilidadTipo = 'pct'; pt.utilidadValor = v; });
-          recalc(); renderTab(); scheduleSave();
-          toast(`Recargo de ${nf(v)} % aplicado a ${plural(p.partidas.length, 'partida')}`);
+          recalc(); renderTab('[data-act="apply-util"]'); scheduleSave();
+          toast(`Recargo de ${nf(v)} % aplicado a ${plural(p.partidas.length, 'partida')}. «Deshacer» vuelve a tus valores.`);
           break;
         }
         case 'util-objetivo': {
@@ -1809,9 +1975,40 @@
           // margen = r / (1 + gg + imp + r)  →  r = m (1 + gg + imp) / (1 − m)
           const g = (num(par.gastosGenerales) + num(par.imprevistos)) / 100;
           const rec = Math.round((m * (1 + g) / (1 - m)) * 10000) / 100;
+          guardarUndo(`Llevar al margen objetivo (${nf(num(par.margenObjetivo))} %)`);
           p.partidas.forEach((pt) => { pt.utilidadTipo = 'pct'; pt.utilidadValor = rec; });
-          recalc(); renderTab(); scheduleSave();
-          toast(`Recargo de ${nf(rec)} % aplicado: margen ${pct(state.result.kpis.margen)}`);
+          recalc(); renderTab('[data-act="util-objetivo"]'); scheduleSave();
+          toast(`Recargo de ${nf(rec)} % aplicado: margen ${pct(state.result.kpis.margen)}. «Deshacer» vuelve a tus valores.`);
+          break;
+        }
+        case 'util-deshacer': {
+          const u = undoVigente();
+          if (!u) { toast('No hay cambios automáticos de utilidad que deshacer.'); break; }
+          let n = 0;
+          p.partidas.forEach((pt) => {
+            const a = u.antes.get(pt.uid);
+            if (a) { pt.utilidadTipo = a.utilidadTipo; pt.utilidadValor = a.utilidadValor; n++; }
+          });
+          state.utilUndo = null;
+          recalc(); renderTab('#util-undo'); scheduleSave();
+          toast(`Utilidad ingresada a mano restaurada en ${plural(n, 'partida')}: margen ${pct(state.result.kpis.margen)}`);
+          break;
+        }
+        case 'copiar': {
+          if (!(await copiarTexto(d.v))) { toast('No se pudo copiar. Selecciona el valor y usa Ctrl+C.', true); break; }
+          marcarCopiado(btn);
+          toast(`Copiado: ${d.v} (${d.lbl})`);
+          break;
+        }
+        case 'copiar-tabla': {
+          if (!(await copiarTexto(tablaCotizacion()))) { toast('No se pudo copiar la tabla.', true); break; }
+          marcarCopiado(btn);
+          toast(`Tabla de ${plural(p.partidas.length, 'partida')} copiada: pégala en Excel o Word`);
+          break;
+        }
+        case 'scroll': {
+          const el = $('#' + d.to);
+          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
           break;
         }
         case 'add-cat': p.catalogoOtros.push({ descripcion: '', unidad: 'Un.', costoUnitario: 0 }); renderTab(`[data-cat="${p.catalogoOtros.length - 1}"][data-k="descripcion"]`); scheduleSave(); break;
