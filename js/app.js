@@ -1,7 +1,8 @@
 /*
  * app.js — Interfaz de la herramienta de formulación de proyectos QUEMPIN.
  * Vistas: listado de proyectos (#/), editor de proyecto (#/p/<id>/<pestaña>) y guía de KPIs (#/guia).
- * La utilidad de cada partida se ingresa en la pestaña "Resumen y KPIs", junto a los indicadores
+ * El editor se recorre en 5 pasos: datos, partidas, costos, utilidad y precio, y evaluación.
+ * La utilidad de cada partida se ingresa en el paso «Utilidad y precio», junto al margen
  * que cambia, para ver el efecto al instante.
  */
 (function () {
@@ -61,6 +62,9 @@
     target: svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>'),
     x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
     arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
+    luna: svg('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>'),
+    sol: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+    help: svg('<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .8-1 1.5v.5M12 17h.01"/>'),
     user: svg('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>'),
     users: svg('<circle cx="9" cy="8" r="3.5"/><path d="M2 20a7 7 0 0 1 14 0M16 4.5a3.5 3.5 0 0 1 0 7M18 13.5a7 7 0 0 1 4 6.5"/>'),
     logout: svg('<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/>'),
@@ -80,6 +84,9 @@
     filtro: { materiales: '', equipos: '', manoObra: '', otros: '' },
     apuOpen: new Set(),
     kpiOpen: new Set(),
+    abiertos: new Set(), // secciones desplegables abiertas (parámetros de la ficha, ayudas)
+    costoTab: 'materiales', // último tipo de costo visitado: el paso 3 vuelve ahí
+    imprimir: false, // true mientras se imprime: utilidad y evaluación en una sola página
     /* Utilidad que había antes de "Aplicar" / "Llevar al margen objetivo", para "Deshacer":
        { puid, antes: Map(uid de partida → { utilidadTipo, utilidadValor }), accion } */
     utilUndo: null,
@@ -95,15 +102,41 @@
     manoObra: { titulo: 'Mano de obra', singular: 'tarea', total: 'mo', factory: S.newManoObra, cat: 'cat-mo' },
     otros: { titulo: 'Otros', singular: 'costo', total: 'otros', factory: S.newOtro, cat: 'cat-otros' }
   };
+  /* Vistas del editor. Se agrupan en 5 pasos numerados (PASOS): los cuatro tipos de
+     costo son subpestañas del paso 3. Los id se mantienen para no romper enlaces guardados. */
   const TABS = [
-    { id: 'ficha', label: 'Ficha y parámetros' },
-    { id: 'partidas', label: 'Partidas', list: 'partidas' },
-    { id: 'materiales', label: 'Materiales', list: 'materiales' },
-    { id: 'equipos', label: 'Equipos', list: 'equipos' },
-    { id: 'manoObra', label: 'Mano de obra', list: 'manoObra' },
-    { id: 'otros', label: 'Otros', list: 'otros' },
-    { id: 'resumen', label: 'Resumen y KPIs' }
+    { id: 'ficha', label: 'Datos del proyecto', paso: 1 },
+    { id: 'partidas', label: 'Partidas', list: 'partidas', paso: 2 },
+    { id: 'materiales', label: 'Materiales', list: 'materiales', paso: 3 },
+    { id: 'equipos', label: 'Equipos', list: 'equipos', paso: 3 },
+    { id: 'manoObra', label: 'Mano de obra', list: 'manoObra', paso: 3 },
+    { id: 'otros', label: 'Otros', list: 'otros', paso: 3 },
+    { id: 'resumen', label: 'Utilidad y precio', paso: 4 },
+    { id: 'evaluacion', label: 'Evaluación', paso: 5 }
   ];
+  const COSTOS = ['materiales', 'equipos', 'manoObra', 'otros'];
+  const PASOS = [
+    { n: 1, label: 'Datos', tabs: ['ficha'] },
+    { n: 2, label: 'Partidas', tabs: ['partidas'] },
+    { n: 3, label: 'Costos', tabs: COSTOS },
+    { n: 4, label: 'Utilidad y precio', tabs: ['resumen'] },
+    { n: 5, label: 'Evaluación', tabs: ['evaluacion'] }
+  ];
+  const tabInfo = (id) => TABS.find((t) => t.id === id) || TABS[0];
+  /* Orden de recorrido con «Siguiente»: pasa por cada tipo de costo */
+  const ORDEN = TABS.map((t) => t.id);
+
+  /* Qué es cada vista, en una frase, y cómo se usa (ayuda desplegable) */
+  const PROPOSITO = {
+    ficha: 'Identifica el proyecto. Los parámetros de cálculo ya vienen con los valores habituales.',
+    partidas: 'Divide el trabajo en partidas, por ejemplo «3 medidores de 2"».',
+    materiales: 'Insumos de cada partida, por una unidad de la partida: la herramienta multiplica por su cantidad.',
+    equipos: 'Equipos que se compran o arriendan, por una unidad de la partida.',
+    manoObra: 'Personas y días por nivel para ejecutar una unidad de la partida.',
+    otros: 'Traslados, viáticos y otros gastos por unidad de partida.',
+    resumen: 'Define la utilidad de cada partida y copia los valores para la cotización.',
+    evaluacion: '¿Conviene enviar la oferta? Rentabilidad, riesgo y presupuesto del mandante.'
+  };
 
   /* Categorías de costo en los gráficos: colores oficiales y, cuando se acaban,
      texturas con esos mismos colores (ver css/styles.css). Orden y color fijos. */
@@ -335,6 +368,8 @@
     } else if (key === 'proj' || key === 'editor-more') {
       const enEditor = key === 'editor-more';
       items = [
+        enEditor ? { icon: ICON.print, title: 'Imprimir resumen', desc: 'Utilidad, precio y evaluación en una página', act: 'imprimir' } : null,
+        enEditor ? { sep: true } : null,
         enEditor ? null : { icon: ICON.open, title: 'Abrir', act: 'abrir', id },
         enEditor ? null : { icon: ICON.sheet, title: 'Exportar a Excel', desc: 'Planilla con fórmulas vivas y ficha de KPI', act: 'exp-xlsx', id },
         { icon: ICON.file, title: 'Exportar a JSON', desc: 'Para respaldar o compartir y volver a importar', act: 'exp-json', id },
@@ -356,17 +391,46 @@
         { icon: ICON.logout, title: 'Cerrar sesión', act: 'salir' }
       ].filter(Boolean);
       extra = { minWidth: 300 };
+    } else if (key === 'fila') {
+      const list = btn.dataset.list, uid = btn.dataset.uid;
+      if (list === 'partidas') {
+        const arr = state.project.partidas;
+        const i = arr.findIndex((x) => x.uid === uid);
+        items = [
+          { icon: ICON.layers, title: 'Ver o agregar sus costos', desc: `Costos · ${DETALLE[state.costoTab].titulo}, solo de esta partida`, act: 'ver-costos', uid },
+          { sep: true },
+          { icon: ICON.up, title: 'Subir', act: 'mover', list, uid, dir: '-1', disabled: i <= 0 },
+          { icon: ICON.down, title: 'Bajar', act: 'mover', list, uid, dir: '1', disabled: i >= arr.length - 1 },
+          { sep: true },
+          { icon: ICON.trash, title: 'Eliminar partida', act: 'del-row', list, uid, danger: true }
+        ];
+      } else {
+        items = [
+          { icon: ICON.copy, title: 'Duplicar fila', desc: 'Copia justo debajo, con la misma partida', act: 'dup-row', list, uid },
+          { sep: true },
+          { icon: ICON.trash, title: 'Eliminar', act: 'del-row', list, uid, danger: true }
+        ];
+      }
+    } else if (key === 'alertas') {
+      // Alertas de validación: cada una lleva directo a la fila que hay que corregir
+      const ws = state.result.warnings.filter((w) => w.level !== 'info');
+      items = ws.length ? ws.map((w) => ({
+        lead: `<span class="marca-pop ${w.level}" aria-hidden="true"></span>`,
+        title: w.msg, desc: w.tab ? `Corregir en ${tabInfo(w.tab).label} →` : '',
+        act: 'ir', tab: w.tab, uid: w.uid || ''
+      })) : [{ title: 'Sin alertas', desc: 'Todos los costos están asociados a una partida y tienen valores.', disabled: true }];
+      extra = { minWidth: 340, foot: '<button type="button" class="link-btn" data-act="tab" data-tab="evaluacion" data-focus="veredicto">Ver la evaluación completa</button>' };
     } else if (key === 'catalogo') {
       const cat = state.project.catalogoOtros || [];
       items = cat.length ? cat.map((c, i) => ({ icon: ICON.plus, title: c.descripcion || 'Sin descripción', right: `${clp(num(c.costoUnitario))} / ${c.unidad || 'un'}`, catIdx: i }))
-        : [{ title: 'El catálogo está vacío', desc: 'Agrega referencias en Ficha y parámetros', disabled: true }];
-      extra = { foot: '<button type="button" class="link-btn" data-act="tab" data-tab="ficha" data-focus="catalogo">Editar el catálogo en Ficha y parámetros</button>', minWidth: 320, search: cat.length > 8 ? 'Buscar en el catálogo' : '' };
+        : [{ title: 'El catálogo está vacío', desc: 'Agrega referencias en Datos del proyecto', disabled: true }];
+      extra = { foot: '<button type="button" class="link-btn" data-act="tab" data-tab="ficha" data-focus="catalogo">Editar el catálogo en Datos del proyecto</button>', minWidth: 320, search: cat.length > 8 ? 'Buscar en el catálogo' : '' };
     }
     openPop(btn, Object.assign({
       kind: 'menu', align: btn.dataset.align || 'right', label: btn.getAttribute('aria-label') || btn.textContent.trim(), items,
       onPick: (it) => {
         if (it.catIdx !== undefined) addFromCatalog(it.catIdx);
-        else if (it.act) doAct(it.act, { id: it.id });
+        else if (it.act) doAct(it.act, { id: it.id, tab: it.tab, uid: it.uid, list: it.list, dir: it.dir });
       }
     }, extra));
   }
@@ -558,10 +622,20 @@
       tr.classList.toggle('has-warn', l === 'warn');
       if (msgs.has(tr.dataset.row)) tr.title = msgs.get(tr.dataset.row); else tr.removeAttribute('title');
     });
+    // Conteo de ítems por tipo de costo (subpestañas del paso 3)
+    $$('[data-count]', app).forEach((el) => {
+      const k = el.dataset.count;
+      el.textContent = state.project[k].length;
+      el.classList.toggle('err', r.warnings.some((w) => w.tab === k && w.level === 'error'));
+    });
+    // Ayuda emergente con el cálculo de cada subtotal
+    $$('[data-formula]', app).forEach((el) => { el.dataset.tip = formulaLinea(el.dataset.formula); });
     renderLectura();
     updateTabs();
     updateHeader();
-    if (state.tab === 'resumen') refreshResumen();
+    refreshFicha();
+    refreshResumen();
+    pintarFalta();
   }
 
   // ---------------------------------------------------------------------------
@@ -599,15 +673,15 @@
     const p = state.project;
     if (nube.activa && !nube.lista) {
       $('#modnav').innerHTML = `<a class="viz-modnav-tab ${where === 'guia' ? '' : 'is-active'}" href="#/">Ingreso</a>
-        <a class="viz-modnav-tab ${where === 'guia' ? 'is-active' : ''}" href="#/guia">Guía de KPIs</a>`;
+        <a class="viz-modnav-tab ${where === 'guia' ? 'is-active' : ''}" href="#/guia">Guía de uso</a>`;
       return;
     }
     $('#modnav').innerHTML = `
       <a class="viz-modnav-tab ${where === 'lista' ? 'is-active' : ''}" href="#/" ${where === 'lista' ? 'aria-current="page"' : ''}>Proyectos</a>
       ${p ? `<a class="viz-modnav-tab is-active" id="modnav-proj" href="#/p/${p.uid}/${state.tab}" aria-current="page"><span></span></a>` : ''}
-      <a class="viz-modnav-tab ${where === 'guia' ? 'is-active' : ''}" href="#/guia" ${where === 'guia' ? 'aria-current="page"' : ''}>Guía de KPIs</a>`;
+      <a class="viz-modnav-tab ${where === 'guia' ? 'is-active' : ''}" href="#/guia" ${where === 'guia' ? 'aria-current="page"' : ''}>Guía de uso</a>`;
     const sub = $('#hdr-sub');
-    if (where === 'guia') sub.textContent = 'Qué mide cada indicador y cómo se calcula';
+    if (where === 'guia') sub.textContent = 'Cómo formular un proyecto y leer su evaluación';
     else if (where === 'lista') sub.textContent = 'Costos, precio y evaluación de ofertas por partida';
     if (p) updateHeader();
   }
@@ -627,7 +701,7 @@
       <div class="page-head">
         <div>
           <h2>Proyectos formulados</h2>
-          <p>Formula el costo de cada proyecto por partidas, define la utilidad y evalúa la oferta con sus indicadores antes de enviarla.</p>
+          <p>Abre un proyecto para seguir formulándolo o crea uno nuevo.</p>
         </div>
         ${all.length ? `<div class="actions">
           <button class="btn btn-primario" data-act="nuevo">${ICON.plus}Nuevo proyecto</button>
@@ -637,26 +711,21 @@
       </div>
       ${all.length ? `
         <div class="kpis" id="list-kpis"></div>
-        <div class="panel" id="list-cartera" style="margin:16px 0"></div>
         <div class="viz-filterbar">
           <div class="viz-filtergrid">
-            <div class="viz-field span-6"><label for="list-search">Buscar</label>
+            <div class="viz-field span-8"><label for="list-search">Buscar</label>
               <input type="search" id="list-search" class="${L.q ? 'is-set' : ''}" placeholder="Código, título, cliente, ubicación o responsable" value="${esc(L.q)}" autocomplete="off"></div>
-            <div class="viz-field span-3"><label for="list-estado">Estado</label>
-              <select id="list-estado" class="${L.estado ? 'is-set' : ''}">
-                <option value="">Todos los estados</option>
-                ${S.ESTADOS.map((e) => `<option value="${esc(e)}" ${L.estado === e ? 'selected' : ''}>${esc(e)}</option>`).join('')}
-              </select></div>
-            <div class="viz-field span-3"><label for="list-resp">Responsable</label>
+            <div class="viz-field span-4"><label for="list-resp">Responsable</label>
               <select id="list-resp" class="${L.resp ? 'is-set' : ''}" ${responsables.length ? '' : 'disabled'}>
                 <option value="">${responsables.length ? 'Todos los responsables' : 'Sin responsables asignados'}</option>
                 ${responsables.map((r) => `<option value="${esc(r)}" ${L.resp === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}
               </select></div>
           </div>
+          <div class="filtro-estados" id="list-cartera" role="group" aria-label="Filtrar por estado"></div>
           <div class="viz-filterfoot" id="list-foot"></div>
         </div>
         <div class="tabla-contenedor">
-          <table class="tbl" id="list-table" style="min-width:980px">
+          <table class="tbl tbl-apilable tbl-lista" id="list-table" style="min-width:980px">
             <thead id="list-head"></thead>
             <tbody id="list-body"></tbody>
           </table>
@@ -666,15 +735,24 @@
   }
 
   function emptyHub() {
-    const card = (icon, titulo, normas, desc, btn) => `<article class="hub-card">
-      <div class="hub-card-cabecera"><div class="icon" aria-hidden="true">${icon}</div><div><h3>${titulo}</h3><div class="hub-normas">${normas}</div></div></div>
+    const card = (icon, titulo, desc, btn) => `<article class="hub-card">
+      <div class="hub-card-cabecera"><div class="icon" aria-hidden="true">${icon}</div><h3>${titulo}</h3></div>
       <p class="desc">${desc}</p>${btn}</article>`;
     return `<div class="hub-grid">
-      ${card(ICON.plus, 'Nuevo proyecto', 'Ficha · partidas · costos', 'Parte de cero. El código correlativo se asigna solo y los parámetros (IVA, tarifas, metas) vienen con los valores habituales.', `<button class="btn btn-primario" data-act="nuevo">Crear proyecto →</button>`)}
-      ${card(ICON.sparkle, 'Proyecto de ejemplo', 'Mismos datos del Excel original', 'Tres partidas de instalación de medidores de gas natural, para revisar cómo funciona y comprobar que el resultado coincide con el Excel.', `<button class="btn btn-primario" data-act="ejemplo">Cargar ejemplo →</button>`)}
-      ${card(ICON.upload, 'Importar archivo', '.xlsx · .xlsm · .json', 'Trae un proyecto exportado desde esta herramienta o migra un Excel de formulación antiguo (.xlsm) para seguir trabajándolo aquí.', `<button class="btn btn-primario" data-act="importar">Importar archivo →</button>`)}
+      ${card(ICON.plus, 'Nuevo proyecto', 'Parte de cero con los parámetros habituales de QUEMPIN (IVA, tarifas y metas).', `<button class="btn btn-primario" data-act="nuevo">Crear proyecto →</button>`)}
+      ${card(ICON.sparkle, 'Proyecto de ejemplo', 'Tres partidas de medidores de gas natural con los datos del Excel original, para ver cómo funciona.', `<button class="btn" data-act="ejemplo">Cargar ejemplo</button>`)}
+      ${card(ICON.upload, 'Importar archivo', 'Un proyecto exportado desde aquí (.xlsx o .json) o un Excel de formulación antiguo (.xlsm).', `<button class="btn" data-act="importar">Importar archivo</button>`)}
     </div>
-    <p class="viz-footer" style="text-align:left;padding-top:14px">${esc(textoDonde())}</p>`;
+    <section class="section">
+      <div class="section-head"><h3 class="seccion-titulo">Cómo se formula un proyecto</h3><a href="#/guia">Guía de uso</a></div>
+      <ol class="pasos-mini">
+        <li><b>Datos</b><span>Título, cliente y parámetros</span></li>
+        <li><b>Partidas</b><span>En qué se divide el trabajo</span></li>
+        <li><b>Costos</b><span>Materiales, equipos, mano de obra y otros</span></li>
+        <li><b>Utilidad y precio</b><span>Valores para la cotización</span></li>
+        <li><b>Evaluación</b><span>¿Conviene enviar la oferta?</span></li>
+      </ol>
+    </section>`;
   }
 
   function listFiltered() {
@@ -717,29 +795,25 @@
     const conErr = list.filter((p) => rs.get(p.uid).warnings.some((w) => w.level === 'error')).length;
     const cerradas = adj.length + perd.length;
     el.innerHTML = [
-      kpiTop('Proyectos', String(list.length), `${enCurso.length} en curso · ${plural(adj.length, 'adjudicado')}`),
-      kpiTop('Ofertas en curso', clp(enCurso.reduce((a, p) => a + precio(p), 0)), `Precio neto de ${plural(enCurso.length, 'oferta')} en borrador, revisión o enviadas`, 'accent', 'Suma del precio de venta neto (sin IVA) de los proyectos en estado Borrador, En revisión o Enviada.'),
-      kpiTop('Adjudicado', clp(adj.reduce((a, p) => a + precio(p), 0)), cerradas ? `Tasa de adjudicación ${pct(adj.length / cerradas)} (${adj.length} de ${cerradas} cerradas)` : 'Aún no hay ofertas adjudicadas ni perdidas', '', 'Precio neto de los proyectos adjudicados. La tasa compara adjudicadas contra adjudicadas + perdidas.'),
+      kpiTop('Ofertas en curso', clp(enCurso.reduce((a, p) => a + precio(p), 0)), `${plural(enCurso.length, 'oferta')} sin cerrar · precio neto`, 'accent', 'Suma del precio de venta neto (sin IVA) de los proyectos en estado Borrador, En revisión o Enviada.'),
+      kpiTop('Adjudicado', clp(adj.reduce((a, p) => a + precio(p), 0)), cerradas ? `Tasa de adjudicación ${pct(adj.length / cerradas)} (${adj.length} de ${cerradas} cerradas)` : 'Sin ofertas cerradas aún', '', 'Precio neto de los proyectos adjudicados. La tasa compara adjudicadas contra adjudicadas + perdidas.'),
       kpiTop('Margen ponderado', pct(margen), `Objetivo ${pct(mObj)} · mínimo ${pct(mMin)}`, semM, 'Utilidad total ÷ precio neto total, sin contar proyectos perdidos ni descartados. Las metas son las predeterminadas de Configuración.'),
-      kpiTop('Con errores', String(conErr), conErr ? 'Costos sin partida o cantidades en cero: revisa antes de exportar' : 'Todos los proyectos pasan la validación', conErr ? 'sem-bad' : 'sem-ok')
+      kpiTop('Con errores', String(conErr), conErr ? 'Revísalos antes de exportar' : 'Todos pasan la validación', conErr ? 'sem-bad' : 'sem-ok')
     ].join('');
   }
 
+  /* Filtro por estado: cada estado con su cantidad y su precio neto */
   function renderCartera(list, rs) {
     const el = $('#list-cartera');
     if (!el) return;
-    const rows = S.ESTADOS.map((e) => {
-      const ps = list.filter((p) => p.estado === e);
-      return { e, n: ps.length, v: ps.reduce((a, p) => a + Math.max(0, rs.get(p.uid).totals.precioNeto), 0) };
-    });
-    const total = rows.reduce((a, r) => a + r.v, 0);
     const L = state.list;
-    el.innerHTML = `<div class="section-head" style="margin-bottom:10px"><h3 class="seccion-titulo">Cartera por estado <span class="tn">· precio neto</span></h3><p>Haz clic en un estado para filtrar la tabla.</p></div>
-      ${total > 0 ? `<div class="stack lg" role="img" aria-label="Precio neto de la cartera por estado">${rows.filter((r) => r.v > 0).map((r) =>
-        `<div class="seg ${ESTADO_INFO[r.e].cls}" style="flex:${r.v} 1 0" data-tip="<b>${esc(r.e)}</b>${esc(clp(r.v))} · ${esc(pct(r.v / total))} · ${plural(r.n, 'proyecto')}"></div>`).join('')}</div>`
-        : '<p class="small muted" style="margin:0">Los proyectos filtrados aún no tienen precio.</p>'}
-      <div class="leyenda-inline" style="margin-top:12px">${rows.map((r) => `<button type="button" class="viz-chip" data-act="filtro-estado" data-e="${esc(r.e)}" aria-pressed="${L.estado === r.e}" style="${L.estado === r.e ? 'border-color:var(--brand-orange);box-shadow:inset 0 0 0 1px var(--brand-orange)' : ''}${r.n ? '' : ';opacity:.55'}">
-          <span class="swatch ${ESTADO_INFO[r.e].cls}"></span><span class="v">${esc(r.e)}</span><span class="k">${r.n} · ${esc(clp(r.v))}</span></button>`).join('')}</div>`;
+    el.innerHTML = `<span class="fe-l">Estado</span>` + S.ESTADOS.map((e) => {
+      const ps = list.filter((p) => p.estado === e);
+      const v = ps.reduce((a, p) => a + Math.max(0, rs.get(p.uid).totals.precioNeto), 0);
+      const on = L.estado === e;
+      return `<button type="button" class="viz-chip chip-estado ${on ? 'on' : ''}" data-act="filtro-estado" data-e="${esc(e)}" aria-pressed="${on}" ${ps.length || on ? '' : 'disabled'} title="${esc(ESTADO_INFO[e].desc)}">
+          <span class="swatch ${ESTADO_INFO[e].cls}" aria-hidden="true"></span><span class="v">${esc(e)}</span><span class="k">${ps.length}${v ? ` · ${esc(clp(v))}` : ''}</span></button>`;
+    }).join('');
   }
 
   function renderListFoot(n) {
@@ -759,7 +833,7 @@
   const LIST_COLS = [
     { k: 'codigo', l: 'Código' }, { k: 'titulo', l: 'Proyecto' }, { k: null, l: 'Responsable' },
     { k: 'fecha', l: 'Fecha' }, { k: 'estado', l: 'Estado' }, { k: 'precio', l: 'Precio neto', num: true },
-    { k: 'margen', l: 'Margen', num: true }, { k: 'rentDH', l: 'Utilidad / DH', num: true }, { k: null, l: 'Alertas', num: true }, { k: null, l: '' }
+    { k: 'margen', l: 'Margen', num: true }, { k: 'rentDH', l: 'Utilidad<span class="th-sub">por día-hombre</span>', num: true }, { k: null, l: 'Alertas', num: true }, { k: null, l: '<span class="visualmente-oculto">Acciones</span>' }
   ];
   function renderListHead() {
     const s = state.list.sort;
@@ -796,15 +870,15 @@
       const nAlert = r.warnings.filter((w) => w.level !== 'info').length;
       const nErr = r.warnings.filter((w) => w.level === 'error').length;
       return `<tr class="clickable" data-open="${p.uid}" tabindex="0" aria-label="Abrir ${esc(p.codigo)} ${esc(p.titulo || 'Sin título')}">
-        <td class="nowrap"><span class="code-badge">${esc(p.codigo || '—')}</span><span class="ver">v${esc(p.version)}</span></td>
-        <td style="min-width:240px"><div class="proj-title">${esc(p.titulo || 'Sin título')}</div><div class="proj-sub">${esc([p.cliente, p.ubicacion].filter(Boolean).join(' · ') || '—')}</div></td>
-        <td>${esc(p.responsable || '—')}</td>
-        <td class="nowrap">${esc(fechaCorta(p.fecha))}</td>
-        <td><span class="estado" data-e="${esc(p.estado)}">${esc(p.estado)}</span></td>
-        <td class="num"><b>${clp(r.totals.precioNeto)}</b></td>
-        <td class="num"><span class="dot ${r.status.margen}" aria-hidden="true"></span>${pct(r.kpis.margen)}</td>
-        <td class="num">${clp(r.kpis.rentDH)}</td>
-        <td class="num">${nAlert ? `<span class="chip ${nErr ? 'bad' : 'warn'}">${nErr ? '✖' : '▲'} ${nAlert}</span>` : '<span class="muted">0</span>'}</td>
+        <td class="nowrap code"><span class="code-badge">${esc(p.codigo || '—')}</span><span class="ver">v${esc(p.version)}</span></td>
+        <td class="col-titulo" style="min-width:240px"><div class="proj-title">${esc(p.titulo || 'Sin título')}</div><div class="proj-sub">${esc([p.cliente, p.ubicacion].filter(Boolean).join(' · ') || '—')}</div></td>
+        <td data-label="Responsable">${esc(p.responsable || '—')}</td>
+        <td class="nowrap" data-label="Fecha">${esc(fechaCorta(p.fecha))}</td>
+        <td data-label="Estado"><span class="estado" data-e="${esc(p.estado)}">${esc(p.estado)}</span></td>
+        <td class="num" data-label="Precio neto"><b>${clp(r.totals.precioNeto)}</b></td>
+        <td class="num" data-label="Margen"><span class="dot ${r.status.margen}" aria-hidden="true"></span>${pct(r.kpis.margen)}</td>
+        <td class="num" data-label="Utilidad por día-hombre">${clp(r.kpis.rentDH)}</td>
+        <td class="num" data-label="Alertas">${nAlert ? `<span class="chip ${nErr ? 'bad' : 'warn'}">${nErr ? '✖' : '▲'} ${nAlert}</span>` : '<span class="muted">0</span>'}</td>
         <td class="cell-actions"><button type="button" class="icon-btn" data-menu="proj" data-id="${p.uid}" aria-haspopup="menu" aria-expanded="false" aria-label="Acciones de ${esc(p.codigo)}">${ICON.more}</button></td>
       </tr>`;
     }).join('');
@@ -831,14 +905,12 @@
     app.innerHTML = `<div class="viz-container">
         <div class="editor-head">
           <div class="editor-title">
-            <a class="back" href="#/">← Proyectos</a>
             <h2 id="ed-title"></h2>
             <div class="meta" id="ed-meta"></div>
           </div>
           <div class="editor-actions">
             <div class="actions">
-              <button class="btn btn-primario" data-act="exp-xlsx" data-id="${p.uid}">${ICON.download}Exportar Excel</button>
-              <button class="btn" data-act="imprimir">${ICON.print}Imprimir resumen</button>
+              <button class="btn" data-act="exp-xlsx" data-id="${p.uid}">${ICON.download}Exportar Excel</button>
               <button class="btn" data-menu="editor-more" data-id="${p.uid}" aria-haspopup="menu" aria-expanded="false" aria-label="Más acciones del proyecto">${ICON.more}</button>
             </div>
             <span class="en-vivo ${textoGuardado()[1]}" id="save-state">${textoGuardado()[0]}</span>
@@ -847,8 +919,8 @@
       </div>
       <div class="barra-pestanas">
         <div class="viz-container barra-pestanas-interior">
-          <div class="tabs" role="tablist" aria-label="Secciones del proyecto" id="tabs"></div>
-          <div class="lectura" id="lectura" aria-live="off"></div>
+          <nav class="pasos-bar" aria-label="Pasos para formular el proyecto" id="tabs"></nav>
+          <div class="lectura" id="lectura"></div>
         </div>
       </div>
       <div class="viz-container page" id="tab-body"></div>`;
@@ -863,11 +935,11 @@
     t.classList.toggle('sin-titulo', !p.titulo);
     const sep = '<span class="sep" aria-hidden="true">·</span>';
     $('#ed-meta').innerHTML = `<span class="code-badge">${esc(p.codigo || 'SIN CÓDIGO')}</span><span>versión ${esc(p.version)}</span>
-      <button type="button" class="estado" data-e="${esc(p.estado)}" data-picker="estado" aria-haspopup="listbox" aria-expanded="false" title="Cambiar el estado">${esc(p.estado)}${svg('<path d="M6 9l6 6 6-6"/>')}</button>
+      <button type="button" class="estado" data-e="${esc(p.estado)}" data-picker="estado" aria-haspopup="listbox" aria-expanded="false" aria-label="Estado: ${esc(p.estado)}. Cambiar el estado">${esc(p.estado)}${svg('<path d="M6 9l6 6 6-6"/>')}</button>
       ${p.cliente ? `${sep}<span>${esc(p.cliente)}</span>` : ''}${p.responsable ? `${sep}<span>${esc(p.responsable)}</span>` : ''}${p.fecha ? `${sep}<span>${esc(fechaCorta(p.fecha))}</span>` : ''}`;
     document.title = `${p.codigo || ''} ${p.titulo || 'Proyecto'} — Formulación QUEMPIN`;
     const sub = $('#hdr-sub');
-    if (sub) sub.innerHTML = `<strong>${esc(p.codigo || 'Sin código')} v${esc(p.version)}</strong> · ${esc(p.titulo || 'Proyecto sin título')}`;
+    if (sub) sub.textContent = 'Costos, precio y evaluación de ofertas por partida';
     const mn = $('#modnav-proj');
     if (mn) {
       mn.href = `#/p/${p.uid}/${state.tab}`;
@@ -875,31 +947,72 @@
     }
   }
 
+  /* Lectura fija junto a los pasos: precio, margen y alertas (el botón de alertas abre la lista
+     y cada alerta lleva a la fila que hay que corregir) */
   function renderLectura() {
     const el = $('#lectura');
     if (!el) return;
     const r = state.result;
     const nErr = r.warnings.filter((w) => w.level === 'error').length;
     const nWarn = r.warnings.filter((w) => w.level === 'warn').length;
+    const txt = nErr || nWarn ? [nErr ? plural(nErr, 'error', 'errores') : '', nWarn ? plural(nWarn, 'aviso') : ''].filter(Boolean).join(' y ') : 'sin alertas';
     el.innerHTML = `
       <div class="lectura-item"><span class="l">Precio neto</span><span class="v">${clp(r.totals.precioNeto)}</span></div>
       <div class="lectura-item"><span class="l">Margen</span><span class="v"><span class="dot ${r.status.margen}" aria-hidden="true" style="margin:0"></span>${pct(r.kpis.margen)}</span></div>
-      <div class="lectura-item"><span class="l">Alertas</span><button type="button" class="v" data-act="ver-alertas" title="Ver alertas de validación">${nErr ? `<span class="chip bad">✖ ${nErr}</span>` : ''}${nWarn ? `<span class="chip warn">▲ ${nWarn}</span>` : ''}${!nErr && !nWarn ? '<span class="chip ok">✔ 0</span>' : ''}</button></div>`;
+      <div class="lectura-item"><span class="l">Alertas</span><button type="button" class="v" data-menu="alertas" aria-haspopup="menu" aria-expanded="false" aria-label="Alertas: ${txt}. Ver y corregir">${nErr ? `<span class="chip bad">✖ ${nErr}</span>` : ''}${nWarn ? `<span class="chip warn">▲ ${nWarn}</span>` : ''}${!nErr && !nWarn ? '<span class="chip ok">✔ 0</span>' : ''}</button></div>`;
+  }
+
+  /* Estado de cada paso: 'ok' (completo), 'err', 'warn' o 'pend', y qué falta para completarlo */
+  function estadoPasos() {
+    const p = state.project;
+    const r = state.result;
+    const ws = r.warnings;
+    const cuenta = (lvl, tabs) => ws.filter((w) => w.level === lvl && tabs.includes(w.tab)).length;
+    const nCostos = COSTOS.reduce((a, k) => a + p[k].length, 0);
+    const errTot = ws.filter((w) => w.level === 'error').length;
+    return PASOS.map((ps) => {
+      let est = 'pend', cant = null, falta = '';
+      if (ps.n === 1) {
+        est = String(p.titulo || '').trim() ? 'ok' : 'pend';
+        if (est !== 'ok') falta = 'Falta el título del proyecto.';
+      } else if (ps.n === 2) {
+        cant = p.partidas.length;
+        const e = cuenta('error', ['partidas']);
+        est = e ? 'err' : cant ? 'ok' : 'pend';
+        falta = !cant ? 'Agrega al menos una partida.' : e ? `${plural(e, 'partida')} con cantidad cero.` : '';
+      } else if (ps.n === 3) {
+        cant = nCostos;
+        const e = cuenta('error', COSTOS);
+        est = e ? 'err' : r.totals.cd > 0 ? 'ok' : 'pend';
+        falta = e ? `${plural(e, 'costo')} sin partida: no se ${e === 1 ? 'suma' : 'suman'} al precio.` : r.totals.cd > 0 ? '' : 'Agrega los costos de cada partida.';
+      } else if (ps.n === 4) {
+        const w = cuenta('warn', ['resumen']);
+        est = !(r.totals.cd > 0) ? 'pend' : w ? 'warn' : 'ok';
+        falta = !(r.totals.cd > 0) ? 'Primero ingresa los costos.' : w ? `${plural(w, 'partida')} sin utilidad o con utilidad negativa.` : '';
+      } else {
+        est = errTot ? 'err' : r.totals.precioNeto > 0 ? 'ok' : 'pend';
+        falta = errTot ? `Corrige ${plural(errTot, 'error', 'errores')} antes de enviar la oferta.` : '';
+      }
+      return Object.assign({}, ps, { est, cant, falta });
+    });
   }
 
   function updateTabs() {
     const el = $('#tabs');
     if (!el) return;
-    const p = state.project;
-    const r = state.result;
-    el.innerHTML = TABS.map((t) => {
-      const n = t.list ? p[t.list].length : null;
-      const err = r.warnings.some((w) => w.tab === t.id && w.level === 'error');
-      const on = state.tab === t.id;
-      return `<button type="button" class="tab ${on ? 'active' : ''} ${t.id === 'resumen' ? 'resumen' : ''}" role="tab" aria-selected="${on}" data-act="tab" data-tab="${t.id}">${t.label}${n !== null ? `<span class="count ${err ? 'err' : ''}">${n}</span>` : ''}</button>`;
-    }).join('');
-    // En pantallas angostas la barra se desplaza: mantener visible la pestaña activa
-    const act = $('.tab.active', el);
+    const paso = tabInfo(state.tab).paso;
+    const EST = { ok: 'completo', err: 'con errores', warn: 'con avisos', pend: 'pendiente' };
+    el.innerHTML = estadoPasos().map((ps) => {
+      const on = ps.n === paso;
+      const destino = ps.n === 3 ? (COSTOS.includes(state.tab) ? state.tab : state.costoTab) : ps.tabs[0];
+      const marca = ps.est === 'ok' ? '✓' : ps.est === 'err' || ps.est === 'warn' ? '!' : ps.n;
+      return `<button type="button" class="paso-tab est-${ps.est} ${on ? 'active' : ''}" data-act="tab" data-tab="${destino}" ${on ? 'aria-current="step"' : ''}
+          aria-label="Paso ${ps.n}: ${esc(ps.label)}${ps.n === 2 ? ` (${plural(ps.cant, 'partida')})` : ps.n === 3 ? ` (${plural(ps.cant, 'costo')})` : ''}, ${EST[ps.est]}">
+          <span class="paso-marca" aria-hidden="true">${marca}</span><span class="paso-l">${esc(ps.label)}</span>${ps.n === 2 || ps.n === 3 ? `<span class="count" aria-hidden="true">${ps.cant}</span>` : ''}
+        </button>`;
+    }).join('<span class="paso-sep" aria-hidden="true"></span>');
+    // En pantallas angostas la barra se desplaza: mantener visible el paso activo
+    const act = $('.paso-tab.active', el);
     if (act && el.scrollWidth > el.clientWidth) {
       const l = act.offsetLeft - el.offsetLeft, r = l + act.offsetWidth;
       if (l < el.scrollLeft) el.scrollLeft = l - 12;
@@ -907,16 +1020,76 @@
     }
   }
 
+  /* Encabezado de cada paso: número, título, para qué sirve (una frase) y ayuda desplegable */
+  function pasoHead(tab, ayuda, rotulo) {
+    const t = tabInfo(tab);
+    const titulo = t.paso === 3 ? 'Costos' : t.label;
+    const k = 'ayuda-' + tab;
+    return `<div class="paso-head">
+        <div class="paso-head-txt">
+          <h3 class="paso-titulo"><span class="paso-num">Paso ${t.paso} de ${PASOS.length}</span>${esc(titulo)}</h3>
+          <p class="paso-proposito">${esc(PROPOSITO[tab])}</p>
+        </div>
+        ${ayuda ? `<details class="ayuda no-print" data-open-key="${k}" ${state.abiertos.has(k) ? 'open' : ''}>
+          <summary>${ICON.help}<span>${rotulo || '¿Cómo se calcula?'}</span></summary>
+          <div class="ayuda-body">${ayuda}</div></details>` : ''}
+      </div>`;
+  }
+
+  /* Pie de cada paso: anterior, lo que falta y siguiente */
+  function pasoNav(tab) {
+    const i = ORDEN.indexOf(tab);
+    const prev = ORDEN[i - 1], next = ORDEN[i + 1];
+    const nombre = (id) => (COSTOS.includes(id) ? (COSTOS.includes(tab) ? DETALLE[id].titulo : `Costos · ${DETALLE[id].titulo}`) : tabInfo(id).label);
+    // En partidas y costos la acción principal es «Agregar»; en los demás pasos, avanzar
+    const principal = !(tab === 'partidas' || COSTOS.includes(tab));
+    const sig = next
+      ? `<button type="button" class="btn ${principal ? 'btn-primario' : 'btn-sig'}" data-act="tab" data-tab="${next}">Siguiente: ${esc(nombre(next))}${ICON.arrow}</button>`
+      : `<button type="button" class="btn btn-primario" data-act="exp-xlsx" data-id="${state.project.uid}">${ICON.download}Exportar Excel</button>`;
+    return `<nav class="paso-pie no-print" aria-label="Pasos">
+        ${prev ? `<button type="button" class="btn btn-ghost" data-act="tab" data-tab="${prev}">← ${esc(nombre(prev))}</button>` : '<span></span>'}
+        <span class="paso-falta" id="paso-falta" role="status"></span>
+        ${sig}
+      </nav>`;
+  }
+  function pintarFalta() {
+    const el = $('#paso-falta');
+    if (!el) return;
+    const tab = state.tab;
+    let falta = estadoPasos()[tabInfo(tab).paso - 1].falta;
+    if (COSTOS.includes(tab)) {
+      const e = state.result.warnings.filter((w) => w.tab === tab && w.level === 'error').length;
+      falta = e ? `${plural(e, 'costo')} sin partida: no se ${e === 1 ? 'suma' : 'suman'} al precio.` : '';
+    }
+    el.innerHTML = falta ? `<span class="marca-pop warn" aria-hidden="true"></span>${esc(falta)}` : '';
+  }
+
+  /* Subpestañas del paso 3: un tipo de costo a la vez, con su total */
+  function costosSubnav() {
+    return `<div class="subtabs" role="tablist" aria-label="Tipo de costo">${COSTOS.map((k) => {
+      const on = state.tab === k;
+      return `<button type="button" role="tab" aria-selected="${on}" class="subtab ${on ? 'active' : ''}" data-act="tab" data-tab="${k}">
+          <span class="swatch ${DETALLE[k].cat}" aria-hidden="true"></span><span class="st-t">${DETALLE[k].titulo}</span>
+          <span class="count" data-count="${k}"></span><span class="st-v" data-c="T:${DETALLE[k].total}" data-fmt="clp"></span>
+        </button>`;
+    }).join('')}</div>`;
+  }
+
   function renderTab(focusKey) {
     const body = $('#tab-body');
     if (!body) return;
     closePop();
     const tab = state.tab;
-    if (tab === 'ficha') body.innerHTML = viewFicha();
-    else if (tab === 'partidas') body.innerHTML = viewPartidas();
-    else if (tab === 'manoObra') body.innerHTML = viewManoObra();
-    else if (DETALLE[tab]) body.innerHTML = viewDetalle(tab);
-    else if (tab === 'resumen') body.innerHTML = viewResumen();
+    if (COSTOS.includes(tab)) state.costoTab = tab;
+    let html;
+    if (state.imprimir) html = viewResumen() + viewEvaluacion();
+    else if (tab === 'ficha') html = viewFicha();
+    else if (tab === 'partidas') html = viewPartidas();
+    else if (tab === 'manoObra') html = viewManoObra();
+    else if (DETALLE[tab]) html = viewDetalle(tab);
+    else if (tab === 'resumen') html = viewResumen();
+    else html = viewEvaluacion();
+    body.innerHTML = html + (state.imprimir ? '' : pasoNav(tab));
     history.replaceState(null, '', `#/p/${state.project.uid}/${tab}`);
     updateCalc();
     if (tab === 'ficha') updateCodigoHint();
@@ -935,92 +1108,107 @@
     const input = `<input class="input" id="f-${path}" ${attrs} data-f="${path}" value="${esc(v === null || v === undefined ? '' : v)}" ${o.placeholder ? `placeholder="${esc(o.placeholder)}"` : ''}>`;
     const wrapped = o.suffix ? `<div class="input-affix">${input}<span class="affix">${o.suffix}</span></div>`
       : o.prefix ? `<div class="input-affix pre">${input}<span class="affix">${o.prefix}</span></div>` : input;
-    return `<div class="campo ${o.cls || ''}"><label for="f-${path}">${label}</label>${wrapped}${o.hint ? `<span class="hint" ${o.hintId ? `id="${o.hintId}"` : ''}>${o.hint}</span>` : ''}</div>`;
+    return `<div class="campo ${o.cls || ''}"><label for="f-${path}">${label}${o.opcional ? ' <span class="opc">(opcional)</span>' : ''}</label>${wrapped}${o.hint ? `<span class="hint" ${o.hintId ? `id="${o.hintId}"` : ''}>${o.hint}</span>` : ''}</div>`;
   };
   const rowInput = (list, it, k, label, cls, isNum, extra) =>
     `<input class="ci ${cls || ''} ${isNum ? 'num' : ''}" ${isNum ? 'type="number" step="any" inputmode="decimal" data-t="num"' : 'type="text"'} data-list="${list}" data-uid="${it.uid}" data-k="${k}" value="${esc(it[k] === null || it[k] === undefined ? '' : it[k])}" aria-label="${esc(label)}" ${extra || ''}>`;
   const unitCombo = (inputHtml, label) => `<div class="combo">${inputHtml}<button type="button" class="combo-btn" data-picker="unidad" tabindex="-1" aria-haspopup="listbox" aria-expanded="false" aria-label="Elegir ${esc(label)}">${svg('<path d="M6 9l6 6 6-6"/>')}</button></div>`;
   const rowUnit = (list, it, label) => unitCombo(rowInput(list, it, 'unidad', label, 'w-xs', false, 'autocomplete="off"'), label);
+  const btnFila = (list, uid, code) => `<button type="button" class="icon-btn" data-menu="fila" data-list="${list}" data-uid="${uid}" aria-haspopup="menu" aria-expanded="false" aria-label="Acciones de ${esc(code)}" title="Acciones de ${esc(code)}">${ICON.more}</button>`;
   const seg = (name, opts, attrs, cls) => `<div class="segmentado ${cls || ''}" role="radiogroup" ${attrs.label ? `aria-label="${esc(attrs.label)}"` : ''}>${opts.map((o) =>
     `<label><input type="radio" name="${name}" value="${esc(o.v)}" ${o.checked ? 'checked' : ''} ${attrs.data || ''}><span>${o.l}</span></label>`).join('')}</div>`;
+  /* Sección plegable con el resumen de sus valores en la línea de título */
+  const plegable = (key, titulo, resumen, cuerpo, cls) => `<details class="panel plegable ${cls || ''}" id="${key}" data-open-key="${key}" ${state.abiertos.has(key) || state.imprimir ? 'open' : ''}>
+      <summary><span class="pl-t"><span class="seccion-titulo">${titulo}</span><span class="pl-res" id="res-${key}">${resumen}</span></span><span class="pl-accion" aria-hidden="true"></span></summary>
+      <div class="pl-cuerpo">${cuerpo}</div></details>`;
 
-  // ---- Ficha ------------------------------------------------------------------
+  // ---- Paso 1: datos del proyecto ------------------------------------------------
+  const resumenPrecio = (par) => `IVA ${nf(num(par.iva))} % · gastos generales ${nf(num(par.gastosGenerales))} % · imprevistos ${nf(num(par.imprevistos))} % · día-hombre ${clp(num(par.tarifaN1))} / ${clp(num(par.tarifaN2))} / ${clp(num(par.tarifaN3))}`;
+  const resumenMetas = (par) => `Margen objetivo ${nf(num(par.margenObjetivo))} % · mínimo ${nf(num(par.margenMinimo))} % · ${num(par.metaUtilidadDH) > 0 ? `meta ${clp(num(par.metaUtilidadDH))} por día-hombre` : 'sin meta por día-hombre'}`;
+  const resumenCatalogo = (p) => `${plural((p.catalogoOtros || []).length, 'referencia')} para agregar rápido en Costos · Otros`;
+
   function viewFicha() {
     const p = state.project;
     const par = p.parametros;
-    return `
+    const cuerpoPrecio = `<div class="fila-campos tres">
+          ${fInput('parametros.iva', 'IVA', { type: 'num', suffix: '%' })}
+          ${fInput('parametros.gastosGenerales', 'Gastos generales', { type: 'num', suffix: '%', hint: '% del costo directo' })}
+          ${fInput('parametros.imprevistos', 'Imprevistos', { type: 'num', suffix: '%', hint: '% del costo directo' })}
+        </div>
+        <div class="bloque" id="tarifas">
+          <h4 class="sub-t">Tarifa por día-hombre <span class="tn">(costo de una persona por un día de trabajo)</span></h4>
+          <div class="fila-campos tres">
+            ${fInput('parametros.tarifaN1', 'Nivel 1', { type: 'num', prefix: '$' })}
+            ${fInput('parametros.tarifaN2', 'Nivel 2', { type: 'num', prefix: '$' })}
+            ${fInput('parametros.tarifaN3', 'Nivel 3', { type: 'num', prefix: '$' })}
+          </div>
+        </div>`;
+    const cuerpoMetas = `<p class="panel-sub">Definen los semáforos de la evaluación (paso 5).</p>
+        <div class="fila-campos">
+          ${fInput('parametros.margenObjetivo', 'Margen objetivo', { type: 'num', suffix: '%' })}
+          ${fInput('parametros.margenMinimo', 'Margen mínimo aceptable', { type: 'num', suffix: '%' })}
+          ${fInput('parametros.metaUtilidadDH', 'Meta de utilidad por día-hombre', { type: 'num', prefix: '$', hint: '0 = sin meta' })}
+          ${fInput('parametros.umbralAjustado', 'Oferta «ajustada» desde', { type: 'num', suffix: '%', hint: '% del presupuesto del mandante' })}
+        </div>`;
+    const cuerpoCatalogo = `<div class="tabla-contenedor">
+          <table class="tbl tbl-catalogo">
+            <thead><tr><th>Descripción</th><th>Unidad</th><th class="num">Costo unitario</th><th><span class="visualmente-oculto">Acciones</span></th></tr></thead>
+            <tbody>${(p.catalogoOtros || []).map((c, i) => `<tr>
+              <td data-label="Descripción"><input class="ci" style="min-width:180px" data-cat="${i}" data-k="descripcion" value="${esc(c.descripcion)}" aria-label="Descripción de la referencia ${i + 1}"></td>
+              <td data-label="Unidad">${unitCombo(`<input class="ci w-xs" data-cat="${i}" data-k="unidad" value="${esc(c.unidad)}" aria-label="Unidad de la referencia ${i + 1}" autocomplete="off">`, 'unidad')}</td>
+              <td data-label="Costo unitario"><input class="ci num w-sm" type="number" step="any" data-t="num" data-cat="${i}" data-k="costoUnitario" value="${esc(c.costoUnitario)}" aria-label="Costo unitario de la referencia ${i + 1}"></td>
+              <td class="cell-actions"><button type="button" class="icon-btn del" data-act="del-cat" data-i="${i}" aria-label="Eliminar referencia ${i + 1}" title="Eliminar">${ICON.trash}</button></td>
+            </tr>`).join('') || '<tr class="empty-row"><td colspan="4">Sin referencias.</td></tr>'}</tbody>
+          </table>
+        </div>
+        <div style="margin-top:12px"><button type="button" class="btn btn-sm" data-act="add-cat">${ICON.plus}Agregar referencia</button></div>`;
+    const ayuda = `<p>Los parámetros se guardan con este proyecto: cambiarlos aquí no afecta a los demás.
+      Con gastos generales e imprevistos en 0 % el cálculo es idéntico al Excel original.</p>
+      <p>Para cambiar los valores con que parten los proyectos nuevos, usa <b>Configuración</b> (arriba a la derecha).</p>`;
+    return `${pasoHead('ficha', ayuda, 'Ayuda')}
     <div class="grid-2">
       <div class="col">
         <section class="panel">
-          <h3 class="seccion-titulo">Identificación</h3>
-          <p class="panel-sub">Identifica el proyecto en el listado y en el Excel exportado.</p>
+          <h4 class="seccion-titulo">Identificación</h4>
           <div class="fila-campos">
-            ${fInput('codigo', 'Código del proyecto', { hint: ' ', hintId: 'codigo-hint' })}
-            ${fInput('version', 'Versión', { type: 'num' })}
-            <div class="campo"><label for="f-estado">Estado</label>
-              <select class="select" id="f-estado" data-f="estado">${S.ESTADOS.map((e) => `<option value="${esc(e)}" ${p.estado === e ? 'selected' : ''}>${esc(e)} — ${esc(ESTADO_INFO[e].desc.toLowerCase())}</option>`).join('')}</select></div>
-            ${fInput('fecha', 'Fecha de formulación', { type: 'date' })}
             ${fInput('titulo', 'Título del proyecto', { cls: 'ancho', placeholder: 'Ej.: Instalación de medidores de gas natural' })}
             ${fInput('cliente', 'Cliente / mandante')}
             ${fInput('ubicacion', 'Ubicación')}
-            ${fInput('responsable', 'Responsable asignado', { cls: 'ancho' })}
-            <div class="campo ancho"><label for="f-descripcion">Descripción / alcance</label>
+            ${fInput('responsable', 'Responsable')}
+            ${fInput('fecha', 'Fecha de formulación', { type: 'date' })}
+            ${fInput('codigo', 'Código', { hint: ' ', hintId: 'codigo-hint' })}
+            ${fInput('version', 'Versión', { type: 'num' })}
+            <div class="campo ancho"><label for="f-descripcion">Descripción / alcance <span class="opc">(opcional)</span></label>
               <textarea class="textarea" id="f-descripcion" data-f="descripcion" rows="3">${esc(p.descripcion)}</textarea></div>
-          </div>
-        </section>
-        <section class="panel">
-          <h3 class="seccion-titulo">Evaluación de la oferta</h3>
-          <p class="panel-sub">Metas que usan los semáforos de los KPI en Resumen y KPIs.</p>
-          <div class="fila-campos">
-            ${fInput('parametros.presupuestoMaximo', 'Presupuesto máximo del mandante', { type: 'num', prefix: '$', hint: 'Déjalo vacío si no se conoce.' })}
-            <div class="campo"><span class="label" id="lbl-iva-ppto">El presupuesto se informa</span>
-              ${seg('f-ppto-iva', [{ v: '0', l: 'Neto', checked: !par.presupuestoIncluyeIva }, { v: '1', l: 'Con IVA', checked: !!par.presupuestoIncluyeIva }], { label: 'El presupuesto se informa', data: 'data-f="parametros.presupuestoIncluyeIva" data-t="bool01"' })}
-              <span class="hint">Se compara con el precio neto o con IVA, según corresponda.</span></div>
-            ${fInput('parametros.margenObjetivo', 'Margen objetivo', { type: 'num', suffix: '%' })}
-            ${fInput('parametros.margenMinimo', 'Margen mínimo aceptable', { type: 'num', suffix: '%' })}
-            ${fInput('parametros.metaUtilidadDH', 'Meta de utilidad por día-hombre', { type: 'num', prefix: '$', hint: '0 = sin meta' })}
-            ${fInput('parametros.umbralAjustado', 'Oferta "ajustada" desde', { type: 'num', suffix: '%', hint: '% del presupuesto máximo' })}
           </div>
         </section>
       </div>
       <div class="col">
         <section class="panel">
-          <h3 class="seccion-titulo">Estructura de precio</h3>
-          <p class="panel-sub">Con gastos generales e imprevistos en 0 % el cálculo es idéntico al Excel original.</p>
-          <div class="fila-campos tres">
-            ${fInput('parametros.iva', 'IVA', { type: 'num', suffix: '%' })}
-            ${fInput('parametros.gastosGenerales', 'Gastos generales', { type: 'num', suffix: '%', hint: '% sobre el costo directo' })}
-            ${fInput('parametros.imprevistos', 'Imprevistos', { type: 'num', suffix: '%', hint: '% sobre el costo directo' })}
-          </div>
-          <div class="bloque">
-            <h3 class="seccion-titulo" style="margin-bottom:12px">Tarifa por día-hombre</h3>
-            <div class="fila-campos tres">
-              ${fInput('parametros.tarifaN1', 'Nivel 1', { type: 'num', prefix: '$' })}
-              ${fInput('parametros.tarifaN2', 'Nivel 2', { type: 'num', prefix: '$' })}
-              ${fInput('parametros.tarifaN3', 'Nivel 3', { type: 'num', prefix: '$' })}
-            </div>
+          <h4 class="seccion-titulo">Presupuesto del mandante <span class="tn">(opcional)</span></h4>
+          <p class="panel-sub">Si lo conoces, la evaluación indica si la oferta cabe en él.</p>
+          <div class="fila-campos">
+            ${fInput('parametros.presupuestoMaximo', 'Presupuesto máximo', { type: 'num', prefix: '$', placeholder: 'Sin informar' })}
+            <div class="campo"><span class="label" id="lbl-iva-ppto">Se informa</span>
+              ${seg('f-ppto-iva', [{ v: '0', l: 'Neto', checked: !par.presupuestoIncluyeIva }, { v: '1', l: 'Con IVA', checked: !!par.presupuestoIncluyeIva }], { label: 'El presupuesto se informa', data: 'data-f="parametros.presupuestoIncluyeIva" data-t="bool01"' })}</div>
           </div>
         </section>
-        <section class="panel" id="catalogo">
-          <h3 class="seccion-titulo">Catálogo de otros costos</h3>
-          <p class="panel-sub">Referencias para agregar rápido en la pestaña Otros.</p>
-          <div class="tabla-contenedor">
-            <table class="tbl" style="min-width:440px">
-              <thead><tr><th>Descripción</th><th>Unid.</th><th class="num">Costo unitario</th><th></th></tr></thead>
-              <tbody>${(p.catalogoOtros || []).map((c, i) => `<tr>
-                <td><input class="ci" style="min-width:180px" data-cat="${i}" data-k="descripcion" value="${esc(c.descripcion)}" aria-label="Descripción de la referencia ${i + 1}"></td>
-                <td>${unitCombo(`<input class="ci w-xs" data-cat="${i}" data-k="unidad" value="${esc(c.unidad)}" aria-label="Unidad de la referencia ${i + 1}" autocomplete="off">`, 'unidad')}</td>
-                <td><input class="ci num w-sm" type="number" step="any" data-t="num" data-cat="${i}" data-k="costoUnitario" value="${esc(c.costoUnitario)}" aria-label="Costo unitario de la referencia ${i + 1}"></td>
-                <td class="cell-actions"><button type="button" class="icon-btn del" data-act="del-cat" data-i="${i}" aria-label="Eliminar referencia" title="Eliminar">${ICON.trash}</button></td>
-              </tr>`).join('') || '<tr class="empty-row"><td colspan="4">Sin referencias.</td></tr>'}</tbody>
-            </table>
-          </div>
-          <div style="margin-top:12px"><button type="button" class="btn btn-sm" data-act="add-cat">${ICON.plus}Agregar referencia</button></div>
-        </section>
-        <div class="nota" style="margin:0"><span>¿Estos parámetros son los habituales de QUEMPIN? Guárdalos para que los proyectos nuevos partan con ellos.</span>
-          <button type="button" class="btn btn-sm" data-act="save-defaults">Usarlos como predeterminados</button></div>
+        <div class="grupo-plegable">
+          <p class="grupo-plegable-t">Parámetros de este proyecto <span class="tn">· ya vienen con los valores habituales</span></p>
+          ${plegable('f-precio', 'Estructura de precio y tarifas', resumenPrecio(par), cuerpoPrecio)}
+          ${plegable('f-metas', 'Metas de evaluación', resumenMetas(par), cuerpoMetas)}
+          ${plegable('f-catalogo', 'Catálogo de otros costos', resumenCatalogo(p), cuerpoCatalogo)}
+          <p class="pie-param">¿Son los habituales de QUEMPIN? <button type="button" class="link-btn" data-act="save-defaults">Usarlos en los proyectos nuevos</button></p>
+        </div>
       </div>
     </div>`;
+  }
+  function refreshFicha() {
+    const p = state.project;
+    const a = $('#res-f-precio'), b = $('#res-f-metas'), c = $('#res-f-catalogo');
+    if (a) a.textContent = resumenPrecio(p.parametros);
+    if (b) b.textContent = resumenMetas(p.parametros);
+    if (c) c.textContent = resumenCatalogo(p);
   }
 
   function updateCodigoHint() {
@@ -1028,11 +1216,11 @@
     if (!el) return;
     const p = state.project;
     const dup = S.all().find((x) => x.uid !== p.uid && x.codigo === p.codigo && String(x.version) === String(p.version));
-    el.textContent = dup ? `⚠ Ya existe otro proyecto ${p.codigo} v${p.version} («${String(dup.titulo || '').slice(0, 40)}»).` : 'Correlativo sugerido automáticamente; puedes editarlo.';
+    el.textContent = dup ? `⚠ Ya existe otro proyecto ${p.codigo} v${p.version} («${String(dup.titulo || '').slice(0, 40)}»).` : 'Correlativo automático; puedes editarlo.';
     el.style.color = dup ? 'var(--status-bad)' : '';
   }
 
-  // ---- Partidas -----------------------------------------------------------------
+  // ---- Paso 2: partidas -----------------------------------------------------------
   function viewPartidas() {
     const p = state.project;
     const rows = p.partidas.map((it, i) => {
@@ -1040,52 +1228,47 @@
       const uLabel = it.utilidadTipo === 'monto' ? 'monto fijo' : `recargo ${nf(num(it.utilidadValor))} %`;
       return `<tr data-row="${it.uid}">
         <td class="code">${code}</td>
-        <td>${rowInput('partidas', it, 'descripcion', `Descripción ${code}`, 'desc', false, 'placeholder="Descripción de la partida"')}</td>
-        <td>${rowUnit('partidas', it, `unidad ${code}`)}</td>
-        <td>${rowInput('partidas', it, 'cantidad', `Cantidad ${code}`, 'w-sm', true)}</td>
-        <td class="num calc" data-c="P:${it.uid}:cd" data-fmt="clp"></td>
-        <td class="num calc"><span data-c="P:${it.uid}:utilidad" data-fmt="clp"></span><div class="small muted">${esc(uLabel)}</div></td>
-        <td class="num calc strong" data-c="P:${it.uid}:precio" data-fmt="clp"></td>
-        <td class="num calc" data-c="P:${it.uid}:pu" data-fmt="clp"></td>
-        <td class="cell-actions">
-          <button type="button" class="icon-btn" data-act="mover" data-list="partidas" data-uid="${it.uid}" data-dir="-1" aria-label="Subir ${code}" title="Subir" ${i === 0 ? 'disabled' : ''}>${ICON.up}</button>
-          <button type="button" class="icon-btn" data-act="mover" data-list="partidas" data-uid="${it.uid}" data-dir="1" aria-label="Bajar ${code}" title="Bajar" ${i === p.partidas.length - 1 ? 'disabled' : ''}>${ICON.down}</button>
-          <button type="button" class="icon-btn del" data-act="del-row" data-list="partidas" data-uid="${it.uid}" aria-label="Eliminar ${code}" title="Eliminar partida">${ICON.trash}</button>
-        </td>
+        <td data-label="Descripción">${rowInput('partidas', it, 'descripcion', `Descripción de ${code}`, 'desc', false, 'placeholder="Ej.: Instalación de medidor de 2&quot;"')}</td>
+        <td data-label="Cantidad">${rowInput('partidas', it, 'cantidad', `Cantidad de ${code}`, 'w-sm', true)}</td>
+        <td data-label="Unidad">${rowUnit('partidas', it, `unidad de ${code}`)}</td>
+        <td class="num calc" data-label="Costo directo" data-c="P:${it.uid}:cd" data-fmt="clp"></td>
+        <td class="num calc" data-label="Utilidad"><span data-c="P:${it.uid}:utilidad" data-fmt="clp"></span><div class="small muted">${esc(uLabel)}</div></td>
+        <td class="num calc strong" data-label="Precio neto" data-c="P:${it.uid}:precio" data-fmt="clp"></td>
+        <td class="num calc" data-label="Precio unitario" data-c="P:${it.uid}:pu" data-fmt="clp"></td>
+        <td class="cell-actions">${btnFila('partidas', it.uid, code)}</td>
       </tr>`;
     }).join('');
-    return `
-      <div class="nota"><span><strong>Partidas:</strong> cada partida agrupa costos. Los ítems de detalle se asocian a una partida y sus cantidades se ingresan <strong>por unidad de partida</strong>. La <strong>utilidad</strong> de cada partida se define en <em>Resumen y KPIs</em>, donde ves su efecto en el margen al instante.</span>
-        <button type="button" class="btn btn-sm" data-act="tab" data-tab="resumen" data-focus="util">Definir utilidad →</button></div>
+    const ayuda = `<p>La <b>cantidad</b> es cuántas unidades tiene la partida (3 medidores, 120 m de cañería…). En el paso 3 cada costo se ingresa para <b>una</b> unidad y se multiplica por esta cantidad.</p>
+      <p>Las columnas sombreadas se calculan solas. <b>Precio neto</b> = costo directo + utilidad (la utilidad se define en el paso 4). <b>Precio unitario</b> = precio neto ÷ cantidad.</p>`;
+    return `${pasoHead('partidas', ayuda)}
       <div class="tbl-toolbar">
         <div class="left"><button type="button" class="btn btn-primario btn-sm" data-act="add-row" data-list="partidas">${ICON.plus}Agregar partida</button></div>
-        <div class="right"><span class="small muted">Las columnas sombreadas se calculan solas.</span></div>
       </div>
       <div class="tabla-contenedor">
-        <table class="tbl" style="min-width:900px">
+        <table class="tbl tbl-apilable" style="min-width:900px">
           <thead><tr>
-            <th>ID</th><th>Descripción</th><th>Unid.</th><th class="num">Cant.</th>
-            <th class="num">Costo directo</th><th class="num">Utilidad</th><th class="num">Precio neto</th><th class="num">Precio unitario</th><th></th>
+            <th>ID</th><th>Descripción</th><th class="num">Cantidad</th><th>Unidad</th>
+            <th class="num">Costo directo</th><th class="num">Utilidad</th><th class="num">Precio neto</th><th class="num">Precio unitario</th><th><span class="visualmente-oculto">Acciones</span></th>
           </tr></thead>
-          <tbody>${rows || '<tr class="empty-row"><td colspan="9">Agrega la primera partida del proyecto.</td></tr>'}</tbody>
+          <tbody>${rows || `<tr class="empty-row"><td colspan="9">Aún no hay partidas. <button type="button" class="link-btn" data-act="add-row" data-list="partidas">Agregar la primera</button></td></tr>`}</tbody>
           <tfoot><tr>
             <td></td><td colspan="3">Total (${plural(p.partidas.length, 'partida')})</td>
-            <td class="num" data-c="T:cd" data-fmt="clp"></td>
-            <td class="num" data-c="T:utilidad" data-fmt="clp"></td>
-            <td class="num" data-c="T:precioNeto" data-fmt="clp"></td>
+            <td class="num" data-label="Costo directo" data-c="T:cd" data-fmt="clp"></td>
+            <td class="num" data-label="Utilidad" data-c="T:utilidad" data-fmt="clp"></td>
+            <td class="num" data-label="Precio neto" data-c="T:precioNeto" data-fmt="clp"></td>
             <td></td><td></td>
           </tr></tfoot>
         </table>
       </div>`;
   }
 
-  // ---- Detalle: materiales, equipos, otros ------------------------------------------
+  // ---- Paso 3: costos (materiales, equipos, otros) ----------------------------------
   function partidaPicker(list, it) {
     const pt = state.partIdx.get(it.partida);
     const tieneDatos = String(it.descripcion || '').trim() || num(it.costoUnitario) > 0 || num(it.n1p) + num(it.n2p) + num(it.n3p) > 0;
     const full = pt ? `${pt.code} · ${pt.descripcion || 'Sin descripción'}` : 'Sin partida';
     return `<button type="button" class="picker ${!pt && tieneDatos ? 'error' : ''}" data-picker="partida" data-list="${list}" data-uid="${it.uid}" aria-haspopup="listbox" aria-expanded="false" aria-label="Partida asociada: ${esc(full)}" title="${esc(full)}">
-      ${pt ? `<span class="pcode">${pt.code}</span><span class="txt">${esc(pt.descripcion || 'Sin descripción')}</span>` : '<span class="pcode none">—</span><span class="txt muted">Sin partida</span>'}${ICON.chev}</button>`;
+      ${pt ? `<span class="pcode">${pt.code}</span><span class="txt">${esc(pt.descripcion || 'Sin descripción')}</span>` : `<span class="pcode none">—</span><span class="txt muted">${tieneDatos ? 'Elegir partida' : 'Sin partida'}</span>`}${ICON.chev}</button>`;
   }
   function filtroBar(key) {
     const p = state.project;
@@ -1096,14 +1279,14 @@
         <button type="button" class="btn btn-primario btn-sm" data-act="add-row" data-list="${key}">${ICON.plus}Agregar ${cfg.singular}</button>
         ${key === 'otros' ? `<button type="button" class="btn btn-sm" data-menu="catalogo" data-align="left" aria-haspopup="menu" aria-expanded="false">Agregar desde catálogo${ICON.caret}</button>` : ''}
       </div>
-      <div class="right">
+      ${p.partidas.length > 1 ? `<div class="right">
         <div class="filtro"><label for="filtro-${key}">Mostrar</label>
           <select id="filtro-${key}" data-filtro="${key}" class="${f ? 'is-set' : ''}">
             <option value="">Todas las partidas</option>
             ${p.partidas.map((pt, i) => `<option value="${pt.uid}" ${f === pt.uid ? 'selected' : ''}>P${i + 1} · ${esc(pt.descripcion || 'Sin descripción')}</option>`).join('')}
-            <option value="__none__" ${f === '__none__' ? 'selected' : ''}>Ítems sin partida asociada</option>
+            <option value="__none__" ${f === '__none__' ? 'selected' : ''}>Sin partida asociada</option>
           </select></div>
-      </div>
+      </div>` : ''}
     </div>`;
   }
   function filtered(key) {
@@ -1112,7 +1295,30 @@
   }
   function sinPartidasNote() {
     return state.project.partidas.length ? '' :
-      `<div class="nota"><span>Todavía no hay partidas. Los costos deben asociarse a una partida para sumarse al proyecto.</span><button type="button" class="btn btn-sm" data-act="tab" data-tab="partidas">Ir a Partidas →</button></div>`;
+      `<div class="nota"><span>Primero crea las partidas: cada costo se asocia a una partida para sumarse al precio.</span><button type="button" class="btn btn-sm" data-act="tab" data-tab="partidas">Ir a Partidas →</button></div>`;
+  }
+  function ayudaCostos(key) {
+    const ej = key === 'otros'
+      ? 'si la partida son 3 medidores y cada uno requiere 2 almuerzos de $10.000, ingresa 2: el subtotal es 2 × $10.000 × 3 = $60.000.'
+      : 'si la partida son 3 medidores y cada uno lleva 2 flanges de $14.580, ingresa 2: el subtotal es 2 × $14.580 × 3 = $87.480.';
+    return `<p><b>Subtotal</b> = cantidad por unidad × costo unitario × cantidad de la partida.</p>
+      <p>Ejemplo: ${ej}</p>
+      <p>Pasa el cursor sobre un subtotal para ver su cálculo. Un costo sin partida no se suma al precio.${key === 'otros' ? ' El catálogo se edita en el paso 1, Datos del proyecto.' : ''}</p>`;
+  }
+  /* Cálculo de una línea de costo, para la ayuda emergente de su subtotal */
+  function formulaLinea(ref) {
+    const [list, uid] = ref.split(':');
+    const it = findItem(list, uid);
+    const l = state.lineIdx.get(uid);
+    if (!it || !l) return '';
+    if (!l.partidaUid) return '<b>Sin partida</b>Elige la partida para que este costo se sume al precio.';
+    if (list === 'manoObra') {
+      const par = state.project.parametros;
+      const niv = [1, 2, 3].filter((n) => num(it[`n${n}p`]) * num(it[`n${n}d`]) > 0)
+        .map((n) => `${nf(num(it[`n${n}p`]))} × ${nf(num(it[`n${n}d`]))} × ${clp(num(par['tarifaN' + n]))}`);
+      return `<b>${esc(l.code)} · ${clp(l.subtotal)}</b>(${niv.join(' + ') || '0'}) × ${nf(l.qtyPartida)} unidades de la partida`;
+    }
+    return `<b>${esc(l.code)} · ${clp(l.subtotal)}</b>${nf(num(it.cantidad))} ${esc(it.unidad || '')} × ${clp(num(it.costoUnitario))} × ${nf(l.qtyPartida)} unidades de la partida`;
   }
 
   function viewDetalle(key) {
@@ -1123,36 +1329,32 @@
       const code = ln ? ln.code : '';
       return `<tr data-row="${it.uid}">
         <td class="code">${code}</td>
-        <td>${rowInput(key, it, 'descripcion', `Descripción ${code}`, 'desc', false, `placeholder="Descripción del ${cfg.singular}"`)}</td>
-        <td>${partidaPicker(key, it)}</td>
-        <td>${rowUnit(key, it, `unidad ${code}`)}</td>
-        <td>${rowInput(key, it, 'cantidad', `Cantidad ${code}`, 'w-sm', true)}</td>
-        <td>${rowInput(key, it, 'costoUnitario', `Costo unitario ${code}`, 'w-md', true)}</td>
-        <td class="num calc" data-c="L:${key}:${it.uid}:qtyPartida" data-fmt="num"></td>
-        <td class="num calc strong" data-c="L:${key}:${it.uid}:subtotal" data-fmt="clp"></td>
-        <td class="cell-actions">
-          <button type="button" class="icon-btn" data-act="dup-row" data-list="${key}" data-uid="${it.uid}" aria-label="Duplicar ${code}" title="Duplicar fila">${ICON.copy}</button>
-          <button type="button" class="icon-btn del" data-act="del-row" data-list="${key}" data-uid="${it.uid}" aria-label="Eliminar ${code}" title="Eliminar">${ICON.trash}</button>
-        </td>
+        <td data-label="Descripción">${rowInput(key, it, 'descripcion', `Descripción de ${code}`, 'desc', false, `placeholder="Descripción del ${cfg.singular}"`)}</td>
+        <td data-label="Partida">${partidaPicker(key, it)}</td>
+        <td class="tercio" data-label="Cantidad">${rowInput(key, it, 'cantidad', `Cantidad por unidad de partida de ${code}`, 'w-sm', true)}</td>
+        <td class="tercio" data-label="Unidad">${rowUnit(key, it, `unidad de ${code}`)}</td>
+        <td class="tercio" data-label="Costo unitario">${rowInput(key, it, 'costoUnitario', `Costo unitario de ${code}`, 'w-md', true)}</td>
+        <td class="num calc veces tercio" data-label="× Partida"><span>× <span data-c="L:${key}:${it.uid}:qtyPartida" data-fmt="num"></span></span></td>
+        <td class="num calc strong dos-tercios" data-label="Subtotal" data-formula="${key}:${it.uid}" data-c="L:${key}:${it.uid}:subtotal" data-fmt="clp"></td>
+        <td class="cell-actions">${btnFila(key, it.uid, code)}</td>
       </tr>`;
     }).join('');
-    return `${sinPartidasNote()}
-      <div class="nota"><span><strong>${cfg.titulo}:</strong> Subtotal = Cant. de la partida × Cantidad por unidad de partida × Costo unitario. Ejemplo: si la partida son 3 medidores y cada uno lleva 2 flanges, ingresa 2.</span></div>
+    return `${pasoHead(key, ayudaCostos(key))}${costosSubnav()}${sinPartidasNote()}
       ${filtroBar(key)}
       <div class="tabla-contenedor">
-        <table class="tbl" style="min-width:980px">
+        <table class="tbl tbl-apilable" style="min-width:980px">
           <thead><tr>
-            <th>ID</th><th>Descripción</th><th>Partida</th><th>Unid.</th>
-            <th class="num">Cant.<span class="th-sub">por unid. de partida</span></th><th class="num">Costo unitario</th>
-            <th class="num">Cant. partida</th><th class="num">Subtotal</th><th></th>
+            <th>ID</th><th>Descripción</th><th>Partida</th>
+            <th class="num">Cantidad<span class="th-sub">por unidad de partida</span></th><th>Unidad</th><th class="num">Costo unitario</th>
+            <th class="num">× Partida<span class="th-sub">su cantidad</span></th><th class="num">Subtotal</th><th><span class="visualmente-oculto">Acciones</span></th>
           </tr></thead>
-          <tbody>${rows || `<tr class="empty-row"><td colspan="9">${state.filtro[key] ? 'No hay ítems con este filtro.' : `Sin ${cfg.titulo.toLowerCase()} registrados.`}</td></tr>`}</tbody>
-          <tfoot><tr><td></td><td colspan="6"><span class="swatch ${cfg.cat}" style="vertical-align:-1px;margin-right:8px"></span>Total ${cfg.titulo.toLowerCase()} del proyecto</td><td class="num" data-c="T:${cfg.total}" data-fmt="clp"></td><td></td></tr></tfoot>
+          <tbody>${rows || `<tr class="empty-row"><td colspan="9">${state.filtro[key] ? 'No hay ítems con este filtro.' : `Sin ${cfg.titulo.toLowerCase()} todavía. <button type="button" class="link-btn" data-act="add-row" data-list="${key}">Agregar el primero</button>`}</td></tr>`}</tbody>
+          <tfoot><tr><td></td><td colspan="6"><span class="swatch ${cfg.cat}" style="vertical-align:-1px;margin-right:8px"></span>Total ${cfg.titulo.toLowerCase()} del proyecto</td><td class="num" data-label="Total" data-c="T:${cfg.total}" data-fmt="clp"></td><td></td></tr></tfoot>
         </table>
       </div>`;
   }
 
-  // ---- Mano de obra --------------------------------------------------------------
+  // ---- Paso 3: mano de obra ------------------------------------------------------
   function viewManoObra() {
     const key = 'manoObra';
     const par = state.project.parametros;
@@ -1160,42 +1362,36 @@
     const rows = items.map((it) => {
       const ln = state.lineIdx.get(it.uid);
       const code = ln ? ln.code : '';
-      const lv = (n) => `<td>${rowInput(key, it, `n${n}p`, `Personal nivel ${n} ${code}`, 'w-xxs', true)}</td><td>${rowInput(key, it, `n${n}d`, `Días nivel ${n} ${code}`, 'w-xxs', true)}</td>`;
+      const lv = (n) => `<td class="lvl" data-label="Nivel ${n} · personas × días"><div class="pxd">${rowInput(key, it, `n${n}p`, `Personas del nivel ${n} en ${code}`, 'w-xxs', true)}<span class="por" aria-hidden="true">×</span>${rowInput(key, it, `n${n}d`, `Días del nivel ${n} en ${code}`, 'w-xxs', true)}</div></td>`;
       return `<tr data-row="${it.uid}">
         <td class="code">${code}</td>
-        <td>${rowInput(key, it, 'descripcion', `Tarea ${code}`, 'desc', false, 'placeholder="Descripción de la tarea"')}</td>
-        <td>${partidaPicker(key, it)}</td>
+        <td data-label="Tarea">${rowInput(key, it, 'descripcion', `Tarea ${code}`, 'desc', false, 'placeholder="Descripción de la tarea"')}</td>
+        <td data-label="Partida">${partidaPicker(key, it)}</td>
         ${lv(1)}${lv(2)}${lv(3)}
-        <td class="num calc" data-c="L:${key}:${it.uid}:dhPorUnidadPartida" data-fmt="num"></td>
-        <td class="num calc" data-c="L:${key}:${it.uid}:qtyPartida" data-fmt="num"></td>
-        <td class="num calc" data-c="L:${key}:${it.uid}:dh" data-fmt="num"></td>
-        <td class="num calc strong" data-c="L:${key}:${it.uid}:subtotal" data-fmt="clp"></td>
-        <td class="cell-actions">
-          <button type="button" class="icon-btn" data-act="dup-row" data-list="${key}" data-uid="${it.uid}" aria-label="Duplicar ${code}" title="Duplicar fila">${ICON.copy}</button>
-          <button type="button" class="icon-btn del" data-act="del-row" data-list="${key}" data-uid="${it.uid}" aria-label="Eliminar ${code}" title="Eliminar">${ICON.trash}</button>
-        </td>
+        <td class="num calc" data-label="Días-hombre"><span data-c="L:${key}:${it.uid}:dh" data-fmt="num"></span><div class="small muted"><span data-c="L:${key}:${it.uid}:dhPorUnidadPartida" data-fmt="num"></span> por unidad</div></td>
+        <td class="num calc strong" data-label="Subtotal" data-formula="${key}:${it.uid}" data-c="L:${key}:${it.uid}:subtotal" data-fmt="clp"></td>
+        <td class="cell-actions">${btnFila(key, it.uid, code)}</td>
       </tr>`;
     }).join('');
-    const nivel = (n, t) => `<th colspan="2" class="group-th">Nivel ${n}<span class="th-sub">${clp(num(t))} / día-hombre</span></th>`;
-    return `${sinPartidasNote()}
-      <div class="nota"><span><strong>Mano de obra:</strong> personas y días <strong>por unidad de partida</strong>. Días-Hombre = Cant. partida × Σ(personas × días). Subtotal = Cant. partida × Σ(personas × días × tarifa del nivel).</span>
-        <button type="button" class="btn btn-sm" data-act="tab" data-tab="ficha">Editar tarifas</button></div>
+    const nivel = (n, t) => `<th class="lvl-th">Nivel ${n}<span class="th-sub">${clp(num(t))} por día</span><span class="th-sub">personas × días</span></th>`;
+    const ayuda = `<p><b>Días-hombre</b> = personas × días de cada nivel, sumados, × cantidad de la partida. Es el esfuerzo total, no el plazo.</p>
+      <p><b>Subtotal</b> = personas × días × tarifa del nivel, sumando los tres niveles, × cantidad de la partida.</p>
+      <p>Tarifas por día-hombre: nivel 1 ${clp(num(par.tarifaN1))} · nivel 2 ${clp(num(par.tarifaN2))} · nivel 3 ${clp(num(par.tarifaN3))}.
+        <button type="button" class="link-btn" data-act="tab" data-tab="ficha" data-focus="tarifas">Cambiar las tarifas</button></p>`;
+    return `${pasoHead(key, ayuda)}${costosSubnav()}${sinPartidasNote()}
       ${filtroBar(key)}
       <div class="tabla-contenedor">
-        <table class="tbl mo" style="min-width:1080px">
-          <thead>
-            <tr><th rowspan="2">ID</th><th rowspan="2">Tarea</th><th rowspan="2">Partida</th>${nivel(1, par.tarifaN1)}${nivel(2, par.tarifaN2)}${nivel(3, par.tarifaN3)}
-              <th rowspan="2" class="num">DH<span class="th-sub">por unid.</span></th><th rowspan="2" class="num">Cant. partida</th><th rowspan="2" class="num">Días-Hombre</th><th rowspan="2" class="num">Subtotal</th><th rowspan="2"></th></tr>
-            <tr><th>Pers.</th><th>Días</th><th>Pers.</th><th>Días</th><th>Pers.</th><th>Días</th></tr>
-          </thead>
-          <tbody>${rows || `<tr class="empty-row"><td colspan="14">${state.filtro[key] ? 'No hay tareas con este filtro.' : 'Sin tareas de mano de obra registradas.'}</td></tr>`}</tbody>
-          <tfoot><tr><td></td><td colspan="10"><span class="swatch cat-mo" style="vertical-align:-1px;margin-right:8px"></span>Total mano de obra · costo promedio por DH: <span data-c="K:costoMODH" data-fmt="clp"></span></td>
-            <td class="num" data-c="T:dh" data-fmt="num"></td><td class="num" data-c="T:mo" data-fmt="clp"></td><td></td></tr></tfoot>
+        <table class="tbl mo tbl-apilable" style="min-width:1000px">
+          <thead><tr><th>ID</th><th>Tarea</th><th>Partida</th>${nivel(1, par.tarifaN1)}${nivel(2, par.tarifaN2)}${nivel(3, par.tarifaN3)}
+            <th class="num">Días-hombre</th><th class="num">Subtotal</th><th><span class="visualmente-oculto">Acciones</span></th></tr></thead>
+          <tbody>${rows || `<tr class="empty-row"><td colspan="9">${state.filtro[key] ? 'No hay tareas con este filtro.' : 'Sin tareas de mano de obra todavía. <button type="button" class="link-btn" data-act="add-row" data-list="manoObra">Agregar la primera</button>'}</td></tr>`}</tbody>
+          <tfoot><tr><td></td><td colspan="5"><span class="swatch cat-mo" style="vertical-align:-1px;margin-right:8px"></span>Total mano de obra · costo promedio por día-hombre: <span data-c="K:costoMODH" data-fmt="clp"></span></td>
+            <td class="num" data-label="Días-hombre" data-c="T:dh" data-fmt="num"></td><td class="num" data-label="Total" data-c="T:mo" data-fmt="clp"></td><td></td></tr></tfoot>
         </table>
       </div>`;
   }
 
-  // ---- Resumen y KPIs -------------------------------------------------------------
+  // ---- Semáforos compartidos --------------------------------------------------------
   const CHIP_TXT = {
     margen: { ok: 'Sobre objetivo', warn: 'Bajo objetivo', bad: 'Bajo el mínimo' },
     markup: { ok: 'Sobre objetivo', warn: 'Bajo objetivo', bad: 'Bajo el mínimo' },
@@ -1208,8 +1404,6 @@
     const t = (CHIP_TXT[key] && CHIP_TXT[key][status]) || (status === 'na' ? 'Sin datos' : 'Referencial');
     return `<span class="chip ${status}">${ICO[status] || '•'} ${t}</span>`;
   }
-  const SEM = { ok: 'sem-ok', warn: 'sem-warn', bad: 'sem-bad' };
-  const TILE = { ok: 'ok', warn: 'alerta', bad: 'critico' };
 
   function medidor(o) {
     const max = o.max > 0 ? o.max : 1;
@@ -1222,44 +1416,38 @@
       <div class="medidor-escala"><span style="left:0">${esc(o.fmt(0))}</span>${ticks.filter((t) => t.show).map((t) => `<span style="left:${(t.at / max) * 100}%">${esc(o.fmt(t.at))}</span>`).join('')}<span class="end" style="left:100%">${esc(o.fmt(max))}</span></div>`;
   }
 
+  // ---- Paso 4: utilidad y precio --------------------------------------------------
   function viewResumen() {
     const p = state.project;
-    const par = p.parametros;
-    const s = par.sensibilidad;
-    const mObj = num(par.margenObjetivo);
-    const sensRow = (k, label, cls) => `<div class="sens-row">
-        <label for="sens-${k}"><span class="swatch ${cls}"></span>${label}</label>
-        <input type="range" min="-20" max="50" step="1" data-f="parametros.sensibilidad.${k}" data-t="num" data-sync="sens-${k}" value="${esc(num(s[k]))}" aria-label="Variación de ${label}">
-        <div class="input-affix"><input class="input" id="sens-${k}" type="number" step="any" data-f="parametros.sensibilidad.${k}" data-t="num" data-sync="sens-${k}" value="${esc(num(s[k]))}"><span class="affix">%</span></div>
-      </div>`;
+    const mObj = num(p.parametros.margenObjetivo);
     const utilRows = p.partidas.map((it, i) => {
       const code = 'P' + (i + 1);
       const isPct = it.utilidadTipo !== 'monto';
       return `<tr data-row="${it.uid}">
         <td><div class="pnom"><span class="pcode">${code}</span><div style="min-width:0"><div class="t">${esc(it.descripcion || 'Partida sin descripción')}</div>
           <div class="s">${esc(nf(num(it.cantidad)))} ${esc(it.unidad || '')} · costo directo <span data-c="P:${it.uid}:cd" data-fmt="clp"></span></div></div></div></td>
-        <td><div class="util-edit">
-          ${seg(`ut-${it.uid}`, [{ v: 'pct', l: '%', checked: isPct }, { v: 'monto', l: '$', checked: !isPct }], { label: `Tipo de utilidad ${code}`, data: `data-list="partidas" data-uid="${it.uid}" data-k="utilidadTipo" data-rerender` }, 'sm')}
-          ${rowInput('partidas', it, 'utilidadValor', `Utilidad ${code} ${isPct ? 'en % de recargo' : 'en pesos'}`, 'num', true, `placeholder="${isPct ? '%' : '$'}"`)}
+        <td data-label="Utilidad"><div class="util-edit">
+          ${seg(`ut-${it.uid}`, [{ v: 'pct', l: '%', checked: isPct }, { v: 'monto', l: '$', checked: !isPct }], { label: `Tipo de utilidad de ${code}`, data: `data-list="partidas" data-uid="${it.uid}" data-k="utilidadTipo" data-rerender` }, 'sm')}
+          ${rowInput('partidas', it, 'utilidadValor', `Utilidad de ${code} ${isPct ? 'en % de recargo' : 'en pesos'}`, 'num', true, `placeholder="${isPct ? '%' : '$'}"`)}
         </div></td>
-        <td class="num calc" data-c="P:${it.uid}:utilidad" data-fmt="clp"></td>
-        <td class="num calc"><span class="dot na" data-sem-p="${it.uid}" aria-hidden="true"></span><span data-c="P:${it.uid}:margen" data-fmt="pct"></span></td>
+        <td class="num calc" data-label="Utilidad en $" data-c="P:${it.uid}:utilidad" data-fmt="clp"></td>
+        <td class="num calc" data-label="Margen"><span class="dot na" data-sem-p="${it.uid}" aria-hidden="true"></span><span data-c="P:${it.uid}:margen" data-fmt="pct"></span></td>
       </tr>`;
     }).join('');
+    const ayuda = `<p>La utilidad de cada partida es un <b>% de recargo sobre su costo</b> o un <b>monto fijo en $</b>. Un recargo de 100 % equivale a un margen de 50 % sobre la venta.
+        Al cambiar entre % y $ se conserva el monto.</p>
+      <p><b>Llevar al margen objetivo</b> calcula el recargo que deja el margen justo en la meta del proyecto; <b>Deshacer</b> vuelve a los valores que ingresaste a mano.</p>
+      <p>Los valores por partida se redondean al peso (precio unitario × cantidad) para que la cotización cuadre.</p>`;
     return `
       <div class="print-only print-head">
         <img src="assets/logo-quempin.png" alt="QUEMPIN Soluciones Energéticas">
         <div style="text-align:right"><b>${esc(p.codigo)} · v${esc(p.version)}</b><br>${esc(p.titulo)}<br>${esc([p.cliente, p.responsable, fechaCorta(p.fecha)].filter(Boolean).join(' · '))}</div>
       </div>
+      ${state.imprimir ? '' : pasoHead('resumen', ayuda)}
       <div id="res-aviso"></div>
-
-      <section class="section section-first">
-        <div class="section-head"><h3 class="seccion-titulo">Precio de la oferta</h3><p>Cómo se forma, en pesos chilenos (CLP).</p></div>
-        <div class="eq" id="res-top"></div>
-      </section>
+      <div class="eq" id="res-top" aria-label="Cómo se forma el precio"></div>
 
       <section class="section" id="utilidad">
-        <div class="section-head"><h3 class="seccion-titulo">Utilidad y valores por partida</h3><span class="en-vivo">Se actualizan al escribir</span></div>
         <div class="calc-layout">
           <div class="calc-entradas">
             <div class="tabla-contenedor">
@@ -1268,56 +1456,67 @@
                 <div class="input-affix"><input class="input" id="util-all" type="number" step="any" placeholder="100" aria-label="Recargo en % a aplicar a todas las partidas"><span class="affix">%</span></div>
                 <button type="button" class="btn btn-sm" data-act="apply-util" ${p.partidas.length ? '' : 'disabled'}>Aplicar</button>
                 <span class="grupo-btn">
-                  <button type="button" class="btn btn-sm" data-act="util-objetivo" ${p.partidas.length ? '' : 'disabled'} data-tip="Calcula el recargo que deja el margen sobre venta exactamente en el objetivo definido en Ficha y parámetros, y lo aplica a todas las partidas.">${ICON.target}Llevar al margen objetivo (${esc(nf(mObj))} %)</button>
+                  <button type="button" class="btn btn-sm" data-act="util-objetivo" ${p.partidas.length ? '' : 'disabled'} data-tip="Calcula el recargo que deja el margen sobre venta justo en el objetivo del proyecto y lo aplica a todas las partidas.">${ICON.target}Llevar al margen objetivo (${esc(nf(mObj))} %)</button>
                   <button type="button" class="btn btn-sm" id="util-undo" data-act="util-deshacer" aria-disabled="true">${ICON.restore}Deshacer</button>
                 </span>
               </div>
-              <table class="tbl util-tbl">
-                <thead><tr><th>Partida</th><th>Utilidad<span class="th-sub">% de recargo sobre su costo o $ fijo</span></th><th class="num">Utilidad $</th><th class="num">Margen</th></tr></thead>
+              <table class="tbl util-tbl tbl-apilable">
+                <thead><tr><th>Partida</th><th>Utilidad<span class="th-sub">% de recargo sobre su costo o $ fijo</span></th><th class="num">Utilidad en $</th><th class="num">Margen</th></tr></thead>
                 <tbody>${utilRows || '<tr class="empty-row"><td colspan="4">Aún no hay partidas. <button type="button" class="link-btn" data-act="tab" data-tab="partidas">Crear la primera partida</button></td></tr>'}</tbody>
                 <tfoot><tr><td>Total</td><td class="small muted" style="font-weight:400">Recargo promedio <span data-c="K:markup" data-fmt="pct"></span></td>
-                  <td class="num" data-c="T:utilidad" data-fmt="clp"></td><td class="num" data-c="K:margen" data-fmt="pct"></td></tr></tfoot>
+                  <td class="num" data-label="Utilidad en $" data-c="T:utilidad" data-fmt="clp"></td>
+                  <td class="num" data-label="Margen"><span class="dot na" data-sem-total aria-hidden="true"></span><span data-c="K:margen" data-fmt="pct"></span><div class="meta-margen" id="meta-margen"></div></td></tr></tfoot>
               </table>
             </div>
             <div class="eval" id="res-eval"></div>
-            <p class="small muted" style="margin:10px 2px 0">Un recargo de 100 % sobre el costo equivale a un margen de 50 % sobre la venta. Al cambiar entre % y $ se conserva el monto de utilidad.</p>
           </div>
           <aside class="calc-resultados" id="res-precio" aria-label="Valores por partida para la cotización"></aside>
         </div>
-      </section>
+      </section>`;
+  }
+
+  // ---- Paso 5: evaluación ------------------------------------------------------------
+  function viewEvaluacion() {
+    const p = state.project;
+    const s = p.parametros.sensibilidad;
+    const sensRow = (k, label, cls) => `<div class="sens-row">
+        <label for="sens-${k}"><span class="swatch ${cls}"></span>${label}</label>
+        <input type="range" min="-20" max="50" step="1" data-f="parametros.sensibilidad.${k}" data-t="num" data-sync="sens-${k}" value="${esc(num(s[k]))}" aria-label="Variación de ${label}">
+        <div class="input-affix"><input class="input" id="sens-${k}" type="number" step="any" data-f="parametros.sensibilidad.${k}" data-t="num" data-sync="sens-${k}" value="${esc(num(s[k]))}"><span class="affix">%</span></div>
+      </div>`;
+    const ayuda = `<p>Cada respuesta del veredicto se basa en los indicadores de abajo y en las metas del proyecto (paso 1 → Metas de evaluación).
+        Abre «Qué mide y cómo aporta» en cada indicador, o revisa la <a href="#/guia">Guía de uso</a>.</p>
+      <p>Verde, ámbar y rojo indican el estado de cada indicador frente a su meta; gris, que es referencial.</p>`;
+    const kApu = 'apu-sec';
+    return `${state.imprimir ? '<div class="print-salto"></div>' : pasoHead('evaluacion', ayuda, 'Cómo leerla')}
+      <section class="section section-first" id="veredicto"><div id="res-veredicto"></div></section>
 
       <section class="section" id="indicadores">
-        <div class="section-head"><h3 class="seccion-titulo">Indicadores de evaluación</h3><p>Abre «Qué mide y cómo aporta» en cada tarjeta, o revisa la <a href="#/guia">Guía de KPIs</a>.</p></div>
-        <div id="res-kpis"></div>
+        <div class="section-head"><h4 class="seccion-titulo">Rentabilidad y presupuesto</h4></div>
+        <div id="res-kpis" class="kpi-grid"></div>
       </section>
 
       <section class="section" id="sensibilidad">
-        <div class="section-head"><h3 class="seccion-titulo">Sensibilidad: ¿cuánto sobrecosto resiste la oferta?</h3><p>Simula alzas de costo manteniendo el precio ofertado.</p></div>
-        <div class="calc-layout parejo">
+        <div class="section-head"><h4 class="seccion-titulo">Riesgo: ¿cuánto sobrecosto resiste la oferta?</h4><p>Simula alzas de costo manteniendo el precio ofertado.</p></div>
+        <div id="res-kpis-riesgo" class="kpi-grid"></div>
+        <div class="calc-layout parejo" style="margin-top:12px">
           <div class="panel">
             ${sensRow('mat', 'Materiales', 'cat-mat')}${sensRow('eq', 'Equipos', 'cat-eq')}${sensRow('mo', 'Mano de obra', 'cat-mo')}${sensRow('otros', 'Otros', 'cat-otros')}
-            <button type="button" class="btn btn-sm no-print" data-act="sens-reset">Restablecer (MO +10 %)</button>
+            <button type="button" class="btn btn-sm no-print" data-act="sens-reset">Restablecer (mano de obra +10 %)</button>
           </div>
           <div id="res-sens"></div>
         </div>
       </section>
 
-      <section class="section">
-        <div class="section-head"><h3 class="seccion-titulo">Composición del precio</h3><p>Qué parte del precio neto es costo y qué parte es utilidad.</p></div>
-        <div class="grid-2 iguales">
-          <div class="panel"><h4 class="panel-t">Proyecto completo</h4><div id="res-comp"></div></div>
-          <div class="panel"><h4 class="panel-t">Por partida</h4><div id="res-pbar"></div></div>
-        </div>
-      </section>
-
-      <section class="section">
-        <div class="section-head"><h3 class="seccion-titulo">Detalle por partida</h3><p>Despliega una partida para ver su análisis de precio unitario.</p></div>
-        <div id="res-partidas"></div>
-      </section>
-
-      <section class="section" id="alertas">
-        <div class="section-head"><h3 class="seccion-titulo">Alertas de validación</h3><p>Revisiones automáticas que en el Excel pasaban inadvertidas.</p></div>
-        <div id="res-alerts"></div>
+      <section class="section" id="detalle">
+        <details class="plegable-sec" data-open-key="${kApu}" ${state.abiertos.has(kApu) || state.imprimir ? 'open' : ''}>
+          <summary><span class="seccion-titulo">Composición del precio y detalle por partida</span><span class="pl-res">con el análisis de precio unitario</span></summary>
+          <div class="grid-2 iguales" style="margin-top:12px">
+            <div class="panel"><h5 class="panel-t">Proyecto completo</h5><div id="res-comp"></div></div>
+            <div class="panel"><h5 class="panel-t">Por partida</h5><div id="res-pbar"></div></div>
+          </div>
+          <div id="res-partidas" style="margin-top:12px"></div>
+        </details>
       </section>`;
   }
 
@@ -1377,7 +1576,9 @@
     b.dataset.tip = `<b>Volver a la utilidad ingresada a mano</b>Deshace «${esc(u.accion)}»: ${esc(txt)}`;
   }
 
+  /* Pinta los resultados de los pasos 4 y 5: solo los contenedores que existen en la vista */
   function refreshResumen() {
+    if (!$('#res-top') && !$('#res-kpis')) return;
     const r = state.result;
     const t = r.totals, k = r.kpis, st = r.status;
     const par = state.project.parametros;
@@ -1387,30 +1588,35 @@
     const pctShort = (x) => pct(x).replace(',0 ', ' ');
     const semMargen = (m) => (!ok(m) ? 'na' : m >= mObj ? 'ok' : m >= mMin ? 'warn' : 'bad');
     const ws = r.warnings;
-
-    // Aviso arriba cuando hay alertas (el detalle sigue al final)
     const nErr = ws.filter((w) => w.level === 'error').length;
     const nWarn = ws.filter((w) => w.level === 'warn').length;
-    $('#res-aviso').innerHTML = nErr || nWarn ? `<div class="aviso ${nErr ? 'bad' : 'warn'} no-print">
+    const put = (id, html) => { const el = $('#' + id); if (el) el.innerHTML = html; return !!el; };
+    const medMargen = () => medidor({ v: Math.max(0, k.margen), max: Math.max(0.6, Math.ceil((k.margen + 0.05) * 10) / 10), fill: st.margen, fmt: pctShort, label: 'Margen frente a las metas',
+      ticks: [{ at: mMin, dash: true, show: true, tip: `Mínimo ${pct(mMin)}` }, { at: mObj, show: true, tip: `Objetivo ${pct(mObj)}` }] });
+    const um = num(par.umbralAjustado || 95) / 100;
+    const medComp = () => medidor({ v: k.competitividad, max: Math.max(1.2, Math.ceil(k.competitividad * 10) / 10), fill: st.competitividad, fmt: pctShort, label: 'Competitividad frente al presupuesto',
+      ticks: [{ at: um, dash: true, tip: `Ajustada desde ${pct(um)}` }, { at: 1, show: true, tip: '100 % del presupuesto' }] });
+    const linkDatos = (txt) => `<button type="button" class="link-btn" data-act="tab" data-tab="ficha">${txt}</button>`;
+
+    // Aviso arriba cuando hay alertas
+    put('res-aviso', nErr || nWarn ? `<div class="aviso ${nErr ? 'bad' : 'warn'} no-print">
         <span class="ico" aria-hidden="true">${nErr ? '✖' : '▲'}</span>
         <span class="motivo">${nErr
           ? `<b>${plural(nErr, 'error', 'errores')}:</b> hay costos que no se están sumando al precio${nWarn ? ` (y ${plural(nWarn, 'aviso')})` : ''}.`
           : `<b>${plural(nWarn, 'aviso')}</b> por revisar.`} Revísalos antes de copiar los valores a la cotización.</span>
-        <button type="button" class="ir" data-act="scroll" data-to="alertas">Ver alertas →</button>
-      </div>` : '';
+        <button type="button" class="ir" data-menu="alertas" aria-haspopup="menu" aria-expanded="false">Ver y corregir →</button>
+      </div>` : '');
 
-    // Precio de la oferta: costo + utilidad = neto; neto + IVA = precio con IVA
+    // Precio de la oferta: costo + utilidad = precio neto (el IVA está en los valores por partida)
     const eqCard = (cls, label, value, sub, tipText) => `<div class="eq-card ${cls}">
         <div class="l">${label}${tipText ? info(tipText) : ''}</div><div class="v">${value}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>`;
     const op = (c) => `<span class="eq-op" aria-hidden="true">${c}</span>`;
-    $('#res-top').innerHTML = [
-      eqCard('', 'Costo directo', clp(t.cd), 'Materiales, equipos, MO y otros', KP.byKey.cd.queMide),
-      hasGG ? op('+') + eqCard('', 'GG e imprevistos', clp(t.gg + t.imp), `${nf(num(par.gastosGenerales))} % + ${nf(num(par.imprevistos))} % del costo directo`, KP.byKey.costoTotal.queMide) : '',
+    put('res-top', [
+      eqCard('', 'Costo directo', clp(t.cd), 'Materiales, equipos, mano de obra y otros', KP.byKey.cd.queMide),
+      hasGG ? op('+') + eqCard('', 'Gastos generales e imprevistos', clp(t.gg + t.imp), `${nf(num(par.gastosGenerales))} % + ${nf(num(par.imprevistos))} % del costo directo`, KP.byKey.costoTotal.queMide) : '',
       op('+'), eqCard('util', 'Utilidad', clp(t.utilidad), `Recargo de ${pct(k.markup)} sobre el costo${hasGG ? ' total' : ''}`, KP.byKey.utilidad.queMide),
-      op('='), eqCard('hero', 'Precio de venta neto', clp(t.precioNeto), 'Sin IVA: el monto a ofertar', KP.byKey.precioNeto.queMide),
-      op('+'), eqCard('', `IVA ${nf(num(par.iva))} %`, clp(t.iva), 'No es ingreso de la empresa', KP.byKey.iva.queMide),
-      op('='), eqCard('', 'Precio con IVA', clp(t.precioBruto), 'Lo que paga el cliente', KP.byKey.precioBruto.queMide)
-    ].join('');
+      op('='), eqCard('hero', 'Precio de venta neto', clp(t.precioNeto), 'Sin IVA: el monto a ofertar', KP.byKey.precioNeto.queMide)
+    ].join(''));
 
     // Semáforo de margen por partida (contra las metas del proyecto)
     $$('[data-sem-p]', app).forEach((el) => {
@@ -1419,122 +1625,121 @@
     });
     pintarDeshacer();
 
-    // Evaluación inmediata bajo la tabla de utilidad: margen y competitividad
-    const medMargen = (extra) => medidor(Object.assign({ v: Math.max(0, k.margen), max: Math.max(0.6, Math.ceil((k.margen + 0.05) * 10) / 10), fill: st.margen, fmt: pctShort, label: 'Margen frente a las metas',
-      ticks: [{ at: mMin, dash: true, show: true, tip: `Mínimo ${pct(mMin)}` }, { at: mObj, show: true, tip: `Objetivo ${pct(mObj)}` }] }, extra));
-    const um = num(par.umbralAjustado || 95) / 100;
-    const medComp = () => medidor({ v: k.competitividad, max: Math.max(1.2, Math.ceil(k.competitividad * 10) / 10), fill: st.competitividad, fmt: pctShort, label: 'Competitividad frente al presupuesto',
-      ticks: [{ at: um, dash: true, tip: `Ajustada desde ${pct(um)}` }, { at: 1, show: true, tip: '100 % del presupuesto' }] });
-    const compEval = k.competitividad === null
-      ? `<div class="eval-item s-na"><div class="eval-top"><span class="eval-n">Competitividad</span>${chip('na', 'competitividad')}</div>
-          <p class="eval-txt">Ingresa el presupuesto del mandante en <button type="button" class="link-btn" data-act="tab" data-tab="ficha">Ficha y parámetros</button> para saber si la oferta cabe.</p></div>`
-      : `<div class="eval-item s-${st.competitividad}"><div class="eval-top"><span class="eval-n">Competitividad</span>${chip(st.competitividad, 'competitividad')}</div>
-          <div class="eval-v">${pct(k.competitividad)}<span class="eval-sub">de ${clp(k.presupuesto)}${par.presupuestoIncluyeIva ? ' (con IVA)' : ''}</span></div>${medComp()}</div>`;
-    $('#res-eval').innerHTML = `<div class="eval-item s-${st.margen}"><div class="eval-top"><span class="eval-n">Margen sobre venta</span>${chip(st.margen, 'margen')}</div>
-        <div class="eval-v">${pct(k.margen)}<span class="eval-sub">objetivo ${pctShort(mObj)} · mínimo ${pctShort(mMin)}</span></div>${ok(k.margen) ? medMargen() : ''}</div>${compEval}`;
+    // Efecto inmediato de la utilidad: semáforo del margen total y, si hay presupuesto, competitividad
+    $$('[data-sem-total]', app).forEach((el) => { el.className = 'dot ' + st.margen; });
+    put('meta-margen', `${CHIP_TXT.margen[st.margen] || 'Sin datos'} · objetivo ${pctShort(mObj)}, mínimo ${pctShort(mMin)}`);
+    put('res-eval', k.competitividad === null
+      ? `<p class="hint-linea">Sin presupuesto del mandante: ${linkDatos('agrégalo en Datos del proyecto')} para saber si la oferta cabe.</p>`
+      : `<div class="eval-item s-${st.competitividad}"><div class="eval-top"><span class="eval-n">Frente al presupuesto del mandante</span>${chip(st.competitividad, 'competitividad')}</div>
+          <div class="eval-v">${pct(k.competitividad)}<span class="eval-sub">de ${clp(k.presupuesto)}${par.presupuestoIncluyeIva ? ' (con IVA)' : ''}</span></div>${medComp()}</div>`);
 
     // Valores por partida, antes de IVA, con botón para copiar cada monto
-    const cot = cotizacion();
-    const filasCot = cot.lineas.map(({ pt, pu, total }) => `<li>
-        <span class="pcode">${pt.code}</span>
-        <div class="cotiz-nom"><div class="t ${pt.descripcion ? '' : 'muted'}">${esc(pt.descripcion || 'Partida sin descripción')}</div>
-          <div class="s">${esc(nf(pt.cantidad))} ${esc(pt.unidad)}${pu !== null && pt.cantidad !== 1
-            ? ` × <button type="button" class="copiar-txt" data-act="copiar" data-v="${pu}" data-lbl="${pt.code} · precio unitario" aria-label="Copiar precio unitario de ${pt.code}" data-tip="<b>Copiar precio unitario de ${pt.code}</b>Se copia como número sin formato: ${pu}">${clp(pu)}</button> c/u` : ''}</div></div>
-        <div class="cotiz-v">${clp(total)}</div>
-        ${btnCopiar(total, `${pt.code} · total neto`)}
-      </li>`).join('');
-    $('#res-precio').innerHTML = `<div class="panel cotiz">
-        <div class="cotiz-head">
-          <div><h3 class="seccion-titulo">Valores por partida</h3><p class="cotiz-sub">Neto, antes de IVA · para la cotización</p></div>
-          <button type="button" class="btn btn-sm no-print" data-act="copiar-tabla" ${cot.lineas.length ? '' : 'disabled'} data-tip="<b>Copiar la tabla completa</b>Partidas, cantidades, precios unitarios y totales, lista para pegar en Excel o Word.">${ICON.copy}Copiar tabla</button>
-        </div>
-        ${cot.lineas.length ? `<ul class="cotiz-list">${filasCot}</ul>` : '<p class="small muted" style="margin:10px 0">Aún no hay partidas.</p>'}
-        <div class="cotiz-tot">
-          <div class="fila principal"><span>Total neto</span><span class="v">${clp(cot.neto)}</span>${btnCopiar(cot.neto, 'total neto')}</div>
-          <div class="fila"><span>IVA ${nf(num(par.iva))} %</span><span class="v">${clp(cot.iva)}</span>${btnCopiar(cot.iva, 'IVA')}</div>
-          <div class="fila"><span>Total con IVA</span><span class="v">${clp(cot.bruto)}</span>${btnCopiar(cot.bruto, 'total con IVA')}</div>
-        </div>
-        ${cot.dif ? `<p class="cotiz-nota">Montos redondeados a pesos por partida (cantidad × precio unitario), por eso difieren en ${clp(Math.abs(cot.dif))} del precio calculado.</p>` : ''}
-      </div>`;
+    if ($('#res-precio')) {
+      const cot = cotizacion();
+      const filasCot = cot.lineas.map(({ pt, pu, total }) => `<li>
+          <span class="pcode">${pt.code}</span>
+          <div class="cotiz-nom"><div class="t ${pt.descripcion ? '' : 'muted'}">${esc(pt.descripcion || 'Partida sin descripción')}</div>
+            <div class="s">${esc(nf(pt.cantidad))} ${esc(pt.unidad)}${pu !== null && pt.cantidad !== 1
+              ? ` × <button type="button" class="copiar-txt" data-act="copiar" data-v="${pu}" data-lbl="${pt.code} · precio unitario" aria-label="Copiar precio unitario de ${pt.code}" data-tip="<b>Copiar precio unitario de ${pt.code}</b>Se copia como número sin formato: ${pu}">${clp(pu)}</button> cada una` : ''}</div></div>
+          <div class="cotiz-v">${clp(total)}</div>
+          ${btnCopiar(total, `${pt.code} · total neto`)}
+        </li>`).join('');
+      put('res-precio', `<div class="panel cotiz">
+          <div class="cotiz-head">
+            <div><h4 class="seccion-titulo">Valores para la cotización</h4><p class="cotiz-sub">Por partida, netos (antes de IVA)</p></div>
+            <button type="button" class="btn btn-sm no-print" data-act="copiar-tabla" ${cot.lineas.length ? '' : 'disabled'} data-tip="<b>Copiar la tabla completa</b>Partidas, cantidades, precios unitarios y totales, lista para pegar en Excel o Word.">${ICON.copy}Copiar tabla</button>
+          </div>
+          ${cot.lineas.length ? `<ul class="cotiz-list">${filasCot}</ul>` : '<p class="small muted" style="margin:10px 0">Aún no hay partidas.</p>'}
+          <div class="cotiz-tot">
+            <div class="fila principal"><span>Total neto</span><span class="v">${clp(cot.neto)}</span>${btnCopiar(cot.neto, 'total neto')}</div>
+            <div class="fila"><span>IVA ${nf(num(par.iva))} %</span><span class="v">${clp(cot.iva)}</span>${btnCopiar(cot.iva, 'IVA')}</div>
+            <div class="fila"><span>Total con IVA <span class="tn">(lo que paga el cliente)</span></span><span class="v">${clp(cot.bruto)}</span>${btnCopiar(cot.bruto, 'total con IVA')}</div>
+          </div>
+          ${cot.dif ? `<p class="cotiz-nota">Montos redondeados a pesos por partida (cantidad × precio unitario), por eso difieren en ${clp(Math.abs(cot.dif))} del precio calculado.</p>` : ''}
+        </div>`);
+    }
 
-    // Indicadores de evaluación, agrupados
+    if (!$('#res-kpis')) return;
+
+    // ---- Evaluación: veredicto en cuatro preguntas ----
+    const sv = par.sensibilidad || {};
+    const SENS_N = { mat: 'materiales', eq: 'equipos', mo: 'mano de obra', otros: 'otros' };
+    const escenario = Object.keys(SENS_N).filter((x) => num(sv[x]) !== 0).map((x) => `${SENS_N[x]} ${num(sv[x]) > 0 ? '+' : ''}${nf(num(sv[x]))} %`);
+    const errPrimero = ws.find((w) => w.level === 'error') || ws.find((w) => w.level === 'warn');
+    const estNum = nErr ? 'bad' : nWarn ? 'warn' : ok(k.margen) ? 'ok' : 'na';
+    const preguntas = [
+      { q: '¿Es rentable?', s: st.margen, to: 'indicadores',
+        a: { ok: 'Sí: el margen supera el objetivo del proyecto.', warn: 'A medias: el margen está entre el mínimo y el objetivo.', bad: 'No: el margen está bajo el mínimo aceptable. Revisa la utilidad (paso 4).', na: 'Aún no hay precio: completa los costos y la utilidad.' }[st.margen] },
+      { q: '¿Resiste sobrecostos?', s: escenario.length ? st.sensibilidad : 'na', to: 'sensibilidad',
+        a: !escenario.length ? 'No hay alzas de costo simuladas.' : { ok: `Sí: con ${escenario.join(', ')} el margen se mantiene sobre el mínimo.`, warn: `Con ${escenario.join(', ')} el margen cae bajo el mínimo.`, bad: `No: con ${escenario.join(', ')} el proyecto pierde dinero.`, na: 'Aún no hay precio para simular.' }[st.sensibilidad] },
+      { q: '¿Cabe en el presupuesto del mandante?', s: st.competitividad, to: 'indicadores',
+        a: k.competitividad === null ? `Sin presupuesto informado. ${linkDatos('Agrégalo en Datos del proyecto')}.` : { ok: 'Sí, con holgura.', warn: 'Sí, pero ajustada: está cerca del máximo.', bad: 'No: la oferta excede el presupuesto.' }[st.competitividad] },
+      { q: '¿Los números están completos?', s: estNum, to: 'alertas',
+        a: nErr ? `No: ${nErr === 1 ? 'un costo no se suma' : `${nErr} costos no se suman`} al precio.${nWarn ? ` Además, ${plural(nWarn, 'aviso')}.` : ''}` : nWarn ? `${plural(nWarn, 'aviso')} por revisar.` : estNum === 'ok' ? 'Sí: todos los costos se suman y cada partida tiene utilidad.' : 'Aún no hay costos.' }
+    ];
+    const peor = preguntas.some((x) => x.s === 'bad') ? 'bad' : preguntas.some((x) => x.s === 'warn') ? 'warn' : preguntas.every((x) => x.s === 'ok' || x.s === 'na') && ok(k.margen) ? 'ok' : 'na';
+    const titular = { ok: 'La oferta está lista para enviarse.', warn: 'La oferta se puede enviar, pero revisa los puntos en ámbar.', bad: 'Revisa los puntos en rojo antes de enviar la oferta.', na: 'Completa los costos y la utilidad para evaluar la oferta.' }[peor];
+    const EST_T = { ok: 'Bien', warn: 'Revisar', bad: 'Problema', na: 'Sin datos', info: 'Referencial' };
+    put('res-veredicto', `<div class="veredicto s-${peor}">
+        <div class="ver-titular"><span class="ver-ico" aria-hidden="true">${ICO[peor]}</span>${titular}</div>
+        <ul class="ver-lista">${preguntas.map((x) => `<li class="s-${x.s}">
+            <span class="chip ${x.s}">${ICO[x.s] || '•'} ${EST_T[x.s]}</span>
+            <span class="ver-q">${x.q}</span>
+            <span class="ver-a">${x.a}${x.to === 'alertas' ? '' : ` <button type="button" class="ir no-print" data-act="scroll" data-to="${x.to}">Ver detalle</button>`}</span></li>`).join('')}</ul>
+        ${ws.length ? `<ul class="lista-atencion en-veredicto" id="alertas">${ws.map((w) => `
+          <li><span class="marca ${w.level}" aria-hidden="true"></span><span class="motivo"><span class="visualmente-oculto">${w.level === 'error' ? 'Error: ' : 'Aviso: '}</span>${esc(w.msg)}</span>
+          ${w.tab ? `<button type="button" class="ir no-print" data-act="ir" data-tab="${w.tab}" data-uid="${w.uid || ''}">Corregir en ${esc(tabInfo(w.tab).label)} →</button>` : ''}</li>`).join('')}</ul>` : ''}
+      </div>`);
+
+    // Indicadores, agrupados por la pregunta que responden
     const kpiCard = (key, value, unit, statusKey, reading, extra) => {
       const d = KP.byKey[key];
       const s = st[statusKey || key] || 'info';
-      const open = state.kpiOpen.has(key);
-      const origen = d.origen === 'Nuevo' ? 'Indicador nuevo: no existía en el Excel original.' : `En el Excel original: ${esc(d.origen)}.`;
       return `<article class="kpi s-${s}">
-        <div class="kpi-top"><div class="kpi-name">${d.nombre}</div>${chip(s, statusKey || key)}</div>
+        <div class="kpi-top"><div class="kpi-name">${d.nombre}${info(`${d.queMide} Fórmula: ${d.formula}.${d.lectura ? ' ' + d.lectura : ''}`)}</div>${chip(s, statusKey || key)}</div>
         <div class="kpi-value">${value}${unit ? `<span class="unit">${unit}</span>` : ''}</div>
         ${extra || ''}
         <div class="kpi-read">${reading}</div>
-        <details data-kpi="${key}" ${open ? 'open' : ''}><summary>Qué mide y cómo aporta</summary>
-          <p><span class="formula">${esc(d.formula)}</span></p>
-          <p><strong>Qué mide:</strong> ${esc(d.queMide)}</p>
-          <p><strong>Cómo aporta:</strong> ${esc(d.aporte)}</p>
-          ${d.lectura ? `<p class="muted">${esc(d.lectura)}</p>` : ''}
-          <p class="kpi-origin">${origen}</p>
-        </details>
       </article>`;
     };
-    // Metas de recargo equivalentes a las de margen: r = m / (1 − m)
-    const rMin = mMin < 1 ? mMin / (1 - mMin) : null, rObj = mObj < 1 ? mObj / (1 - mObj) : null;
     const compRead = k.competitividad === null
-      ? 'Ingresa el presupuesto máximo del mandante en Ficha y parámetros para evaluar la oferta.'
+      ? `Ingresa el presupuesto máximo del mandante en ${linkDatos('Datos del proyecto')} para evaluar la oferta.`
       : `La oferta ${par.presupuestoIncluyeIva ? 'con IVA' : 'neta'} (${clp(k.precioComparable)}) equivale al ${pct(k.competitividad)} del presupuesto de ${clp(k.presupuesto)}.`;
-    const sv = par.sensibilidad || {};
-    const SENS_N = { mat: 'materiales', eq: 'equipos', mo: 'MO', otros: 'otros' };
-    const escenario = Object.keys(SENS_N).filter((x) => num(sv[x]) !== 0).map((x) => `${SENS_N[x]} ${num(sv[x]) > 0 ? '+' : ''}${nf(num(sv[x]))} %`);
-    const grupo = (titulo, cards) => `<div class="kpi-grupo"><div class="kpi-grupo-t">${titulo}</div><div class="kpi-grid">${cards.join('')}</div></div>`;
-    $('#res-kpis').innerHTML = [
-      grupo('Rentabilidad', [
-        kpiCard('margen', pct(k.margen), '', 'margen',
-          ok(k.margen) ? `De cada $100 vendidos quedan $${fNum.format(Math.round(k.margen * 1000) / 10)} de utilidad.` : 'Sin ventas aún.',
-          ok(k.margen) ? medMargen() : ''),
-        kpiCard('markup', pct(k.markup), '', 'markup',
-          ok(k.markup) ? `Los costos pueden subir hasta ${pct(k.markup)} antes de que el proyecto pierda dinero.` : '—',
-          ok(k.markup) && rObj !== null ? medidor({ v: Math.max(0, k.markup), max: Math.max(rObj * 1.5, Math.ceil((k.markup + 0.1) * 10) / 10), fill: st.markup, fmt: pctShort, label: 'Recargo frente a las metas',
-            ticks: [{ at: rMin, dash: true, show: true, tip: `Equivale al margen mínimo: ${pct(rMin)}` }, { at: rObj, show: true, tip: `Equivale al margen objetivo: ${pct(rObj)}` }] }) : ''),
-        kpiCard('rentDH', clp(k.rentDH), '/ DH', 'rentDH',
-          ok(k.rentDH) ? `Venta por día-hombre: ${clp(k.ventaDH)}.${meta > 0 ? ` Meta: ${clp(meta)}.` : ' Define una meta en Ficha y parámetros para activar el semáforo.'}` : 'No hay días-hombre registrados.',
-          ok(k.rentDH) && meta > 0 ? medidor({ v: k.rentDH, max: Math.max(meta * 1.5, k.rentDH * 1.1), fill: st.rentDH, fmt: (x) => clp(x), label: 'Utilidad por DH frente a la meta',
-            ticks: [{ at: meta * 0.8, dash: true, tip: `80 % de la meta: ${clp(meta * 0.8)}` }, { at: meta, show: true, tip: `Meta ${clp(meta)}` }] }) : '')
-      ]),
-      grupo('Mano de obra', [
-        kpiCard('dh', nf(k.dh), 'DH', 'dh',
-          k.dh ? `Costo promedio de mano de obra: ${clp(k.costoMODH)} por día-hombre.` : 'Registra tareas en Mano de obra.'),
-        kpiCard('incidenciaMO', pct(k.incidenciaMO), '', 'incidenciaMO',
-          ok(k.incidenciaMO) ? `La MO es ${pct(k.incidenciaMO)} del precio y ${pct(t.cd ? t.mo / t.cd : null)} del costo directo.` : '—',
-          ok(k.incidenciaMO) ? `<div class="stack barra-kpi" role="img" aria-label="Peso de la mano de obra en el precio">${k.incidenciaMO > 0 ? `<div class="seg cat-mo" style="flex:${k.incidenciaMO} 1 0"></div>` : ''}<div class="seg resto" style="flex:${Math.max(0, 1 - k.incidenciaMO)} 1 0"></div></div>` : ''),
-        kpiCard('holguraMO', pct(k.holguraMO), '', 'holguraMO',
-          ok(k.holguraMO) ? `Si la mano de obra cuesta más de ${pct(k.holguraMO)} sobre lo presupuestado, el proyecto pierde dinero.` : 'No hay costo de mano de obra.')
-      ]),
-      grupo('Frente al mandante y al riesgo', [
-        kpiCard('competitividad', k.competitividad === null ? '—' : pct(k.competitividad), '', 'competitividad', compRead,
-          k.competitividad === null ? '' : medComp()),
-        kpiCard('sensibilidad', pct(k.sensVarUtilidad), '', 'sensibilidad',
-          (escenario.length && ok(k.sensVarUtilidad)
-            ? `Con ${esc(escenario.join(', '))} la utilidad queda en ${clp(k.sensUtilidad)} y el margen en ${pct(k.sensMargen)}.`
-            : 'No hay alzas de costo simuladas.') + ` <button type="button" class="link-btn no-print" data-act="scroll" data-to="sensibilidad">Ajustar escenario</button>`)
-      ])
-    ].join('');
+    put('res-kpis', [
+      kpiCard('margen', pct(k.margen), '', 'margen',
+        ok(k.margen) ? `De cada $100 vendidos quedan $${fNum.format(Math.round(k.margen * 1000) / 10)} de utilidad: un recargo de ${pct(k.markup)} sobre el costo.` : 'Sin ventas aún.',
+        ok(k.margen) ? medMargen() : ''),
+      kpiCard('rentDH', clp(k.rentDH), 'por día-hombre', 'rentDH',
+        ok(k.rentDH) ? `${nf(k.dh)} días-hombre en total; venta por día-hombre ${clp(k.ventaDH)}.${meta > 0 ? ` Meta: ${clp(meta)}.` : ` Define una meta en ${linkDatos('Datos del proyecto')} para activar el semáforo.`}` : 'No hay días-hombre registrados.',
+        ok(k.rentDH) && meta > 0 ? medidor({ v: k.rentDH, max: Math.max(meta * 1.5, k.rentDH * 1.1), fill: st.rentDH, fmt: (x) => clp(x), label: 'Utilidad por día-hombre frente a la meta',
+          ticks: [{ at: meta * 0.8, dash: true, tip: `80 % de la meta: ${clp(meta * 0.8)}` }, { at: meta, show: true, tip: `Meta ${clp(meta)}` }] }) : ''),
+      kpiCard('competitividad', k.competitividad === null ? '—' : pct(k.competitividad), k.competitividad === null ? '' : 'del presupuesto', 'competitividad', compRead,
+        k.competitividad === null ? '' : medComp())
+    ].join(''));
+    put('res-kpis-riesgo', [
+      kpiCard('holguraMO', pct(k.holguraMO), '', 'holguraMO',
+        ok(k.holguraMO) ? `Si la mano de obra cuesta más de ${pct(k.holguraMO)} sobre lo presupuestado, el proyecto pierde dinero.` : 'No hay costo de mano de obra.'),
+      kpiCard('incidenciaMO', pct(k.incidenciaMO), 'del precio', 'incidenciaMO',
+        ok(k.incidenciaMO) ? `La mano de obra es ${pct(k.incidenciaMO)} del precio y ${pct(t.cd ? t.mo / t.cd : null)} del costo directo: un atraso pesa en la utilidad.` : '—',
+        ok(k.incidenciaMO) ? `<div class="stack barra-kpi" role="img" aria-label="Peso de la mano de obra en el precio">${k.incidenciaMO > 0 ? `<div class="seg cat-mo" style="flex:${k.incidenciaMO} 1 0"></div>` : ''}<div class="seg resto" style="flex:${Math.max(0, 1 - k.incidenciaMO)} 1 0"></div></div>` : '')
+    ].join(''));
 
-    // Sensibilidad: oferta actual frente al escenario simulado
+    // Sensibilidad: oferta actual frente al escenario simulado (el precio se mantiene)
     const sd = KP.byKey.sensibilidad;
     const signo = (v, f) => (!ok(v) ? '—' : `${v > 0 ? '+' : v < 0 ? '−' : ''}${f(Math.abs(v))}`);
     const dMargen = ok(k.sensMargen) && ok(k.margen) ? Math.round((k.sensMargen - k.margen) * 1000) / 10 : null;
-    $('#res-sens').innerHTML = `<div class="panel">
+    put('res-sens', `<div class="panel">
         <table class="comp-tbl">
           <thead><tr><th></th><th class="num">Oferta actual</th><th class="num">Con el escenario</th><th class="num">Diferencia</th></tr></thead>
           <tbody>
-            <tr><td>Precio neto</td><td class="num">${clp(t.precioNeto)}</td><td class="num">${clp(t.precioNeto)}</td><td class="num muted">Se mantiene</td></tr>
             <tr><td>Costo total</td><td class="num">${clp(t.costoTotal)}</td><td class="num">${clp(t.costoTotal + k.sensDeltaCosto)}</td><td class="num">${signo(k.sensDeltaCosto, clp)}</td></tr>
             <tr><td>Utilidad</td><td class="num">${clp(t.utilidad)}</td><td class="num">${clp(k.sensUtilidad)}</td><td class="num">${signo(k.sensVarUtilidad, pct)}</td></tr>
-            <tr class="clave"><td>Margen sobre venta</td><td class="num">${pct(k.margen)}</td><td class="num tone-${st.sensibilidad}">${pct(k.sensMargen)}</td><td class="num">${dMargen === null ? '—' : signo(dMargen, (x) => `${nf(x)} pts`)}</td></tr>
+            <tr class="clave"><td>Margen sobre venta</td><td class="num">${pct(k.margen)}</td><td class="num tone-${st.sensibilidad}">${pct(k.sensMargen)}</td><td class="num">${dMargen === null ? '—' : signo(dMargen, (x) => `${nf(x)} puntos`)}</td></tr>
           </tbody>
         </table>
-        <p class="sens-lectura">${chip(st.sensibilidad, 'sensibilidad')}<span>${esc(sd.lectura)}</span></p>
-      </div>`;
+        <p class="sens-lectura"><span class="sens-chip" tabindex="0" data-tip="${esc(sd.lectura)}" aria-label="${esc(sd.lectura)}">${chip(st.sensibilidad, 'sensibilidad')}</span>
+          <span>${escenario.length && ok(k.sensVarUtilidad) ? `La utilidad cae ${pct(Math.abs(k.sensVarUtilidad))}.` : 'Mueve los controles para simular un alza.'}</span></p>
+      </div>`);
 
     // Composición del precio: proyecto completo
     const segs = [
@@ -1544,15 +1749,14 @@
     const base = segs.reduce((a, sg) => a + Math.max(0, sg.v), 0);
     const bar = base > 0 ? `<div class="stack lg" role="img" aria-label="Composición del precio neto">${segs.filter((sg) => sg.v > 0).map((sg) =>
       `<div class="seg ${sg.cls}" style="flex:${sg.v} 1 0" data-tip="<b>${esc(sg.n)}</b>${esc(clp(sg.v))} · ${esc(pct(t.precioNeto ? sg.v / t.precioNeto : null))} del precio neto"></div>`).join('')}</div>` : '';
-    $('#res-comp').innerHTML = base > 0 ? `${bar}
-      <table class="leyenda"><tbody>${segs.map((sg) => `<tr class="${sg.v ? '' : 'cero'}"><td><span class="nombre"><span class="swatch ${sg.cls}"></span>${sg.n}</span></td><td class="num">${clp(sg.v)}</td><td class="num" style="width:70px">${pct(t.precioNeto ? sg.v / t.precioNeto : null)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td>Precio de venta neto</td><td class="num">${clp(t.precioNeto)}</td><td class="num">${t.precioNeto ? '100,0 %' : '—'}</td></tr></tfoot></table>
+    put('res-comp', base > 0 ? `${bar}
+      <ul class="leyenda-comp">${segs.filter((sg) => sg.v).map((sg) => `<li><span class="swatch ${sg.cls}" aria-hidden="true"></span><span class="n">${sg.n}</span><span class="v">${clp(sg.v)}</span><span class="p">${pct(t.precioNeto ? sg.v / t.precioNeto : null)}</span></li>`).join('')}</ul>
       ${t.utilidad < 0 ? '<p class="small tone-bad" style="margin:8px 0 0;font-weight:700">La utilidad es negativa: el precio no cubre los costos.</p>' : ''}`
-      : '<p class="small muted" style="margin:0">Agrega partidas y costos para ver la composición del precio.</p>';
+      : '<p class="small muted" style="margin:0">Agrega partidas y costos para ver la composición del precio.</p>');
 
     // Composición del precio: por partida, con la misma paleta
     const maxP = r.partidas.reduce((a, pt) => Math.max(a, pt.precio), 0);
-    $('#res-pbar').innerHTML = r.partidas.length && maxP > 0 ? r.partidas.map((pt) => {
+    put('res-pbar', r.partidas.length && maxP > 0 ? r.partidas.map((pt) => {
       const vals = [
         { ...CATS[0], v: pt.mat }, { ...CATS[1], v: pt.eq }, { ...CATS[2], v: pt.mo }, { ...CATS[3], v: pt.otros },
         { ...CATS[4], v: pt.ggimp }, { ...CATS[5], v: pt.utilidad }
@@ -1564,14 +1768,14 @@
           `<div class="seg ${x.cls}" style="flex:${x.v} 1 0" data-tip="<b>${esc(pt.code)} · ${esc(x.n)}</b>${esc(clp(x.v))} · ${esc(pct(pt.precio ? x.v / pt.precio : null))} de la partida"></div>`).join('')}</div></div>
         <div class="val">${clp(pt.precio)}</div>
       </div>`;
-    }).join('') : '<p class="small muted" style="margin:0">Agrega partidas con costos para comparar su precio.</p>';
+    }).join('') : '<p class="small muted" style="margin:0">Agrega partidas con costos para comparar su precio.</p>');
 
-    // Detalle por partida (con APU)
+    // Detalle por partida (con análisis de precio unitario)
     const rowsP = r.partidas.map((pt) => {
-      const open = state.apuOpen.has(pt.uid);
+      const open = state.apuOpen.has(pt.uid) || state.imprimir;
       const apu = open ? `<tr class="apu-row"><td colspan="13"><div class="apu-panel">${apuTable(pt)}</div></td></tr>` : '';
       return `<tr>
-        <td><button type="button" class="apu-toggle" data-act="apu" data-uid="${pt.uid}" aria-expanded="${open}" aria-label="Ver análisis de precio de ${pt.code}">${ICON.chevR}</button></td>
+        <td><button type="button" class="apu-toggle" data-act="apu" data-uid="${pt.uid}" aria-expanded="${open}" aria-label="Ver el análisis de precio unitario de ${pt.code}">${ICON.chevR}</button></td>
         <td class="code">${pt.code}</td><td>${esc(pt.descripcion || '—')}</td><td class="num">${nf(pt.cantidad)} ${esc(pt.unidad)}</td>
         <td class="num">${clp(pt.mat)}</td><td class="num">${clp(pt.eq)}</td><td class="num">${clp(pt.mo)}</td><td class="num">${clp(pt.otros)}</td>
         <td class="num"><b>${clp(pt.cd)}</b></td><td class="num">${clp(pt.utilidad)}</td><td class="num"><b>${clp(pt.precio)}</b></td>
@@ -1579,20 +1783,14 @@
       </tr>${apu}`;
     }).join('');
     const th = (c, l) => `<th class="num"><span class="swatch ${c}" style="width:9px;height:9px;margin-right:5px;vertical-align:0"></span>${l}</th>`;
-    $('#res-partidas').innerHTML = `<div class="tabla-contenedor"><table class="tbl" style="min-width:1060px">
-      <thead><tr><th></th><th>ID</th><th>Partida</th><th class="num">Cant.</th>${th('cat-mat', 'Materiales')}${th('cat-eq', 'Equipos')}${th('cat-mo', 'Mano de obra')}${th('cat-otros', 'Otros')}
-        <th class="num">Costo directo</th>${th('cat-util', 'Utilidad')}<th class="num">Precio neto</th><th class="num">Precio unit.</th><th class="num">% precio</th></tr></thead>
+    put('res-partidas', `<div class="tabla-contenedor"><table class="tbl" style="min-width:1060px">
+      <thead><tr><th><span class="visualmente-oculto">Desplegar</span></th><th>ID</th><th>Partida</th><th class="num">Cantidad</th>${th('cat-mat', 'Materiales')}${th('cat-eq', 'Equipos')}${th('cat-mo', 'Mano de obra')}${th('cat-otros', 'Otros')}
+        <th class="num">Costo directo</th>${th('cat-util', 'Utilidad')}<th class="num">Precio neto</th><th class="num">Precio unitario</th><th class="num">% del precio</th></tr></thead>
       <tbody>${rowsP || '<tr class="empty-row"><td colspan="13">Sin partidas.</td></tr>'}</tbody>
       <tfoot><tr><td></td><td></td><td colspan="2">Total</td><td class="num">${clp(t.mat)}</td><td class="num">${clp(t.eq)}</td><td class="num">${clp(t.mo)}</td><td class="num">${clp(t.otros)}</td>
         <td class="num">${clp(t.cd)}</td><td class="num">${clp(t.utilidad)}</td><td class="num">${clp(t.precioNeto)}</td><td></td><td class="num">${t.precioNeto ? '100,0 %' : '—'}</td></tr></tfoot>
-    </table></div>`;
+    </table></div>`);
 
-    // Alertas
-    const tabLabel = (id) => (TABS.find((x) => x.id === id) || {}).label || id;
-    $('#res-alerts').innerHTML = ws.length ? `<ul class="lista-atencion">${ws.map((w) => `
-      <li><span class="marca ${w.level}" aria-hidden="true"></span><span class="motivo"><span class="visualmente-oculto">${w.level === 'error' ? 'Error: ' : 'Aviso: '}</span>${esc(w.msg)}</span>
-      ${w.tab ? `<button type="button" class="ir no-print" data-act="ir" data-tab="${w.tab}" data-uid="${w.uid || ''}">${w.tab === 'resumen' ? 'Definir utilidad' : `Ir a ${esc(tabLabel(w.tab))}`} →</button>` : ''}</li>`).join('')}</ul>`
-      : '<p class="vacio-ok">✔ Sin alertas: todos los costos están asociados a una partida y tienen valores.</p>';
   }
 
   function apuTable(pt) {
@@ -1606,9 +1804,9 @@
       return `<tr class="apu-cat"><td colspan="4"><span class="nombre"><span class="swatch ${cls}"></span>${label}</span></td><td class="num">${clp(lines.reduce((a, l) => a + l.subtotal, 0))}</td></tr>` + lines.map((l) => {
         const it = byUid.get(l.uid) || {};
         const det = k === 'manoObra'
-          ? `${nf(l.dhPorUnidadPartida)} DH por unidad`
+          ? `${nf(l.dhPorUnidadPartida)} días-hombre por unidad`
           : `${nf(num(it.cantidad))} ${esc(it.unidad || '')} × ${clp(num(it.costoUnitario))}`;
-        return `<tr><td class="code">${l.code}</td><td>${esc(l.descripcion || '—')}</td><td>${det}</td><td class="num">${clp(l.costoPorUnidadPartida)} / unid.</td><td class="num">${clp(l.subtotal)}</td></tr>`;
+        return `<tr><td class="code">${l.code}</td><td>${esc(l.descripcion || '—')}</td><td>${det}</td><td class="num">${clp(l.costoPorUnidadPartida)} por unidad</td><td class="num">${clp(l.subtotal)}</td></tr>`;
       }).join('');
     }).join('');
     return body ? `<table class="apu-table"><thead><tr><th>ID</th><th>Ítem</th><th>Cantidad por unidad de partida</th><th class="num">Costo por unidad</th><th class="num">Subtotal</th></tr></thead><tbody>${body}</tbody></table>`
@@ -1619,51 +1817,56 @@
   //  GUÍA DE KPIs
   // ---------------------------------------------------------------------------
   function renderGuide() {
-    document.title = 'Guía de KPIs — Formulación QUEMPIN';
-    const card = (d) => `<article class="guide-card">
-      <h3>${d.nombre}</h3>
-      ${d.origen === 'Nuevo' ? '<span class="tag new">Nuevo indicador</span>' : `<span class="tag">Excel: ${esc(d.origen)}</span>`}
+    document.title = 'Guía de uso — Formulación QUEMPIN';
+    const paso = (n, titulo, hace, consejo) => `<li class="guia-paso"><span class="gp-n" aria-hidden="true">${n}</span>
+      <div><h4>${titulo}</h4><p>${hace}</p>${consejo ? `<p class="gp-tip"><b>Consejo:</b> ${consejo}</p>` : ''}</div></li>`;
+    const ref = (d) => `<details class="kpi-ref">
+      <summary><span class="kr-n">${d.nombre}</span></summary>
       <dl>
-        <dt>Fórmula</dt><dd><span class="formula">${esc(d.formula)}</span></dd>
         <dt>Qué mide</dt><dd>${esc(d.queMide)}</dd>
-        <dt>Cómo aporta a la evaluación</dt><dd>${esc(d.aporte)}</dd>
+        <dt>Fórmula</dt><dd><span class="formula">${esc(d.formula)}</span></dd>
+        <dt>Cómo aporta a la decisión</dt><dd>${esc(d.aporte)}</dd>
         ${d.lectura ? `<dt>Semáforo</dt><dd>${esc(d.lectura)}</dd>` : ''}
+        <dt>Origen</dt><dd>${d.origen === 'Nuevo' ? 'Indicador nuevo: no existía en el Excel original.' : `Excel original, ${esc(d.origen)}.`}</dd>
       </dl>
-    </article>`;
+    </details>`;
     app.innerHTML = `<div class="viz-container page">
       <div class="page-head"><div>
-        <h2>Cómo se evalúa un proyecto</h2>
-        <p>Qué mide cada KPI, cómo se calcula y qué aporta a la decisión de ofertar.</p>
+        <h2>Guía de uso</h2>
+        <p>Cómo formular un proyecto paso a paso y cómo leer su evaluación antes de enviar la oferta.</p>
       </div></div>
       <section>
-        <div class="section-head"><h3 class="seccion-titulo">Cómo calcula la herramienta</h3><p>Misma lógica del Excel de formulación de QUEMPIN.</p></div>
-        <div class="pasos">
-          <div class="paso"><h4>Partidas</h4><p>El proyecto se divide en partidas con unidad y cantidad (ej.: 3 medidores de 2").</p></div>
-          <div class="paso"><h4>Costos por unidad</h4><p>Materiales, equipos, mano de obra y otros se ingresan por unidad de partida y se multiplican por su cantidad.</p></div>
-          <div class="paso"><h4>Costo directo</h4><p>La suma de los cuatro tipos de costo. Opcional: gastos generales e imprevistos como % del costo directo.</p></div>
-          <div class="paso"><h4>Utilidad y precio</h4><p>En Resumen y KPIs se define la utilidad de cada partida (% de recargo o monto fijo). Precio neto = costo total + utilidad.</p></div>
-          <div class="paso"><h4>IVA y evaluación</h4><p>Se agrega el IVA y se calculan los indicadores, con semáforos según las metas del proyecto.</p></div>
-        </div>
+        <div class="section-head"><h3 class="seccion-titulo">Paso a paso</h3><p>Los mismos pasos que ves arriba al abrir un proyecto.</p></div>
+        <ol class="guia-pasos">
+          ${paso(1, 'Datos del proyecto', 'Escribe el título, el cliente y el responsable. Si conoces el presupuesto del mandante, ingrésalo: la evaluación dirá si la oferta cabe.', 'los parámetros (IVA, tarifas, metas) ya vienen con los valores habituales; ábrelos solo si este proyecto es distinto.')}
+          ${paso(2, 'Partidas', 'Divide el trabajo en partidas con su unidad y cantidad, por ejemplo «3 medidores de 2"».', 'una partida por cada ítem que irá en la cotización.')}
+          ${paso(3, 'Costos', 'En Materiales, Equipos, Mano de obra y Otros ingresa lo que necesita <b>una</b> unidad de la partida y elige a qué partida pertenece. La herramienta multiplica por la cantidad.', 'un costo sin partida no se suma al precio: la herramienta lo marca en rojo.')}
+          ${paso(4, 'Utilidad y precio', 'Define la utilidad de cada partida (% de recargo o monto fijo) y copia los valores netos para la cotización.', '«Llevar al margen objetivo» calcula el recargo que deja el margen justo en la meta.')}
+          ${paso(5, 'Evaluación', 'Responde cuatro preguntas: ¿es rentable?, ¿resiste sobrecostos?, ¿cabe en el presupuesto?, ¿los números están completos?', 'si todo está en verde, exporta el Excel y cambia el estado a «Enviada».')}
+        </ol>
       </section>
-      <section class="section"><div class="section-head"><h3 class="seccion-titulo">Resultado económico</h3></div>
-        <div class="guide-grid">${KP.KPIS.filter((d) => d.grupo === 'economico').map(card).join('')}</div></section>
-      <section class="section"><div class="section-head"><h3 class="seccion-titulo">Indicadores de evaluación</h3></div>
-        <div class="guide-grid">${KP.KPIS.filter((d) => d.grupo === 'indicador').map(card).join('')}</div></section>
       <section class="section">
-        <div class="section-head"><h3 class="seccion-titulo">Cómo leerlos en conjunto</h3></div>
+        <div class="section-head"><h3 class="seccion-titulo">Cómo leer la evaluación</h3></div>
         <div class="panel">
-          <ul style="margin:0;padding-left:18px;color:var(--text-secondary);display:grid;gap:6px">
-            <li><strong>¿Conviene?</strong> Margen sobre venta y utilidad por día-hombre. El margen compara proyectos de distinto tamaño; la utilidad por DH compara proyectos que compiten por las mismas cuadrillas.</li>
-            <li><strong>¿Es riesgoso?</strong> Holgura de MO, incidencia de MO y sensibilidad. Si la holgura es baja y la incidencia alta, un atraso pequeño se come la utilidad.</li>
-            <li><strong>¿Podemos ganar?</strong> Competitividad frente al presupuesto del mandante. Sobre 100 % hay que revisar alcance o utilidad; muy por debajo, quizás se puede subir el precio.</li>
-            <li><strong>¿Los números son confiables?</strong> Revisa las alertas de validación antes de exportar: un costo sin partida no suma.</li>
+          <ul class="guia-lectura">
+            <li><strong>¿Es rentable?</strong> Margen frente a las metas; utilidad por día-hombre si las cuadrillas son el recurso escaso.</li>
+            <li><strong>¿Resiste sobrecostos?</strong> Simula alzas: si la mano de obra pesa mucho y su holgura es baja, un atraso se come la utilidad.</li>
+            <li><strong>¿Cabe en el presupuesto?</strong> Sobre 100 % hay que revisar alcance o utilidad; muy por debajo, quizás se puede subir el precio.</li>
+            <li><strong>¿Los números están completos?</strong> Un costo sin partida no suma: corrige las alertas antes de exportar.</li>
           </ul>
+          <p class="small muted" style="margin:12px 0 0">Verde, ámbar y rojo indican el estado frente a la meta; gris, que el indicador es referencial.</p>
         </div>
       </section>
       <section class="section">
-        <div class="section-head"><h3 class="seccion-titulo">Colores de los gráficos</h3><p>Solo colores oficiales de QUEMPIN; cuando no alcanzan, rayas y puntos con esos mismos colores.</p></div>
-        <div class="panel"><div class="leyenda-inline" style="margin:0;font-size:13px">${CATS.map((c) => `<span><span class="swatch ${c.cls}" style="width:14px;height:14px"></span>${c.n}</span>`).join('')}</div>
-          <p class="small muted" style="margin:10px 0 0">Verde, ámbar y rojo se reservan para los semáforos: indican el estado de un indicador, no una categoría.</p></div>
+        <div class="section-head"><h3 class="seccion-titulo">Indicadores</h3><p>Abre cada uno para ver su fórmula y cómo aporta a la decisión.</p></div>
+        <div class="guia-ref">
+          <div><h4 class="panel-t">Resultado económico</h4>${KP.KPIS.filter((d) => d.grupo === 'economico').map(ref).join('')}</div>
+          <div><h4 class="panel-t">Indicadores de evaluación</h4>${KP.KPIS.filter((d) => d.grupo === 'indicador').map(ref).join('')}</div>
+        </div>
+      </section>
+      <section class="section">
+        <div class="section-head"><h3 class="seccion-titulo">Colores de los gráficos</h3></div>
+        <div class="leyenda-inline" style="margin:0;font-size:13px">${CATS.map((c) => `<span><span class="swatch ${c.cls}" style="width:14px;height:14px"></span>${c.n}</span>`).join('')}</div>
       </section>
     </div>`;
   }
@@ -1751,11 +1954,14 @@
   app.addEventListener('input', onEdit);
   app.addEventListener('change', onEdit);
 
-  // Recuerda qué tarjetas de KPI tienen abierta su explicación
+  // Recuerda qué explicaciones y secciones plegables están abiertas
   app.addEventListener('toggle', (e) => {
     const d = e.target;
-    if (!d.dataset || !d.dataset.kpi) return;
-    if (d.open) state.kpiOpen.add(d.dataset.kpi); else state.kpiOpen.delete(d.dataset.kpi);
+    if (!d.dataset) return;
+    const set = d.dataset.kpi ? state.kpiOpen : d.dataset.openKey ? state.abiertos : null;
+    const key = d.dataset.kpi || d.dataset.openKey;
+    if (!set) return;
+    if (d.open) set.add(key); else set.delete(key);
   }, true);
 
   app.addEventListener('keydown', (e) => {
@@ -1792,10 +1998,10 @@
     if (s) { e.preventDefault(); s.focus(); }
   });
 
-  function flashRow(uid) {
+  function flashRow(uid, inmediato) {
     const tr = $(`tr[data-row="${uid}"]`);
     if (!tr) return;
-    tr.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    tr.scrollIntoView({ block: 'center', behavior: inmediato ? 'auto' : 'smooth' });
     tr.classList.remove('flash'); void tr.offsetWidth; tr.classList.add('flash');
   }
 
@@ -1839,20 +2045,23 @@
   }
 
   function goTab(tab, focus) {
+    // Secciones plegables que deben quedar abiertas al llegar
+    const abrir = { catalogo: 'f-catalogo', tarifas: 'f-precio', metas: 'f-metas' }[focus];
+    if (abrir) state.abiertos.add(abrir);
     state.tab = tab;
     renderTab();
     const mn = $('#modnav-proj');
     if (mn) mn.href = `#/p/${state.project.uid}/${tab}`;
     window.scrollTo({ top: 0 });
-    if (focus === 'util') {
+    if (abrir || focus === 'veredicto') {
+      setTimeout(() => { const c = $('#' + (focus === 'catalogo' ? 'f-catalogo' : focus)); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 30);
+    } else if (focus === 'util') {
       setTimeout(() => {
         const sec = $('#utilidad');
         if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
         const inp = $('#utilidad [data-k="utilidadValor"]');
         if (inp) inp.focus({ preventScroll: true });
       }, 30);
-    } else if (focus === 'catalogo') {
-      setTimeout(() => { const c = $('#catalogo'); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 30);
     }
   }
 
@@ -2063,18 +2272,21 @@
 
         // ---- Editor
         case 'tab': if (p) goTab(d.tab, d.focus); break;
-        case 'ver-alertas':
-          goTab('resumen');
-          setTimeout(() => { const a = $('#alertas'); if (a) a.scrollIntoView({ behavior: 'smooth' }); }, 40);
-          break;
         case 'ir': {
+          // Lleva a la fila con el problema; si le falta la partida, abre el selector
           if (DETALLE[d.tab]) state.filtro[d.tab] = '';
-          if (d.tab === 'resumen' && state.tab === 'resumen') { if (d.uid) flashRow(d.uid); break; }
-          goTab(d.tab);
-          if (d.uid) setTimeout(() => flashRow(d.uid), 40);
+          if (state.tab !== d.tab) goTab(d.tab);
+          if (d.uid) {
+            setTimeout(() => {
+              flashRow(d.uid, true);
+              const pk = $(`[data-picker="partida"][data-uid="${d.uid}"].error`);
+              if (pk) setTimeout(() => openPicker(pk), 120);
+            }, 40);
+          }
           break;
         }
         case 'add-row': addRow(d.list); break;
+        case 'ver-costos': state.filtro[state.costoTab] = d.uid; goTab(state.costoTab); break;
         case 'dup-row': {
           const list = d.list;
           const i = p[list].findIndex((x) => x.uid === d.uid);
@@ -2082,6 +2294,7 @@
           const c = Object.assign({}, p[list][i], { uid: S.uid() });
           p[list].splice(i + 1, 0, c);
           recalc(); renderTab(`[data-list="${list}"][data-uid="${c.uid}"][data-k="descripcion"]`); flashRow(c.uid); scheduleSave();
+          toast(`${DETALLE[list] ? 'Fila duplicada' : 'Duplicado'}: edita la copia`);
           break;
         }
         case 'del-row': {
@@ -2114,7 +2327,7 @@
           const j = i + parseInt(d.dir, 10);
           if (i < 0 || j < 0 || j >= arr.length) break;
           [arr[i], arr[j]] = [arr[j], arr[i]];
-          recalc(); renderTab(`[data-act="mover"][data-uid="${d.uid}"][data-dir="${d.dir}"]:not([disabled])`); flashRow(d.uid); scheduleSave();
+          recalc(); renderTab(`[data-menu="fila"][data-uid="${d.uid}"]`); flashRow(d.uid); scheduleSave();
           break;
         }
         case 'apply-util': {
@@ -2129,7 +2342,7 @@
         case 'util-objetivo': {
           const par = p.parametros;
           const m = num(par.margenObjetivo) / 100;
-          if (!(m > 0 && m < 1)) { toast('Define un margen objetivo entre 0 y 100 % en Ficha y parámetros.', true); break; }
+          if (!(m > 0 && m < 1)) { toast('Define un margen objetivo entre 0 y 100 % en Datos del proyecto → Metas de evaluación.', true); break; }
           // margen = r / (1 + gg + imp + r)  →  r = m (1 + gg + imp) / (1 − m)
           const g = (num(par.gastosGenerales) + num(par.imprevistos)) / 100;
           const rec = Math.round((m * (1 + g) / (1 - m)) * 10000) / 100;
@@ -2193,10 +2406,15 @@
           if (b) b.focus();
           break;
         }
-        case 'imprimir':
-          if (state.tab !== 'resumen') goTab('resumen');
+        case 'imprimir': {
+          // Utilidad, precio y evaluación en una sola página; al terminar se vuelve a la vista normal
+          state.imprimir = true;
+          renderTab();
+          const fin = () => { window.removeEventListener('afterprint', fin); state.imprimir = false; renderTab(); };
+          window.addEventListener('afterprint', fin);
           setTimeout(() => window.print(), 200);
           break;
+        }
         default: break;
       }
     } catch (err) {
@@ -2248,25 +2466,44 @@
     const par = cfg.parametros;
     const enNube = S.getMode() === 'nube';
     const puede = !enNube || window.QCloud.esAdmin();
+    const dis = puede ? '' : 'disabled';
+    const campo = (id, label, v, pre, suf) => `<div class="campo"><label for="cfg-${id}">${label}</label>
+      <div class="input-affix ${pre ? 'pre' : ''}"><input class="input" id="cfg-${id}" type="number" step="any" inputmode="decimal" value="${esc(num(v))}" ${dis}><span class="affix">${pre || suf}</span></div></div>`;
     const v = await ask({
-      title: 'Configuración predeterminada',
-      body: `<p>${enNube ? 'El prefijo y los parámetros se aplican a los proyectos nuevos de todo el equipo' + (puede ? '.' : ' y solo un administrador puede cambiarlos.') + ' El responsable por defecto es solo tuyo.' : 'Se aplica a los proyectos nuevos creados en este navegador.'}</p>
-        <div class="fila-campos" style="margin:14px 0 0">
-          <div class="campo"><label for="cfg-prefijo">Prefijo del código</label><input class="input" id="cfg-prefijo" value="${esc(cfg.prefijo)}" ${puede ? '' : 'disabled'}><span class="hint">Ej.: ${esc(cfg.prefijo)}-${new Date().getFullYear()}-001</span></div>
-          <div class="campo"><label for="cfg-resp">Responsable por defecto</label><input class="input" id="cfg-resp" value="${esc(cfg.responsable)}"></div>
+      title: 'Configuración',
+      wide: true,
+      body: `<p>Valores con que parten los proyectos nuevos${enNube ? ' de todo el equipo' : ' de este navegador'}. Los proyectos existentes conservan los suyos.${puede ? '' : ' Solo un administrador puede cambiarlos.'}</p>
+        <div class="fila-campos">
+          <div class="campo"><label for="cfg-prefijo">Prefijo del código</label><input class="input" id="cfg-prefijo" value="${esc(cfg.prefijo)}" ${dis}><span class="hint">Ej.: ${esc(cfg.prefijo)}-${new Date().getFullYear()}-001</span></div>
+          <div class="campo"><label for="cfg-resp">Responsable por defecto</label><input class="input" id="cfg-resp" value="${esc(cfg.responsable)}">${enNube ? '<span class="hint">Solo para ti.</span>' : ''}</div>
         </div>
-        <p class="small muted">Parámetros actuales: IVA ${nf(par.iva)} % · GG ${nf(par.gastosGenerales)} % · imprevistos ${nf(par.imprevistos)} % · tarifas ${clp(par.tarifaN1)} / ${clp(par.tarifaN2)} / ${clp(par.tarifaN3)} · margen objetivo ${nf(par.margenObjetivo)} %.
-        ${puede ? 'Para cambiarlos, ajústalos en la ficha de un proyecto y usa «Usarlos como predeterminados».' : ''}</p>`,
+        <h3 class="sub-t">Precio y tarifas</h3>
+        <div class="fila-campos cfg-grid">
+          ${campo('iva', 'IVA', par.iva, '', '%')}${campo('gg', 'Gastos generales', par.gastosGenerales, '', '%')}${campo('imp', 'Imprevistos', par.imprevistos, '', '%')}
+          ${campo('n1', 'Día-hombre nivel 1', par.tarifaN1, '$')}${campo('n2', 'Día-hombre nivel 2', par.tarifaN2, '$')}${campo('n3', 'Día-hombre nivel 3', par.tarifaN3, '$')}
+        </div>
+        <h3 class="sub-t">Metas de evaluación</h3>
+        <div class="fila-campos cfg-grid">
+          ${campo('mobj', 'Margen objetivo', par.margenObjetivo, '', '%')}${campo('mmin', 'Margen mínimo', par.margenMinimo, '', '%')}${campo('meta', 'Meta por día-hombre', par.metaUtilidadDH, '$')}
+        </div>`,
       buttons: [puede ? { label: 'Restablecer valores de fábrica', value: 'reset', danger: true, left: true } : null, { label: 'Cancelar' }, { label: 'Guardar', value: 'save', primary: true }]
     });
     if (v === 'save') {
       cfg.prefijo = ($('#cfg-prefijo').value || 'QPN').trim().toUpperCase();
       cfg.responsable = $('#cfg-resp').value.trim();
+      if (puede) {
+        const leer = (id) => { const n = parseFloat($('#cfg-' + id).value); return Number.isFinite(n) ? n : 0; };
+        Object.assign(cfg.parametros, {
+          iva: leer('iva'), gastosGenerales: leer('gg'), imprevistos: leer('imp'),
+          tarifaN1: leer('n1'), tarifaN2: leer('n2'), tarifaN3: leer('n3'),
+          margenObjetivo: leer('mobj'), margenMinimo: leer('mmin'), metaUtilidadDH: leer('meta')
+        });
+      }
       S.setConfig(cfg);
-      toast('Configuración guardada');
+      toast('Configuración guardada: se usará en los proyectos nuevos');
     } else if (v === 'reset') {
       S.setConfig({ prefijo: cfg.prefijo, responsable: cfg.responsable });
-      toast('Parámetros predeterminados restablecidos');
+      toast('Valores de fábrica restablecidos');
     }
     if (!state.project && !location.hash.startsWith('#/guia')) renderList();
   }
@@ -2488,7 +2725,11 @@
     const t = document.documentElement.getAttribute('data-theme');
     return t === 'dark' || (t !== 'light' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
   }
-  function syncThemeBtn() { themeBtn.textContent = isDarkNow() ? 'Modo claro' : 'Modo oscuro'; }
+  function syncThemeBtn() {
+    const t = isDarkNow() ? 'Modo claro' : 'Modo oscuro';
+    themeBtn.innerHTML = `${isDarkNow() ? ICON.sol : ICON.luna}<span class="hb-t">${t}</span>`;
+    themeBtn.setAttribute('aria-label', t);
+  }
   function toggleTheme() {
     const next = isDarkNow() ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);

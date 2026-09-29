@@ -1,6 +1,6 @@
 /*
  * kpis.js — Definición y descripción de cada indicador.
- * Se usa en la pestaña "Resumen y KPIs", en la "Guía de KPIs" y en la hoja "Ficha" del Excel exportado.
+ * Se usa en el paso "Evaluación", en la "Guía de uso" y en la hoja "Ficha" del Excel exportado.
  *   origen: celda equivalente en el Excel original (o "Nuevo")
  *   formato: 'clp' | 'pct' | 'num'
  */
@@ -21,7 +21,7 @@
       origen: 'Nuevo',
       formula: 'Costo directo + Gastos generales + Imprevistos',
       queMide: 'El costo completo del proyecto, incluyendo la estructura de la empresa (gastos generales) y una reserva para riesgos (imprevistos), ambos como % del costo directo.',
-      aporte: 'Evita sobreestimar el margen: el Excel calculaba el margen solo contra costos directos. Con GG e imprevistos en 0 % el resultado es idéntico al Excel.'
+      aporte: 'Evita sobreestimar el margen: el Excel calculaba el margen solo contra costos directos. Con gastos generales e imprevistos en 0 % el resultado es idéntico al Excel.'
     },
     {
       key: 'utilidad', grupo: 'economico', nombre: 'Utilidad', formato: 'clp',
@@ -62,28 +62,28 @@
       lectura: 'Verde ≥ margen objetivo · Amarillo entre mínimo y objetivo · Rojo bajo el mínimo (metas editables en Parámetros).'
     },
     {
-      key: 'markup', grupo: 'indicador', nombre: 'Recargo sobre costo (markup)', formato: 'pct',
+      key: 'markup', grupo: 'indicador', nombre: 'Recargo sobre el costo', formato: 'pct',
       origen: 'Nuevo',
       formula: 'Utilidad ÷ Costo total',
       queMide: 'Cuánto se agrega sobre el costo para llegar al precio.',
       aporte: 'Se lee también como holgura total: los costos pueden subir hasta este % antes de que el proyecto pierda dinero. Aclara la confusión entre "100 %" de utilidad (recargo) y 50 % de margen.'
     },
     {
-      key: 'dh', grupo: 'indicador', nombre: 'Días-Hombre de ejecución', formato: 'num',
+      key: 'dh', grupo: 'indicador', nombre: 'Días-hombre de ejecución', formato: 'num',
       origen: 'Resumen!K5',
       formula: 'Σ Cant. partida × (personas × días) de los tres niveles',
       queMide: 'El esfuerzo total de mano de obra del proyecto.',
-      aporte: 'Sirve para dimensionar cuadrillas y es la base de los indicadores por día-hombre. No es el plazo: 24 DH pueden ejecutarse en 6 días con 4 personas.'
+      aporte: 'Sirve para dimensionar cuadrillas y es la base de los indicadores por día-hombre. No es el plazo: 24 días-hombre pueden ejecutarse en 6 días con 4 personas.'
     },
     {
       key: 'rentDH', grupo: 'indicador', nombre: 'Utilidad por día-hombre', formato: 'clp',
       origen: 'Resumen!K2 «Rentabilidad por Día-Hombre»',
       formula: 'Utilidad ÷ Días-Hombre',
       queMide: 'Cuánto gana la empresa por cada día de trabajo de una persona.',
-      aporte: 'Cuando la capacidad de las cuadrillas es el recurso escaso, conviene priorizar los proyectos con mayor utilidad por DH aunque su margen % sea menor. Define una meta en Parámetros para activar el semáforo.'
+      aporte: 'Cuando la capacidad de las cuadrillas es el recurso escaso, conviene priorizar los proyectos con mayor utilidad por día-hombre aunque su margen sea menor. Define una meta en Parámetros para activar el semáforo.'
     },
     {
-      key: 'incidenciaMO', grupo: 'indicador', nombre: 'Incidencia de MO sobre venta', formato: 'pct',
+      key: 'incidenciaMO', grupo: 'indicador', nombre: 'Incidencia de la mano de obra', formato: 'pct',
       origen: 'Resumen!K3',
       formula: 'Costo de mano de obra ÷ Precio de venta neto',
       queMide: 'El peso de la mano de obra dentro del precio.',
@@ -93,7 +93,7 @@
       key: 'holguraMO', grupo: 'indicador', nombre: 'Holgura de mano de obra', formato: 'pct',
       origen: 'Nuevo',
       formula: 'Utilidad ÷ Costo de mano de obra',
-      queMide: 'Cuánto puede crecer el costo de MO (más días, más personal) antes de que la utilidad llegue a cero.',
+      queMide: 'Cuánto puede crecer el costo de mano de obra (más días, más personal) antes de que la utilidad llegue a cero.',
       aporte: 'Traduce el riesgo de productividad a un número concreto: si la holgura es 30 %, basta que la cuadrilla demore 30 % más para trabajar gratis.'
     },
     {
@@ -101,7 +101,7 @@
       origen: 'Resumen!K4 «Sensibilidad MO (+10%)»',
       formula: '−Σ (costo de la categoría × variación simulada) ÷ Utilidad',
       queMide: 'Cuánto cae la utilidad si los costos suben según el escenario simulado.',
-      aporte: 'El Excel solo simulaba +10 % de MO con un valor fijo en la fórmula. Aquí se simula cualquier variación por categoría y se muestra la utilidad y el margen resultantes.',
+      aporte: 'El Excel solo simulaba +10 % de mano de obra con un valor fijo en la fórmula. Aquí se simula cualquier variación por categoría y se muestra la utilidad y el margen resultantes.',
       lectura: 'Rojo si el escenario deja utilidad negativa · Amarillo si el margen cae bajo el mínimo.'
     },
     {

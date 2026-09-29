@@ -9,9 +9,10 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
 ## Qué hace
 
 - **Formula proyectos con la misma lógica del Excel.** Tiene partidas y detalle de materiales, equipos, mano de obra (3 niveles de tarifa) y otros costos, todo por unidad de partida. Con los datos del Excel entrega exactamente los mismos resultados.
-- **Define la utilidad junto a los KPI.** En *Resumen y KPIs* se ingresa la utilidad de cada partida (% de recargo o monto fijo) y el margen, el precio y los indicadores cambian al escribir. Incluye *Recargo para todas* y *Llevar al margen objetivo*, que calcula el recargo que deja el margen exactamente en la meta.
+- **Guía la formulación en 5 pasos** (Datos → Partidas → Costos → Utilidad y precio → Evaluación). Cada paso dice para qué sirve, tiene su ayuda «¿Cómo se calcula?», marca si está completo (✓) o tiene errores (!) y termina con el botón al paso siguiente.
+- **Define la utilidad junto al margen.** En *Utilidad y precio* se ingresa la utilidad de cada partida (% de recargo o monto fijo) y el margen y el precio cambian al escribir. Incluye *Recargo para todas* y *Llevar al margen objetivo*, que calcula el recargo que deja el margen exactamente en la meta, y los valores por partida listos para copiar a la cotización.
 - **Identifica cada proyecto** con código correlativo (`QPN-2026-001`), versión, cliente, ubicación, responsable, fecha y estado (Borrador, En revisión, Enviada, Adjudicada, Perdida, Descartada).
-- **Muestra KPI con semáforos y la descripción de cada uno** (tarjetas con borde de estado, medidores con las metas marcadas y gráficos de composición del precio y precio por partida): margen, recargo, utilidad por día-hombre, incidencia y holgura de MO, sensibilidad por categoría y competitividad frente al presupuesto del mandante. La pestaña *Guía de KPIs* explica qué mide cada indicador y cómo aporta a la evaluación.
+- **Evalúa la oferta con un veredicto en cuatro preguntas** (¿es rentable?, ¿resiste sobrecostos?, ¿cabe en el presupuesto del mandante?, ¿los números están completos?) y los indicadores que las respaldan, con semáforos y metas: margen, utilidad por día-hombre, competitividad, holgura e incidencia de la mano de obra, y un simulador de sobrecostos por categoría. La *Guía de uso* explica cada paso y cada indicador.
 - **Valida los datos**, con alertas cuando un costo no tiene partida, una partida tiene cantidad cero o falta la utilidad.
 - **Exporta a Excel** (`.xlsx`). El archivo se llama `CÓDIGO_vN_titulo.xlsx` y contiene:
   - Hoja *Ficha*: identificación del proyecto, resultado económico, KPI con su evaluación y descripción, y alertas.
@@ -54,13 +55,15 @@ En ambos modos, eliminar un proyecto lo envía a la **papelera** (*Más → Pape
 
 ## Uso rápido
 
-1. **Nuevo proyecto** → completa la *Ficha* (título, cliente, responsable). Revisa IVA, tarifas y metas.
-2. **Partidas** → agrega cada partida con su unidad y cantidad.
-3. **Materiales / Equipos / Mano de obra / Otros** → agrega los ítems, elige su partida en el selector e ingresa las cantidades **por unidad de partida**. En *Otros* puedes usar **Agregar desde catálogo**.
-4. **Resumen y KPIs** → define la **utilidad** de cada partida (% o $) y revisa al instante el precio, el margen, la composición del precio, los indicadores, la sensibilidad y las alertas.
-5. **Exportar Excel** para enviar o archivar. Para una revisión de la oferta usa **Crear nueva versión** (mismo código, v2, v3…).
+1. **Datos** → título, cliente y responsable. Los parámetros (IVA, tarifas, metas) ya vienen con los valores de *Configuración*; ábrelos solo si este proyecto es distinto.
+2. **Partidas** → agrega cada partida con su cantidad y unidad.
+3. **Costos** → en *Materiales*, *Equipos*, *Mano de obra* y *Otros* agrega los ítems, elige su partida e ingresa las cantidades **por unidad de partida**. En *Otros* puedes usar **Agregar desde catálogo**.
+4. **Utilidad y precio** → define la **utilidad** de cada partida (% o $) y copia los valores netos para la cotización.
+5. **Evaluación** → revisa el veredicto y corrige las alertas; luego **Exportar Excel**. Para una revisión de la oferta usa **⋯ → Crear nueva versión** (mismo código, v2, v3…).
 
-Atajos: en las tablas, **Enter** baja a la fila siguiente (en la última fila agrega una nueva). En la columna de unidad, **↓** abre la lista de unidades. En el listado, **/** enfoca el buscador. Los menús y selectores se manejan con flechas, **Enter** y **Esc**.
+Los valores con que parten los proyectos nuevos (prefijo del código, IVA, tarifas y metas) se cambian en **Configuración**, arriba a la derecha.
+
+Atajos: en las tablas, **Enter** baja a la fila siguiente (en la última fila agrega una nueva). En la columna de unidad, **↓** abre la lista de unidades. Duplicar, mover o eliminar una fila está en su menú **⋯**. En el listado, **/** enfoca el buscador. Los menús y selectores se manejan con flechas, **Enter** y **Esc**. En el teléfono las tablas se muestran como tarjetas.
 
 ## Estructura
 
