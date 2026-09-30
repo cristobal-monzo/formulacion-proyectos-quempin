@@ -20,6 +20,7 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
   - Una hoja oculta con los datos, para volver a importar el archivo en la herramienta.
 - **Exporta la cartera** (todos los proyectos con sus KPI en una planilla) y un respaldo completo en JSON.
 - **Importa** proyectos exportados (Excel o JSON) y también **los Excel antiguos** (`.xlsm`) para migrarlos. Al importar un Excel antiguo verifica que el costo y el precio calculados coincidan con los del archivo original.
+- **Envía los costos al Análisis Financiero.** Cuando una oferta se adjudica, sus costos por categoría pasan a ser los costos proyectados del proyecto en ejecución, para compararlos con el gasto real del Centro de Costos. La comunicación va por una carpeta de intercambio compartida en OneDrive: no usa servidor ni inicio de sesión, y no depende de SharePoint. Ver [docs/INTERCAMBIO.md](docs/INTERCAMBIO.md).
 
 ## Publicación y actualización
 
@@ -59,7 +60,7 @@ En ambos modos, eliminar un proyecto lo envía a la **papelera** (*Más → Pape
 2. **Partidas** → agrega cada partida con su cantidad y unidad.
 3. **Costos** → en *Materiales*, *Equipos*, *Mano de obra* y *Otros* agrega los ítems, elige su partida e ingresa las cantidades **por unidad de partida**. En *Otros* puedes usar **Agregar desde catálogo**.
 4. **Utilidad y precio** → define la **utilidad** de cada partida (% o $) y copia los valores netos para la cotización.
-5. **Evaluación** → revisa el veredicto y corrige las alertas; luego **Exportar Excel**. Para una revisión de la oferta usa **⋯ → Crear nueva versión** (mismo código, v2, v3…).
+5. **Evaluación** → revisa el veredicto y corrige las alertas; luego **Exportar Excel**. Para una revisión de la oferta usa **⋯ → Crear nueva versión** (mismo código, v2, v3…). Si la oferta se adjudica, **Enviar costos…** los lleva al Análisis Financiero.
 
 Los valores con que parten los proyectos nuevos (IVA, tarifas y metas, y en modo local el prefijo del código) se cambian en **Configuración**, arriba a la derecha.
 
@@ -78,6 +79,7 @@ js/cloud.js             Conexión con SharePoint: ingreso con Microsoft, sincron
 js/m365-config.js       Registro en Microsoft Entra y biblioteca de SharePoint (clientId vacío = modo local)
 redirect.html           Página de retorno del ingreso con Microsoft
 js/excel.js             Exportación e importación (Excel y JSON)
+js/intercambio.js       Carpeta de intercambio con las demás herramientas QUEMPIN (Análisis Financiero)
 js/app.js               Interfaz
 js/logo-data.js         Logo oficial embebido para el Excel exportado
 vendor/exceljs.min.js   Librería ExcelJS 4.4.0 (licencia MIT, ver vendor/exceljs.LICENSE)
@@ -86,6 +88,7 @@ assets/                 Logos oficiales (fondo blanco y fondo negro), isotipo e 
 ejemplos/               Proyecto de ejemplo con los datos del Excel original (JSON importable)
 docs/ANALISIS_KPI.md    Evaluación de los KPI del Excel y puntos de mejora
 docs/SHAREPOINT.md      Cómo conectar con SharePoint, piloto, permisos y cuidados
+docs/INTERCAMBIO.md     Cómo se comunican las herramientas y el envío de costos al Análisis Financiero
 ```
 
 ## Identidad visual

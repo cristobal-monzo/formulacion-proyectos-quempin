@@ -69,7 +69,8 @@
     folder: svg('<path d="M3 7a1 1 0 0 1 1-1h5l2 2h8a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>'),
     login: svg('<path d="M14 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M9 16l4-4-4-4M13 12H3"/>'),
     logout: svg('<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/>'),
-    restore: svg('<path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/>')
+    restore: svg('<path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/>'),
+    enviar: svg('<path d="M21 3L3 10.5l7 3 3 7.5z"/><path d="M21 3L10 13.5"/>')
   };
 
   // ---------------------------------------------------------------------------
@@ -378,6 +379,7 @@
         ub ? { icon: ICON.sheet, title: 'Guardar Excel en la carpeta', desc: 'Copia para ver o imprimir desde SharePoint', act: 'excel-carpeta', id } : null,
         enEditor ? null : { icon: ICON.download, title: 'Exportar a Excel', desc: 'Planilla con fórmulas vivas y ficha de KPI', act: 'exp-xlsx', id },
         { icon: ICON.file, title: 'Exportar a JSON', desc: 'Para respaldar o compartir y volver a importar', act: 'exp-json', id },
+        { icon: ICON.enviar, title: 'Enviar costos al Análisis Financiero', desc: 'Como costos proyectados del proyecto adjudicado', act: 'enviar-af', id },
         { sep: true },
         { icon: ICON.layers, title: 'Duplicar como proyecto nuevo', desc: enSP() ? 'En la carpeta de otra oferta, versión 1' : 'Nuevo código correlativo, versión 1', act: 'duplicar', id },
         { icon: ICON.version, title: 'Crear nueva versión', desc: 'Mismo código para una revisión de la oferta', act: 'version', id },
@@ -1112,6 +1114,7 @@
     history.replaceState(null, '', `#/p/${state.project.uid}/${tab}`);
     updateCalc();
     if (tab === 'ficha') updateCodigoHint();
+    if (tab === 'evaluacion' && !state.imprimir) { pintarPanelAF(); actualizarEstadoAF(state.project, false); }
     if (focusKey) {
       const el = $(focusKey, body);
       if (el) { el.focus(); if (el.select && el.type !== 'number' && el.tagName === 'INPUT') el.select(); }
@@ -1537,6 +1540,11 @@
           </div>
           <div id="res-partidas" style="margin-top:12px"></div>
         </details>
+      </section>
+
+      <section class="section no-print" id="analisis-financiero">
+        <div class="section-head"><h4 class="seccion-titulo">Análisis Financiero</h4><p>Después de adjudicar: estos costos como costos proyectados del proyecto en ejecución.</p></div>
+        <div class="panel af-panel" id="af-panel"></div>
       </section>`;
   }
 
@@ -2169,6 +2177,7 @@
             });
             if (!sel) break;
             const c = S.cloneProject(src, { estado: 'Borrador', fecha: S.hoy() });
+            delete c.vinculos; // otra oferta: el envío al Análisis Financiero era de la original
             enCarpeta(c, sel, { datosOferta: true });
             S.upsert(c);
             toast(`Proyecto duplicado en ${sel.carpeta.nombre}`);
@@ -2177,6 +2186,7 @@
           }
           const cfg = S.getConfig();
           const c = S.cloneProject(src, { codigo: S.nextCodigo(cfg.prefijo, new Date().getFullYear()), version: 1, titulo: (src.titulo || 'Proyecto') + ' (copia)', estado: 'Borrador', fecha: S.hoy() });
+          delete c.vinculos; // otra oferta: el envío al Análisis Financiero era de la original
           S.upsert(c);
           toast(`Proyecto duplicado como ${c.codigo}`);
           goProject(c, 'ficha');
@@ -2266,6 +2276,14 @@
           break;
         }
         case 'config': await openConfig(); break;
+        case 'enviar-af': await enviarAF(id); break;
+        case 'af-estado': await actualizarEstadoAF(p, true); toast('Estado del envío actualizado'); break;
+        case 'af-carpeta': {
+          try { await QI().conectar(); } catch (e) { if (!e || e.name !== 'AbortError') toast((e && e.message) || 'No se pudo abrir la carpeta.', true); }
+          await pintarCfgAF();
+          break;
+        }
+        case 'af-olvidar': await QI().desconectar(); await pintarCfgAF(); break;
         case 'tema': toggleTheme(); break;
 
         // ---- Listado
@@ -2504,7 +2522,7 @@
     const dis = puede ? '' : 'disabled';
     const campo = (id, label, v, pre, suf) => `<div class="campo"><label for="cfg-${id}">${label}</label>
       <div class="input-affix ${pre ? 'pre' : ''}"><input class="input" id="cfg-${id}" type="number" step="any" inputmode="decimal" value="${esc(num(v))}" ${dis}><span class="affix">${pre || suf}</span></div></div>`;
-    const v = await ask({
+    const promesaCfg = ask({
       title: 'Configuración',
       wide: true,
       body: `<p>Valores con que parten los proyectos nuevos${enNube ? ' de todo el equipo' : ' de este navegador'}. Los proyectos existentes conservan los suyos.${enNube ? ` Quedan en SharePoint, en «${esc((window.QPN_M365 || {}).carpetaConfig || 'la biblioteca')}».` : ''}</p>
@@ -2520,9 +2538,13 @@
         <h3 class="sub-t">Metas de evaluación</h3>
         <div class="fila-campos cfg-grid">
           ${campo('mobj', 'Margen objetivo', par.margenObjetivo, '', '%')}${campo('mmin', 'Margen mínimo', par.margenMinimo, '', '%')}${campo('meta', 'Meta por día-hombre', par.metaUtilidadDH, '$')}
-        </div>`,
+        </div>
+        <h3 class="sub-t">Análisis Financiero</h3>
+        <div id="cfg-af"></div>`,
       buttons: [puede ? { label: 'Restablecer valores de fábrica', value: 'reset', danger: true, left: true } : null, { label: 'Cancelar' }, { label: 'Guardar', value: 'save', primary: true }]
     });
+    pintarCfgAF();
+    const v = await promesaCfg;
     if (v === 'save') {
       if ($('#cfg-prefijo')) cfg.prefijo = ($('#cfg-prefijo').value || 'QPN').trim().toUpperCase();
       cfg.responsable = $('#cfg-resp').value.trim();
@@ -2938,6 +2960,277 @@
       if (usar === 'no') req = null;
     }
     return { carpeta, req: opts.planilla ? req : null };
+  }
+
+  // ---------------------------------------------------------------------------
+  //  ANÁLISIS FINANCIERO: enviar los costos del proyecto como costos proyectados,
+  //  por la carpeta de intercambio de las herramientas de QUEMPIN (js/intercambio.js).
+  //  No depende del modo SharePoint ni lo cambia.
+  // ---------------------------------------------------------------------------
+  const QI = () => window.QIntercambio;
+  const vinculoAF = (p) => (p && p.vinculos && p.vinculos.analisisFinanciero) || null;
+  const fechaHora = (iso) => {
+    const d = new Date(iso);
+    const z = (n) => String(n).padStart(2, '0');
+    return isNaN(d) ? '' : `${z(d.getDate())}-${z(d.getMonth() + 1)}-${d.getFullYear()} ${z(d.getHours())}:${z(d.getMinutes())}`;
+  };
+  const ESTADO_ENVIO = {
+    'en-buzon': { cls: 'warn', t: 'En espera', d: 'Se aplica en la próxima actualización del Análisis Financiero.' },
+    pendiente: { cls: 'bad', t: 'Requiere decisión', d: 'Allá hay valores escritos a mano que no se veían al enviar: revísalos y vuelve a enviar, o que lo confirmen en el Análisis Financiero.' },
+    aplicado: { cls: 'ok', t: 'Aplicado', d: '' },
+    'sin-cambios': { cls: 'ok', t: 'Aplicado', d: 'El Análisis Financiero ya tenía esos valores.' },
+    reemplazado: { cls: 'na', t: 'Reemplazado', d: 'Llegó un envío más reciente para el mismo proyecto.' },
+    rechazado: { cls: 'bad', t: 'Rechazado', d: '' },
+    descartado: { cls: 'na', t: 'Descartado', d: 'Se descartó en el Análisis Financiero: su planilla quedó como estaba.' }
+  };
+  const PATRON_TAG = /^[A-Z0-9]{2,10}$/;
+
+  function costosCambiaron(p, r) {
+    const u = (vinculoAF(p) || {}).ultimoEnvio;
+    if (!u || !u.costos || !QI()) return false;
+    const ahora = QI().costosAF(r.totals);
+    return Object.keys(ahora).some((k) => ahora[k] !== u.costos[k]);
+  }
+
+  /* Paso Evaluación: a qué proyecto se enviaron los costos y en qué quedó el envío */
+  function pintarPanelAF() {
+    const el = $('#af-panel');
+    if (!el || !state.project) return;
+    const p = state.project;
+    const v = vinculoAF(p);
+    const u = v && v.ultimoEnvio;
+    let texto;
+    if (!u) {
+      texto = '<p class="af-linea">Cuando la oferta se adjudique, envía sus costos: pasan a ser los costos proyectados del proyecto en ejecución, para comparar después con el gasto real del Centro de Costos.</p>';
+    } else {
+      const e = ESTADO_ENVIO[u.estado] || ESTADO_ENVIO['en-buzon'];
+      const detalle = u.estado === 'aplicado' && u.aplicado ? `Aplicado el ${fechaHora(u.aplicado)}.` : (u.detalle || e.d);
+      texto = `<p class="af-linea"><span class="code-badge">${esc(v.tag)}</span> ${v.nombre && v.nombre !== v.tag ? esc(v.nombre) : ''}</p>
+        <p class="af-linea"><span class="chip ${e.cls}">${e.t}</span> Versión ${esc(u.version)} enviada el ${esc(fechaHora(u.fecha))}. ${esc(detalle)}</p>
+        ${costosCambiaron(p, state.result) ? '<p class="af-linea af-aviso">Los costos cambiaron desde ese envío: vuelve a enviarlos para actualizar el Análisis Financiero.</p>' : ''}`;
+    }
+    el.innerHTML = `<div class="af-texto" id="af-estado">${texto}</div>
+      <div class="actions">
+        ${u ? '<button type="button" class="btn" data-act="af-estado">Actualizar estado</button>' : ''}
+        <button type="button" class="btn ${p.estado === 'Adjudicada' ? 'btn-primario' : ''}" data-act="enviar-af">${ICON.enviar}${u ? 'Volver a enviar…' : 'Enviar costos…'}</button>
+      </div>`;
+  }
+
+  /* Lee en la carpeta en qué quedó el último envío. Sin permiso vigente solo lo hace si
+     viene de un clic (interactivo): el navegador pide el permiso una vez por sesión. */
+  async function actualizarEstadoAF(p, interactivo) {
+    const v = vinculoAF(p);
+    const X = QI();
+    if (!v || !v.ultimoEnvio || !X || !X.disponible()) return;
+    const est = await X.estado();
+    if (!est.conectada) return;
+    if (est.permiso !== 'granted' && !(interactivo && await X.permitir())) return;
+    const id = v.ultimoEnvio.id;
+    const cat = await X.leerCatalogoAF();
+    const r = cat && cat.mensajes ? cat.mensajes[id] : null;
+    let nuevo;
+    if (await X.enBuzon(id)) {
+      nuevo = r && r.estado === 'pendiente'
+        ? { estado: 'pendiente', detalle: (r.detalle || []).filter((x) => !/driver\.py/.test(x)).join(' ') }
+        : { estado: 'en-buzon', detalle: '' };
+    } else if (r) {
+      nuevo = { estado: r.estado, detalle: r.estado === 'rechazado' ? (r.detalle || []).join(' ') : '', aplicado: r.fecha || '' };
+    } else return;
+    const u = v.ultimoEnvio;
+    if (nuevo.estado !== u.estado || (nuevo.detalle || '') !== (u.detalle || '')) {
+      Object.assign(u, nuevo);
+      if (state.project === p) scheduleSave(); else S.upsert(p);
+    }
+    if (state.project === p) pintarPanelAF();
+  }
+
+  /* Proyecto del Análisis Financiero más parecido (título y cliente), si hay uno claro */
+  function sugerirTag(p, proyectos) {
+    const mias = new Set(palabras(`${p.titulo} ${p.cliente}`));
+    if (!mias.size) return '';
+    const puntajes = proyectos.map((q) => ({ tag: q.tag, n: palabras(`${q.nombre} ${q.cliente}`).filter((w) => mias.has(w)).length }))
+      .sort((a, b) => b.n - a.n);
+    return puntajes[0] && puntajes[0].n > 0 && (!puntajes[1] || puntajes[0].n > puntajes[1].n) ? puntajes[0].tag : '';
+  }
+
+  function tablaComparacionAF(q, costos, r) {
+    const cats = QI().CATEGORIAS_AF.map((c) => c.k);
+    const hoy = (q && q.proyectados) || {};
+    const origen = (q && q.origen) || {};
+    let pisa = [];
+    const filas = cats.map((c) => {
+      const a = hoy[c];
+      const n = costos[c];
+      const tiene = a !== null && a !== undefined && a !== '';
+      const manual = tiene && !origen[c];
+      const cambia = !tiene || Math.round(Number(a)) !== n;
+      if (manual && cambia) pisa.push(c);
+      const nota = !q ? '' : !tiene ? '<span class="af-origen">vacío</span>'
+        : origen[c] ? `<span class="af-origen">del formulador: ${esc(String(origen[c].fuente || '').split(' · ')[0].replace(/^Formulación /, ''))}</span>` : '<span class="af-origen">escrito a mano</span>';
+      return `<tr class="${cambia ? 'cambia' : ''} ${manual && cambia ? 'pisa' : ''}">
+          <td>${esc(c)}</td>
+          ${q ? `<td class="num hoy">${tiene ? clp(Number(a)) : '—'}${nota}</td>` : ''}
+          <td class="num nuevo">${clp(n)}</td></tr>`;
+    }).join('');
+    const suma = (o) => cats.reduce((s, c) => s + (Number(o[c]) || 0), 0);
+    const reales = q && q.reales ? suma(q.reales) : null;
+    const t = r.totals;
+    return `<div class="tabla-contenedor"><table class="tbl af-tabla">
+        <thead><tr><th>Categoría</th>${q ? '<th class="num">Hoy en el Análisis Financiero</th>' : ''}<th class="num">Se enviará</th></tr></thead>
+        <tbody>${filas}</tbody>
+        <tfoot><tr><td>Costo directo</td>${q ? `<td class="num">${clp(suma(hoy))}</td>` : ''}<td class="num">${clp(suma(costos))}</td></tr></tfoot>
+      </table></div>
+      ${pisa.length ? `<p class="af-linea af-aviso">Reemplazará valores escritos a mano en el Análisis Financiero: ${esc(pisa.join(', '))}.</p>` : ''}
+      ${q && reales !== null ? `<p class="af-nota">Costo real a la fecha según Centro de Costos: ${clp(reales)}${ok(Number(q.avance)) ? ` · avance ${pct(Number(q.avance))}` : ''}.</p>` : ''}
+      ${(t.gg || 0) + (t.imp || 0) > 0 ? `<p class="af-nota">Gastos generales (${clp(t.gg)}) e imprevistos (${clp(t.imp)}) no se envían: el Análisis Financiero compara costos directos.</p>` : ''}`;
+  }
+
+  /* Envía los costos del proyecto (abierto o elegido en la lista) al Análisis Financiero */
+  async function enviarAF(id) {
+    const p = (id && S.get(id)) || state.project;
+    const X = QI();
+    if (!p || !X) return;
+    if (saveTimer && state.project === p) saveNow();
+    const r = p === state.project ? state.result : computeProject(p);
+    if (!(r.totals.cd > 0)) { toast('El proyecto todavía no tiene costos que enviar.', true); return; }
+    if (!X.disponible()) { await enviarAFDescarga(p, r); return; }
+
+    let est = await X.estado();
+    if (!est.conectada) {
+      const v = await ask({
+        title: 'Conectar con el Análisis Financiero',
+        body: `<p>El formulador y el Análisis Financiero se comunican por una carpeta compartida de OneDrive: <b>Finanzas QUEMPIN › Intercambio</b>.
+          Elígela una vez y este navegador la recordará.</p>
+          <p class="small muted">El navegador pedirá permiso para ver y guardar archivos en esa carpeta. Solo se usan los archivos del intercambio; nada sale de tu equipo ni de OneDrive.</p>`,
+        buttons: [{ label: 'Cancelar' }, { label: 'Elegir la carpeta', value: 'elegir', primary: true }]
+      });
+      if (v !== 'elegir') return;
+      try { est = await X.conectar(); } catch (e) {
+        if (!e || e.name !== 'AbortError') toast((e && e.message) || 'No se pudo abrir la carpeta.', true);
+        return;
+      }
+    } else if (est.permiso !== 'granted' && !(await X.permitir())) {
+      toast('Sin permiso para usar la carpeta de intercambio.', true);
+      return;
+    }
+
+    const cat = await X.leerCatalogoAF();
+    const proyectos = ((cat && cat.proyectos) || []).slice().sort((a, b) => String(a.tag).localeCompare(String(b.tag)));
+    const v0 = vinculoAF(p);
+    const sugerido = v0 ? v0.tag : sugerirTag(p, proyectos);
+    const costos = X.costosAF(r.totals);
+    const opciones = proyectos.map((q) => `<option value="${esc(q.tag)}" ${q.tag === sugerido ? 'selected' : ''}>${esc(q.tag)} · ${esc(q.nombre || '')}${q.cliente && q.cliente !== q.nombre ? ` (${esc(q.cliente)})` : ''}</option>`).join('');
+    const enLista = proyectos.some((q) => q.tag === sugerido);
+    const promesa = ask({
+      title: 'Enviar costos al Análisis Financiero',
+      wide: true,
+      body: `<p>Los costos de <b>${esc(p.codigo || 'este proyecto')} v${esc(p.version)}</b> pasan a ser los <b>costos proyectados</b> del proyecto que elijas.
+          Se aplican en la próxima actualización del Análisis Financiero, con respaldo, y nunca reemplazan un valor escrito a mano que no se vea acá.</p>
+        ${cat ? '' : '<p class="af-linea af-aviso">La carpeta todavía no tiene la lista de proyectos del Análisis Financiero (se publica en su próxima actualización). Puedes enviar escribiendo el TAG.</p>'}
+        <div class="fila-campos">
+          <div class="campo ancho"><label for="af-tag">Proyecto en el Análisis Financiero</label>
+            <select class="input" id="af-tag">
+              <option value="">Elige un proyecto…</option>${opciones}
+              <option value="__otro__" ${sugerido && !enLista ? 'selected' : ''}>Otro: escribir el TAG (proyecto nuevo o que aún no aparece)</option>
+            </select>
+            ${cat && cat.generado ? `<span class="hint">Lista del ${esc(fechaHora(cat.generado))}.</span>` : ''}</div>
+        </div>
+        <div class="fila-campos" id="af-otro" hidden>
+          <div class="campo"><label for="af-otro-tag">TAG</label><input class="input" id="af-otro-tag" maxlength="10" autocomplete="off" placeholder="Ej.: OBRA" value="${sugerido && !enLista ? esc(sugerido) : ''}">
+            <span class="hint">El prefijo del N° de referencia en Centro de Costos.</span></div>
+          <div class="campo"><label for="af-otro-nombre">Nombre, si es un proyecto nuevo</label><input class="input" id="af-otro-nombre" value="${esc(p.titulo || '')}">
+            <span class="hint">Si el TAG no existe, el Análisis Financiero crea el proyecto con este nombre.</span></div>
+        </div>
+        <div id="af-comparacion"></div>`,
+      buttons: [{ label: 'Cancelar' }, { label: 'Enviar al Análisis Financiero', value: 'enviar', primary: true }]
+    });
+
+    const sel = $('#af-tag'), otroTag = $('#af-otro-tag'), otroNombre = $('#af-otro-nombre');
+    const boton = $('#modal .modal-foot .btn-primario');
+    const elegido = () => {
+      if (sel.value !== '__otro__') return sel.value ? { tag: sel.value, q: proyectos.find((q) => q.tag === sel.value) } : null;
+      const tag = otroTag.value.trim().toUpperCase();
+      if (!PATRON_TAG.test(tag)) return null;
+      const q = proyectos.find((x) => x.tag === tag);
+      if (!q && !otroNombre.value.trim()) return null;
+      return { tag, q, nuevo: !q };
+    };
+    const pintar = () => {
+      $('#af-otro').hidden = sel.value !== '__otro__';
+      const d = elegido();
+      boton.disabled = !d;
+      $('#af-comparacion').innerHTML = d ? tablaComparacionAF(d.q, costos, r)
+        + (d.nuevo ? `<p class="af-nota">${esc(d.tag)} no está en la lista del Análisis Financiero: si allá no existe, se crea «${esc(otroNombre.value.trim())}».</p>` : '')
+        : '<p class="af-nota">Elige el proyecto para ver qué cambiará.</p>';
+    };
+    sel.addEventListener('change', pintar);
+    otroTag.addEventListener('input', pintar);
+    otroNombre.addEventListener('input', pintar);
+    pintar();
+    if (await promesa !== 'enviar') return;
+
+    const d = elegido();
+    if (!d) return;
+    const destino = d.nuevo ? { tag: d.tag, nombre: otroNombre.value.trim(), crear: true } : { tag: d.tag };
+    const visto = d.q ? d.q.proyectados : null;
+    const u = S.getUser();
+    const m = X.mensajePresupuesto(p, r.totals, destino, visto, (u && u.email) || p.responsable || S.getConfig().responsable || '');
+    try { await X.enviar(m); } catch (e) {
+      toast('No se pudo dejar el envío en la carpeta: ' + ((e && e.message) || e), true);
+      return;
+    }
+    registrarEnvioAF(p, d.tag, d.q ? d.q.nombre : destino.nombre, m);
+    toast(`Enviado al Análisis Financiero (${d.tag}): se aplica en su próxima actualización`);
+  }
+
+  function registrarEnvioAF(p, tag, nombre, m) {
+    p.vinculos = Object.assign({}, p.vinculos, {
+      analisisFinanciero: {
+        tag, nombre: nombre || '',
+        ultimoEnvio: { id: m.id, fecha: m.origen.enviado, version: p.version, costos: m.costos, estado: 'en-buzon' }
+      }
+    });
+    if (state.project === p) { scheduleSave(); pintarPanelAF(); } else S.upsert(p);
+  }
+
+  /* Navegadores sin acceso a carpetas (Firefox, Safari, celulares): descargar el envío para
+     dejarlo a mano en «Intercambio › buzon». */
+  async function enviarAFDescarga(p, r) {
+    const X = QI();
+    const v0 = vinculoAF(p);
+    const v = await ask({
+      title: 'Enviar costos al Análisis Financiero',
+      body: `<p>Este navegador no puede abrir carpetas: se descarga el envío y lo dejas en <b>Finanzas QUEMPIN › Intercambio › buzon</b>. Con Chrome o Edge de escritorio se hace solo.</p>
+        <div class="fila-campos">
+          <div class="campo"><label for="afd-tag">TAG del proyecto</label><input class="input" id="afd-tag" maxlength="10" autocomplete="off" value="${esc(v0 ? v0.tag : '')}"><span class="hint">El prefijo del N° de referencia en Centro de Costos.</span></div>
+          <div class="campo"><label for="afd-nombre">Nombre, si es un proyecto nuevo</label><input class="input" id="afd-nombre" value="${esc(p.titulo || '')}"></div>
+        </div>
+        <label class="check-l"><input type="checkbox" id="afd-crear"> Es un proyecto nuevo: crearlo si el TAG no existe</label>
+        ${tablaComparacionAF(null, X.costosAF(r.totals), r)}`,
+      buttons: [{ label: 'Cancelar' }, { label: 'Descargar el envío', value: 'bajar', primary: true }]
+    });
+    if (v !== 'bajar') return;
+    const tag = $('#afd-tag').value.trim().toUpperCase();
+    if (!PATRON_TAG.test(tag)) { toast('El TAG debe tener 2 a 10 letras o números.', true); return; }
+    const crear = $('#afd-crear').checked;
+    const nombre = $('#afd-nombre').value.trim();
+    const u = S.getUser();
+    const m = X.mensajePresupuesto(p, r.totals, crear ? { tag, nombre, crear: true } : { tag }, null, (u && u.email) || p.responsable || '');
+    X.descargar(m);
+    registrarEnvioAF(p, tag, crear ? nombre : '', m);
+    toast('Envío descargado: déjalo en Finanzas QUEMPIN › Intercambio › buzon');
+  }
+
+  /* Configuración: carpeta de intercambio conectada en este navegador */
+  async function pintarCfgAF() {
+    const el = $('#cfg-af');
+    const X = QI();
+    if (!el || !X) return;
+    if (!X.disponible()) { el.innerHTML = '<p class="af-linea">Este navegador no puede abrir carpetas: los envíos se descargan para dejarlos a mano en la carpeta de intercambio.</p>'; return; }
+    const est = await X.estado();
+    el.innerHTML = `<p class="af-linea">${est.conectada ? `Carpeta conectada en este navegador: <b>${esc(est.nombre)}</b>.` : 'Sin conectar: se elige la primera vez que envías costos.'}</p>
+      <div class="actions"><button type="button" class="btn btn-sm" data-act="af-carpeta">${ICON.folder}${est.conectada ? 'Cambiar carpeta' : 'Conectar carpeta'}</button>
+      ${est.conectada ? '<button type="button" class="btn btn-sm" data-act="af-olvidar">Olvidar</button>' : ''}</div>`;
   }
 
   /* Carpeta del proyecto en la lista y en el encabezado. */

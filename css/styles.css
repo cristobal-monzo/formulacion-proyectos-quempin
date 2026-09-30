@@ -1160,3 +1160,24 @@ a.meta-carpeta:hover { color: var(--brand-orange-ink); text-decoration: underlin
 .loc-fila { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--border-hairline); }
 .loc-fila:last-child { border-bottom: 0; }
 .loc-t { flex: 1; min-width: 160px; font-weight: 700; }
+
+/* ---- Análisis Financiero: envío de costos por la carpeta de intercambio ---------------- */
+#af-otro[hidden] { display: none; }
+.af-panel { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.af-panel .af-texto { flex: 1 1 320px; min-width: 0; }
+.af-panel .actions { flex: 0 0 auto; }
+.af-linea { margin: 0 0 6px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.af-linea:last-child { margin-bottom: 0; }
+.af-linea .chip { margin-right: 6px; }
+.af-aviso { color: var(--status-warning); font-weight: 700; }
+.af-nota { font-size: 12px; color: var(--text-muted); margin: 8px 0 0; }
+.af-tabla { min-width: 0; margin-top: 4px; }
+.af-origen { display: block; font-size: 11px; font-weight: 400; color: var(--text-muted); white-space: normal; }
+.af-tabla tr.cambia td.nuevo { font-weight: 900; }
+.af-tabla tr.pisa td.hoy { color: var(--status-warning); }
+.af-tabla th { white-space: normal; }
+@media (max-width: 600px) {
+  .af-tabla { font-size: 12.5px; }
+  .af-tabla th, .af-tabla td, .af-tabla th:first-child, .af-tabla td:first-child, .af-tabla th:last-child, .af-tabla td:last-child { padding-left: 6px; padding-right: 6px; }
+}
+.check-l { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 2px 0 10px; }
