@@ -111,7 +111,8 @@
   // =====================================================================
   //  EXPORTAR PROYECTO
   // =====================================================================
-  async function exportProject(p) {
+  /* Genera el Excel del proyecto y lo descarga; con opts.soloDatos devuelve el archivo (ArrayBuffer) sin descargarlo. */
+  async function exportProject(p, opts) {
     const ExcelJS = await ensureExcelJS();
     const r = root.QCalc.computeProject(p);
     const par = p.parametros;
@@ -448,7 +449,9 @@
     wsF.pageSetup = { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
 
     const buf = await wb.xlsx.writeBuffer();
+    if (opts && opts.soloDatos) return buf;
     download(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), fileBase(p) + '.xlsx');
+    return null;
   }
 
   // =====================================================================

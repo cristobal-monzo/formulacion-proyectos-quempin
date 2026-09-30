@@ -4,7 +4,7 @@ Herramienta web para formular y evaluar los costos de proyectos. Reemplaza las h
 
 **Herramienta publicada:** https://cristobal-monzo.github.io/formulacion-proyectos-quempin/
 
-Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages**. Los proyectos se guardan en una base de datos compartida en **Firebase** o, si la nube no está configurada, en el navegador (ver [Dónde quedan los datos](#dónde-quedan-los-datos)).
+Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages**. Los proyectos se guardan en **SharePoint**, en la carpeta de cada oferta de la biblioteca *Formulación de proyectos*, o, si la conexión no está configurada, en el navegador (ver [Dónde quedan los datos](#dónde-quedan-los-datos)).
 
 ## Qué hace
 
@@ -30,38 +30,38 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
   git commit -m "descripción del cambio"
   git push
   ```
-- El sitio es público, igual que las demás herramientas QUEMPIN publicadas con GitHub Pages. No contiene datos de proyectos: esos viven en Firebase, protegidos por ingreso con correo y reglas de acceso, o en el navegador de cada usuario.
+- El sitio es público, igual que las demás herramientas QUEMPIN publicadas con GitHub Pages. **No contiene datos de proyectos**: esos viven en SharePoint, donde cada persona entra con su cuenta de QUEMPIN, o en el navegador de cada usuario. Nunca se suben al repositorio archivos de la biblioteca.
 
 También funciona abriendo `index.html` directamente desde el computador (doble clic). Para exportar e importar Excel se usa la copia local de la librería en `vendor/`, así que no necesita internet. Sin conexión solo cambian las tipografías.
 
 ## Dónde quedan los datos
 
-La herramienta tiene dos modos. Cuál se usa depende de `js/firebase-config.js`.
+La herramienta tiene dos modos. Cuál se usa depende de `js/m365-config.js`.
 
-**Nube (Firebase)**, para uso en equipo. Se configura una vez siguiendo [docs/FIREBASE.md](docs/FIREBASE.md).
-- Todo el equipo ve y edita la misma cartera desde cualquier equipo. Solo entran los correos autorizados, con Google o con un enlace enviado al correo.
-- Hay dos roles. *Editor*: formula y envía a la papelera. *Administrador*: además gestiona usuarios, los valores predeterminados del equipo y la eliminación definitiva.
-- Cada proyecto registra quién lo creó y quién lo modificó. Los cambios de otras personas aparecen en vivo. Si dos personas editan el mismo proyecto a la vez, se pregunta antes de sobrescribir.
-- Funciona sin conexión y sube los cambios al reconectar.
-- Capacidad del plan gratuito: unos 90.000 proyectos medianos.
-- Respaldo: **Más → Respaldar todos los proyectos** (JSON) cada mes.
+**SharePoint**, para uso en equipo. Se configura una vez siguiendo [docs/SHAREPOINT.md](docs/SHAREPOINT.md).
+- Cada proyecto es un archivo `Formulación <N°> v<versión>.json` en la carpeta de su oferta, junto al Excel y los antecedentes de siempre. Si la carpeta se mueve a Adjudicadas o a Cerradas, el proyecto la sigue.
+- Cada persona entra con su cuenta Microsoft de QUEMPIN y ve lo que SharePoint le permite. No hay una lista de usuarios aparte.
+- **Nuevo proyecto** pide la carpeta de la oferta y toma de la *Planilla de Ingreso de Requerimientos* el título, la ubicación, la referencia, el cierre y el presupuesto. La planilla solo se lee.
+- Todo el equipo ve la misma cartera. Si dos personas guardan el mismo proyecto, se pregunta antes de sobrescribir.
+- SharePoint guarda el historial de versiones de cada archivo y tiene papelera propia.
+- La herramienta solo escribe sus propios archivos (`Formulación …` y `Formulador - configuración.json`). No modifica, mueve ni borra nada más. Para un piloto, `raiz` la limita a una carpeta de prueba.
 
-**Local**, el modo por defecto si la nube no está configurada o si se abre `index.html` como archivo.
+**Local**, el modo por defecto si SharePoint no está configurado o si se abre `index.html` como archivo.
 - Los proyectos se guardan en el **navegador de cada usuario** (`localStorage`, unos 5 MB compartidos con las demás herramientas de `cristobal-monzo.github.io`). Eso equivale a unos 450 proyectos medianos. Cada versión cuenta como un proyecto.
 - Cada persona ve solo los proyectos de su navegador. Para compartir, se **exporta a Excel o JSON** y se **importa**. Borrar los datos del navegador borra los proyectos.
-- Al pasar a la nube, la herramienta ofrece subir los proyectos guardados en el navegador.
+- Al pasar a SharePoint, la herramienta ofrece guardar los proyectos del navegador en la carpeta de su oferta.
 
-En ambos modos, eliminar un proyecto lo envía a la **papelera** (*Más → Papelera*), desde donde se restaura o se elimina definitivamente.
+En ambos modos, eliminar un proyecto lo envía a la **papelera** (*Más → Papelera*), desde donde se restaura. En modo local también se puede eliminar definitivamente. En SharePoint el archivo queda en su carpeta: para borrarlo del todo se hace en SharePoint.
 
 ## Uso rápido
 
-1. **Datos** → título, cliente y responsable. Los parámetros (IVA, tarifas, metas) ya vienen con los valores de *Configuración*; ábrelos solo si este proyecto es distinto.
+1. **Datos** → título, cliente y responsable (en SharePoint, el título, la ubicación y el presupuesto vienen de la planilla de ingreso). Los parámetros (IVA, tarifas, metas) ya vienen con los valores de *Configuración*; ábrelos solo si este proyecto es distinto.
 2. **Partidas** → agrega cada partida con su cantidad y unidad.
 3. **Costos** → en *Materiales*, *Equipos*, *Mano de obra* y *Otros* agrega los ítems, elige su partida e ingresa las cantidades **por unidad de partida**. En *Otros* puedes usar **Agregar desde catálogo**.
 4. **Utilidad y precio** → define la **utilidad** de cada partida (% o $) y copia los valores netos para la cotización.
 5. **Evaluación** → revisa el veredicto y corrige las alertas; luego **Exportar Excel**. Para una revisión de la oferta usa **⋯ → Crear nueva versión** (mismo código, v2, v3…).
 
-Los valores con que parten los proyectos nuevos (prefijo del código, IVA, tarifas y metas) se cambian en **Configuración**, arriba a la derecha.
+Los valores con que parten los proyectos nuevos (IVA, tarifas y metas, y en modo local el prefijo del código) se cambian en **Configuración**, arriba a la derecha.
 
 Atajos: en las tablas, **Enter** baja a la fila siguiente (en la última fila agrega una nueva). En la columna de unidad, **↓** abre la lista de unidades. Duplicar, mover o eliminar una fila está en su menú **⋯**. En el listado, **/** enfoca el buscador. Los menús y selectores se manejan con flechas, **Enter** y **Esc**. En el teléfono las tablas se muestran como tarjetas.
 
@@ -73,19 +73,19 @@ css/brand.css           Sistema de marca compartido con las demás herramientas 
 css/styles.css          Estilos propios (componentes, gráficos, modo claro/oscuro, impresión)
 js/calc.js              Motor de cálculo (replica las fórmulas del Excel)
 js/kpis.js              Definición y descripción de cada KPI
-js/store.js             Modelo de datos, valores por defecto, papelera y guardado (local o nube)
-js/cloud.js             Conexión con Firebase: ingreso, sincronización y usuarios
-js/firebase-config.js   Datos del proyecto Firebase (vacío = modo local)
+js/store.js             Modelo de datos, valores por defecto, papelera y guardado (local o SharePoint)
+js/cloud.js             Conexión con SharePoint: ingreso con Microsoft, sincronización y reglas de escritura
+js/m365-config.js       Registro en Microsoft Entra y biblioteca de SharePoint (clientId vacío = modo local)
+redirect.html           Página de retorno del ingreso con Microsoft
 js/excel.js             Exportación e importación (Excel y JSON)
 js/app.js               Interfaz
 js/logo-data.js         Logo oficial embebido para el Excel exportado
 vendor/exceljs.min.js   Librería ExcelJS 4.4.0 (licencia MIT, ver vendor/exceljs.LICENSE)
-vendor/firebase/        SDK de Firebase 12.19.0 (licencia Apache-2.0)
-firestore.rules         Reglas de seguridad de la base de datos
+vendor/msal/            MSAL 5.23.0, librería de ingreso de Microsoft (licencia MIT, ver vendor/msal/LICENSE)
 assets/                 Logos oficiales (fondo blanco y fondo negro), isotipo e íconos
 ejemplos/               Proyecto de ejemplo con los datos del Excel original (JSON importable)
 docs/ANALISIS_KPI.md    Evaluación de los KPI del Excel y puntos de mejora
-docs/FIREBASE.md        Cómo configurar la nube, límites y respaldo
+docs/SHAREPOINT.md      Cómo conectar con SharePoint, piloto, permisos y cuidados
 ```
 
 ## Identidad visual
@@ -105,6 +105,6 @@ La herramienta sigue el *Manual de Identidad de Marca QUEMPIN* y usa el mismo si
 
 ## Mantención
 
-- **Valores por defecto** (IVA, tarifas por nivel, metas, catálogo de otros costos): ajústalos en la ficha de un proyecto y presiona *Usarlos como predeterminados para proyectos nuevos*. En modo nube esto lo hace un administrador y aplica a todo el equipo. Para cambiar los valores de fábrica, edita `DEFAULT_PARAMETROS` y `DEFAULT_CATALOGO` en `js/store.js`.
+- **Valores por defecto** (IVA, tarifas por nivel, metas, catálogo de otros costos): ajústalos en la ficha de un proyecto y presiona *Usarlos como predeterminados para proyectos nuevos*. En SharePoint aplica a todo el equipo y queda en `Formulador - configuración.json`. Para cambiar los valores de fábrica, edita `DEFAULT_PARAMETROS` y `DEFAULT_CATALOGO` en `js/store.js`.
 - **Textos de los KPI:** se editan en `js/kpis.js`. Se reflejan en la herramienta, en la guía y en el Excel exportado.
 - **Fórmulas:** están en `js/calc.js`. Con el ejemplo del Excel el resultado debe ser costo directo $2.046.404 y precio neto $4.092.808.

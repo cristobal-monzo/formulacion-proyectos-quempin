@@ -3,13 +3,13 @@
  * Dos modos:
  *  - 'local': los proyectos viven en el navegador (localStorage). Es el modo por defecto
  *    y el que se usa si la nube no está configurada o se abre index.html sin servidor.
- *  - 'nube': los proyectos viven en Firebase (ver js/cloud.js). La memoria de esta
- *    página es la copia de trabajo; cloud.js la llena con lo que llega del servidor
+ *  - 'nube': los proyectos viven en SharePoint (ver js/cloud.js). La memoria de esta
+ *    página es la copia de trabajo; cloud.js la llena con lo que llega de SharePoint
  *    (applyRemote) y recibe cada cambio local a través del "backend".
  * La interfaz es síncrona en ambos modos: upsert() actualiza la copia en memoria de
  * inmediato y la nube se sincroniza en segundo plano.
- * Eliminar un proyecto lo manda a la papelera (eliminado: true); se puede restaurar
- * o eliminar definitivamente.
+ * Eliminar un proyecto lo manda a la papelera (eliminado: true); se puede restaurar.
+ * En modo local también se puede eliminar definitivamente; en SharePoint el archivo queda.
  */
 (function (root) {
   'use strict';
@@ -78,7 +78,8 @@
   let backend = null;   // { saveProject(p), deleteProject(id), saveConfig(shared) } en modo nube
   let usuario = null;   // { email, nombre, rol } en modo nube
   const listeners = [];
-  /* Eventos: {type:'remote', ids, autores} al llegar cambios de otros usuarios,
+  /* Eventos: {type:'remote', ids, autores} al llegar cambios de otros usuarios
+     (con conflicto: true y local: proyecto sin subir, si chocan con cambios de esta página),
      {type:'reset'} al cambiar de modo, {type:'config'} al cambiar la configuración compartida,
      {type:'sync', pendientes} al cambiar el estado de sincronización,
      {type:'error', mensaje} si la nube rechaza un cambio. */
@@ -162,7 +163,7 @@
     delete p.eliminado; delete p.eliminadoEn; delete p.eliminadoPor;
     return upsert(p);
   }
-  /* Eliminar definitivamente (en modo nube solo un administrador). */
+  /* Eliminar definitivamente (solo en modo local). */
   function purge(id) {
     cache = full().filter((p) => p.uid !== id);
     if (mode === 'nube') { backend.deleteProject(id); return true; }
@@ -178,7 +179,8 @@
     mode = 'local'; backend = null; usuario = null; cache = null; sharedConfig = null;
     emit({ type: 'reset' });
   }
-  /* Cambios que llegan del servidor. borrados: uids eliminados definitivamente. */
+  /* Cambios que llegan del servidor. borrados: uids cuyo archivo ya no existe.
+     opts.conflicto: la versión llegó mientras había cambios sin subir (opts.local). */
   function applyRemote(proyectos, borrados, opts) {
     const list = full();
     const ids = [], autores = new Set();
@@ -193,7 +195,12 @@
       cache = list.filter((p) => !borrados.includes(p.uid));
       ids.push(...borrados);
     }
-    if (ids.length) emit({ type: 'remote', ids, autores: Array.from(autores), inicial: !!(opts && opts.inicial) });
+    if (ids.length) {
+      emit({
+        type: 'remote', ids, autores: Array.from(autores), inicial: !!(opts && opts.inicial),
+        conflicto: !!(opts && opts.conflicto), local: (opts && opts.local) || null
+      });
+    }
   }
   /* Proyectos guardados en este navegador en modo local (para subirlos a la nube).
      No se borran al subirlos: quedan como respaldo y se ofrecen solo los que falten en la nube. */

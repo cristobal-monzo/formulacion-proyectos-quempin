@@ -1105,7 +1105,7 @@ dialog#modal::backdrop { background: rgba(0, 0, 0, .55); }
   .print-head img { width: 4.2cm; height: auto; margin: .3cm .6cm .3cm .2cm; } /* mínimo 4 cm y área de seguridad del manual */
 }
 
-/* ---- Nube: ingreso, cuenta, usuarios y papelera ------------------------------------ */
+/* ---- SharePoint: ingreso, cuenta, carpetas de oferta y papelera ---------------------- */
 .login-wrap { display: flex; justify-content: center; padding: 28px 0 12px; }
 .login-card { width: min(460px, 100%); gap: 12px; }
 .login-card:hover { transform: none; }
@@ -1113,10 +1113,8 @@ dialog#modal::backdrop { background: rgba(0, 0, 0, .55); }
 .login-card h3 { font-size: 15px; font-weight: 900; margin-top: 6px; }
 .login-card .campo { margin: 4px 0 0; }
 .login-card .btn { justify-content: center; }
-.login-google { width: 100%; min-height: 44px; font-weight: 700; }
-.login-google svg { width: 18px; height: 18px; }
-.login-sep { display: flex; align-items: center; gap: 10px; color: var(--text-muted); font-size: 12px; }
-.login-sep::before, .login-sep::after { content: ''; flex: 1; height: 1px; background: var(--gridline); }
+.login-ms { width: 100%; min-height: 44px; font-weight: 700; }
+.login-ms svg { width: 18px; height: 18px; }
 .login-msg { font-size: 12.5px; color: var(--text-secondary); margin: 4px 0 0; min-height: 1em; }
 .login-msg:empty { display: none; }
 .login-msg.err { color: var(--status-bad); font-weight: 700; }
@@ -1127,8 +1125,38 @@ dialog#modal::backdrop { background: rgba(0, 0, 0, .55); }
 .cuenta-dot.pendiente { background: var(--brand-orange); }
 .page-head .back { display: inline-flex; align-items: center; min-height: 24px; margin-bottom: 4px; font-size: 12.5px; color: var(--text-secondary); text-decoration: none; font-weight: 700; }
 .cell-actions .btn + .btn { margin-left: 6px; }
-.usr-tabla { width: 100%; }
-.usr-tabla td, .usr-tabla th { font-size: 13px; }
-.usr-tabla .link-btn + .link-btn { margin-left: 12px; }
 .link-btn.peligro { color: var(--status-bad); }
-.usr-form { margin-top: 8px; }
+
+/* Carpeta de la oferta en la lista y en el encabezado del proyecto */
+.proj-carpeta, .meta-carpeta { display: inline-flex; align-items: center; gap: 5px; min-width: 0; color: var(--text-muted); font-size: 12px; }
+.proj-carpeta { display: flex; margin-top: 2px; }
+.proj-carpeta span, .meta-carpeta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proj-carpeta svg, .meta-carpeta svg { width: 14px; height: 14px; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+a.meta-carpeta { color: var(--text-secondary); text-decoration: none; max-width: 340px; }
+a.meta-carpeta:hover { color: var(--brand-orange-ink); text-decoration: underline; }
+
+/* Selector de la carpeta de oferta */
+.cp-lista { max-height: min(46vh, 420px); overflow-y: auto; margin: 10px 0 6px; border: 1px solid var(--gridline); border-radius: 10px; background: var(--surface-card); }
+.cp-grupo { position: sticky; top: 0; z-index: 1; padding: 6px 12px; font-size: 11px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); background: var(--page-plane); border-bottom: 1px solid var(--gridline); }
+.cp-grupo[hidden], .cp-fila[hidden] { display: none; }
+.cp-fila { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 8px 12px; border: 0; border-bottom: 1px solid var(--border-hairline); background: none; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+.cp-fila:last-child { border-bottom: 0; }
+.cp-fila:hover, .cp-fila:focus-visible { background: var(--orange-soft); outline: none; }
+.cp-fila:focus-visible { box-shadow: inset 3px 0 0 var(--brand-orange); }
+.cp-fila.actual { box-shadow: inset 3px 0 0 var(--baseline); }
+.cp-fila .code-badge { flex: 0 0 auto; min-width: 44px; text-align: center; }
+.cp-t { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.cp-t b { font-weight: 700; font-size: 13.5px; overflow-wrap: anywhere; }
+.cp-sub { font-size: 12px; color: var(--text-muted); overflow-wrap: anywhere; }
+.cp-sub.cp-aviso { color: var(--status-warning); font-weight: 700; }
+.cp-vacio { margin: 8px 0; }
+.cp-nueva { margin-top: 12px; border-top: 1px solid var(--gridline); padding-top: 10px; }
+.cp-nueva summary { cursor: pointer; font-weight: 700; color: var(--text-secondary); min-height: 32px; display: flex; align-items: center; }
+.cp-nueva .fila-campos { margin-top: 8px; }
+.cp-nueva .hint { display: block; margin: 6px 0 10px; font-size: 12px; color: var(--text-muted); }
+
+/* Proyectos guardados solo en el navegador */
+.loc-lista { display: flex; flex-direction: column; margin: 10px 0; border: 1px solid var(--gridline); border-radius: 10px; }
+.loc-fila { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--border-hairline); }
+.loc-fila:last-child { border-bottom: 0; }
+.loc-t { flex: 1; min-width: 160px; font-weight: 700; }

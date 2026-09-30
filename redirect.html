@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ingresando — Formulación QUEMPIN</title>
+  <!-- Página de retorno del ingreso con Microsoft: entrega la respuesta a la herramienta y vuelve a ella. -->
+  <style>
+    :root { --bg: #ffffff; --text: #54565A; }
+    @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #121212; --text: #d7d8da; } }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--text);
+      font: 15px/1.5 Lato, system-ui, -apple-system, "Segoe UI", sans-serif; padding: 16px; }
+  </style>
+</head>
+<body>
+  <p>Volviendo a la herramienta…</p>
+  <script src="vendor/msal/msal-redirect-bridge.min.js"></script>
+  <script>
+    try { Promise.resolve(window.msalRedirectBridge.broadcastResponseToMainFrame()).catch(function (e) { console.error(e); }); }
+    catch (e) { console.error(e); }
+  </script>
+</body>
+</html>
