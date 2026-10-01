@@ -364,7 +364,7 @@
         { head: 'Cartera' },
         { icon: ICON.sheet, title: 'Exportar cartera a Excel', desc: 'Todos los proyectos con sus KPI en una planilla', act: 'exportar-cartera', disabled: !n },
         { icon: ICON.archive, title: 'Respaldar todos los proyectos', desc: enSP() ? 'Copia en JSON de toda la cartera, para archivar fuera de SharePoint' : 'Archivo JSON para restaurar o llevar a otro navegador', act: 'respaldar', disabled: !n },
-        { icon: ICON.trash, title: `Papelera (${S.trash().length})`, desc: enSP() ? 'Proyectos eliminados: restaurar' : 'Proyectos eliminados: restaurar o eliminar definitivamente', act: 'papelera' },
+        { icon: ICON.trash, title: `Papelera (${S.trash().length})`, desc: enSP() || compartiendo() ? 'Proyectos eliminados: restaurar' : 'Proyectos eliminados: restaurar o eliminar definitivamente', act: 'papelera' },
         enSP() ? null : { sep: true },
         enSP() ? null : { icon: ICON.sparkle, title: 'Cargar proyecto de ejemplo', desc: 'Mismos datos del Excel original, para comparar resultados', act: 'ejemplo' }
       ].filter(Boolean);
@@ -526,11 +526,10 @@
     clearTimeout(saveTimer);
     saveTimer = null;
     if (!state.project) return;
-    if (S.getMode() === 'nube') {
-      // Otra persona guardó este proyecto mientras se editaba: preguntar antes de sobrescribir.
-      const cur = S.get(state.project.uid);
-      if (cur && cur !== state.project) { resolverConflicto(cur); return; }
-    }
+    // Otra persona (SharePoint o carpeta compartida) u otra pestaña guardó este proyecto
+    // mientras se editaba: preguntar antes de sobrescribir.
+    const cur = S.get(state.project.uid);
+    if (cur && cur !== state.project) { resolverConflicto(cur); return; }
     const okSave = S.upsert(state.project);
     if (!okSave) setSaveState('No se pudo guardar en este navegador: exporta el proyecto', 'err');
     else showSyncState();
@@ -544,7 +543,14 @@
 
   /* Texto del indicador de guardado según el modo y la sincronización. */
   function textoGuardado() {
-    if (S.getMode() !== 'nube') return ['Guardado en este navegador', ''];
+    if (S.getMode() !== 'nube') {
+      if (!compartiendo()) return ['Guardado en este navegador', ''];
+      const i = QC().info();
+      if (i.sinPermiso || i.sinCarpeta) return ['Guardado solo en este navegador', 'saving'];
+      if (i.error) return ['Guardado en este navegador; no se pudo copiar a la carpeta compartida', 'err'];
+      if (i.pendientes > 0) return ['Guardado en este navegador · copiando a la carpeta compartida…', 'saving'];
+      return ['Guardado en este navegador y en la carpeta compartida', ''];
+    }
     const c = window.QCloud.info();
     if (c.pendientes > 0) return c.enLinea ? ['Cambios por subir a SharePoint…', 'saving'] : ['Sin conexión: se subirá al reconectar', 'saving'];
     return c.enLinea ? ['Guardado en SharePoint', ''] : ['Sin conexión: guardado en este equipo', 'saving'];
@@ -553,6 +559,7 @@
     if (saveTimer || state.conflicto) return;
     const [t, cls] = textoGuardado();
     setSaveState(t, cls);
+    pintarEditorCompartida();
   }
 
   async function resolverConflicto(cur) {
@@ -560,7 +567,8 @@
     state.conflicto = true;
     setSaveState('Cambios sin guardar: otra persona modificó este proyecto', 'err');
     const mio = state.project;
-    const quien = cur.modificadoPor && cur.modificadoPor !== (S.getUser() || {}).email ? cur.modificadoPor : 'Tú, desde otra ventana,';
+    const quien = cur.modificadoPor && cur.modificadoPor !== (S.getUser() || {}).email ? cur.modificadoPor
+      : enSP() ? 'Tú, desde otra ventana,' : 'Alguien, en otro equipo o en otra pestaña,';
     const v = await ask({
       title: 'Otra persona modificó este proyecto',
       body: `<p><b>${esc(quien)}</b> guardó cambios en <b>${esc(cur.codigo)} v${esc(cur.version)}</b> (${esc(new Date(cur.modificado).toLocaleString('es-CL'))}) mientras tú lo editabas.</p>
@@ -714,6 +722,7 @@
         <div>
           <h2>Proyectos formulados</h2>
           <p>Abre un proyecto para seguir formulándolo o crea uno nuevo.</p>
+          <p class="compartida-linea" id="compartida-linea" hidden></p>
         </div>
         ${all.length ? `<div class="actions">
           <button class="btn btn-primario" data-act="nuevo">${ICON.plus}Nuevo proyecto</button>
@@ -721,6 +730,7 @@
           <button class="btn" data-menu="list-more" aria-haspopup="menu" aria-expanded="false" aria-label="Más acciones">${ICON.more}Más${ICON.caret}</button>
         </div>` : ''}
       </div>
+      <div id="compartida"></div>
       ${all.length ? `
         <div class="kpis" id="list-kpis"></div>
         <div class="viz-filterbar">
@@ -744,6 +754,7 @@
         </div>` : emptyHub()}
     </div>`;
     if (all.length) refreshList();
+    pintarCompartida();
   }
 
   function emptyHub() {
@@ -879,13 +890,14 @@
       return c * s.dir;
     });
     if (!sorted.length) { body.innerHTML = `<tr class="empty-row"><td colspan="${LIST_COLS.length}">No hay proyectos que coincidan con los filtros. <button type="button" class="link-btn" data-act="limpiar-filtros">Limpiar filtros</button></td></tr>`; return; }
+    const aqui = soloAqui(sorted);
     body.innerHTML = sorted.map((p) => {
       const r = rs.get(p.uid);
       const nAlert = r.warnings.filter((w) => w.level !== 'info').length;
       const nErr = r.warnings.filter((w) => w.level === 'error').length;
       return `<tr class="clickable" data-open="${p.uid}" tabindex="0" aria-label="Abrir ${esc(p.codigo)} ${esc(p.titulo || 'Sin título')}">
         <td class="nowrap code"><span class="code-badge">${esc(p.codigo || '—')}</span><span class="ver">v${esc(p.version)}</span></td>
-        <td class="col-titulo" style="min-width:240px"><div class="proj-title">${esc(p.titulo || 'Sin título')}</div><div class="proj-sub">${esc([p.cliente, p.ubicacion].filter(Boolean).join(' · ') || '—')}</div>${carpetaCorta(p)}</td>
+        <td class="col-titulo" style="min-width:240px"><div class="proj-title">${esc(p.titulo || 'Sin título')}</div><div class="proj-sub">${esc([p.cliente, p.ubicacion].filter(Boolean).join(' · ') || '—')}</div>${carpetaCorta(p)}${aqui.has(p.uid) ? '<span class="chip warn solo-aqui" title="No está en la carpeta del equipo">Solo en este navegador</span>' : ''}</td>
         <td data-label="Responsable">${esc(p.responsable || '—')}</td>
         <td class="nowrap" data-label="Fecha">${esc(fechaCorta(p.fecha))}</td>
         <td data-label="Estado"><span class="estado" data-e="${esc(p.estado)}">${esc(p.estado)}</span></td>
@@ -930,6 +942,7 @@
             <span class="en-vivo ${textoGuardado()[1]}" id="save-state">${textoGuardado()[0]}</span>
           </div>
         </div>
+        <div id="ed-compartida"></div>
       </div>
       <div class="barra-pestanas">
         <div class="viz-container barra-pestanas-interior">
@@ -939,6 +952,7 @@
       </div>
       <div class="viz-container page" id="tab-body"></div>`;
     renderTab();
+    pintarEditorCompartida();
   }
 
   function metaCarpeta(p, sep) {
@@ -2130,6 +2144,7 @@
       switch (act) {
         case 'nuevo': {
           if (enSP()) { await nuevoEnSharePoint(); break; }
+          if (!(await exigirCarpeta())) break;
           const np = S.newProject();
           S.upsert(np);
           goProject(np, 'ficha');
@@ -2143,7 +2158,7 @@
           goProject(ex, 'resumen');
           break;
         }
-        case 'importar': $('#file-import').click(); break;
+        case 'importar': if (await exigirCarpeta()) $('#file-import').click(); break;
         case 'abrir': goProject(S.get(id), 'ficha'); break;
         case 'exp-xlsx': {
           if (saveTimer) saveNow();
@@ -2168,6 +2183,7 @@
         }
         case 'duplicar': {
           if (saveTimer) saveNow();
+          if (!(await exigirCarpeta())) break;
           const src = S.get(id);
           if (enSP()) {
             const sel = await elegirCarpeta({
@@ -2194,6 +2210,7 @@
         }
         case 'version': {
           if (saveTimer) saveNow();
+          if (!(await exigirCarpeta())) break;
           const src = S.get(id);
           const maxV = S.all().filter((x) => x.codigo === src.codigo).reduce((a, x) => Math.max(a, parseInt(x.version, 10) || 1), 1);
           const carpeta = enSP() ? window.QCloud.carpetaDe(src.uid) : null;
@@ -2284,6 +2301,44 @@
           break;
         }
         case 'af-olvidar': await QI().desconectar(); await pintarCfgAF(); break;
+        case 'compartir': {
+          const antes = S.all().length;
+          try { await QC().activar(); } catch (e) {
+            if (!e || e.name !== 'AbortError') toast((e && e.message) || 'No se pudo abrir la carpeta.', true);
+            await pintarCompartida();
+            break;
+          }
+          const i = QC().info();
+          if (i.error) toast('No se pudo sincronizar con la carpeta compartida: ' + i.error, true);
+          else {
+            const llegaron = S.all().length - antes;
+            toast(llegaron > 0 ? `Proyectos compartidos con el equipo · llegaron ${plural(llegaron, 'proyecto')} de la carpeta` : 'Proyectos compartidos con el equipo');
+          }
+          await pintarCompartida();
+          pintarEditorCompartida();
+          if ($('#cfg-af')) await pintarCfgAF();
+          break;
+        }
+        case 'compartir-ya': await QC().sincronizar(); break;
+        // Sin carpeta: el presupuesto se descarga para dejarlo en el buzón del equipo
+        case 'entregar': {
+          if (saveTimer) saveNow();
+          const pj = S.get(id) || p;
+          if (!pj) break;
+          toast(`Descargado ${QC().descargar(pj)}: déjalo en ${BUZON_EQUIPO}`);
+          pintarEditorCompartida();
+          await pintarCompartida();
+          break;
+        }
+        case 'entregar-pendientes': {
+          const pend = QC().sinSubir(S.all());
+          // De a uno y separados: el navegador pide una vez permitir varias descargas
+          for (const x of pend) { QC().descargar(x); await new Promise((r) => setTimeout(r, 400)); }
+          toast(`${plural(pend.length, 'presupuesto')} descargados: déjalos en ${BUZON_EQUIPO}`);
+          refreshList();
+          await pintarCompartida();
+          break;
+        }
         case 'tema': toggleTheme(); break;
 
         // ---- Listado
@@ -2539,7 +2594,7 @@
         <div class="fila-campos cfg-grid">
           ${campo('mobj', 'Margen objetivo', par.margenObjetivo, '', '%')}${campo('mmin', 'Margen mínimo', par.margenMinimo, '', '%')}${campo('meta', 'Meta por día-hombre', par.metaUtilidadDH, '$')}
         </div>
-        <h3 class="sub-t">Análisis Financiero</h3>
+        <h3 class="sub-t">Carpeta compartida (OneDrive)</h3>
         <div id="cfg-af"></div>`,
       buttons: [puede ? { label: 'Restablecer valores de fábrica', value: 'reset', danger: true, left: true } : null, { label: 'Cancelar' }, { label: 'Guardar', value: 'save', primary: true }]
     });
@@ -2657,7 +2712,7 @@
   /* Cambios que llegan de otros usuarios (o de otra ventana del mismo usuario). */
   S.on((ev) => {
     if (ev.type === 'error') { toast(ev.mensaje, true); if (state.project) setSaveState(ev.mensaje, 'err'); return; }
-    if (ev.type === 'sync') { showSyncState(); if (nube.activa) pintarCuenta(window.QCloud.info()); return; }
+    if (ev.type === 'sync') { showSyncState(); if (nube.activa) pintarCuenta(window.QCloud.info()); else pintarCompartida(); return; }
     if (ev.type === 'remote' && ev.conflicto) { alConflicto(ev); return; }
     if (ev.type === 'carpetas') { // una carpeta de oferta se movió o cambió de nombre en SharePoint
       if (!nube.lista) return;
@@ -2665,13 +2720,14 @@
       else if ($('#list-body')) refreshList();
       return;
     }
-    if (!nube.lista || (ev.type !== 'remote' && ev.type !== 'config')) return;
+    // En modo local también llegan cambios: de la carpeta compartida o de otra pestaña.
+    if ((nube.activa && !nube.lista) || (ev.type !== 'remote' && ev.type !== 'config')) return;
     const h = location.hash;
     if (state.project) {
       if (ev.type !== 'remote' || !ev.ids.includes(state.project.uid)) return;
       const cur = S.get(state.project.uid);
       if (cur === state.project || saveTimer || state.conflicto) return; // con cambios sin guardar: se resuelve al guardar
-      const quien = ev.autores.length ? ev.autores.join(', ') : 'otra ventana';
+      const quien = ev.autores.length ? ev.autores.join(', ') : ev.origen === 'carpeta' ? 'otro equipo' : 'otra ventana';
       if (!cur || cur.eliminado) {
         toast(`${quien} envió este proyecto a la papelera`, true);
         state.project = null;
@@ -2689,14 +2745,17 @@
   // ---- Papelera ---------------------------------------------------------------------
   function renderPapelera() {
     const list = S.trash().sort((a, b) => String(b.eliminadoEn || '').localeCompare(String(a.eliminadoEn || '')));
-    const puedePurgar = !enSP(); // en SharePoint el archivo nunca se borra desde la herramienta
+    // En SharePoint y en la carpeta compartida el archivo nunca se borra desde la herramienta
+    const puedePurgar = !enSP() && !compartiendo();
     document.title = 'Papelera — Formulación QUEMPIN';
     app.innerHTML = `<div class="viz-container page">
       <div class="page-head">
         <div>
           <a class="back" href="#/">← Proyectos</a>
           <h2>Papelera</h2>
-          <p>Los proyectos eliminados quedan aquí y se pueden restaurar. ${puedePurgar ? 'Eliminarlos definitivamente no se puede deshacer.' : 'Sus archivos siguen en la carpeta de cada oferta en SharePoint; para borrarlos del todo, hazlo allí.'}</p>
+          <p>Los proyectos eliminados quedan aquí y se pueden restaurar. ${puedePurgar ? 'Eliminarlos definitivamente no se puede deshacer.'
+            : enSP() ? 'Sus archivos siguen en la carpeta de cada oferta en SharePoint; para borrarlos del todo, hazlo allí.'
+            : 'Se comparten con el equipo: sus archivos siguen en la carpeta compartida (Formulación de proyectos › .Herramientas formulación › Intercambio).'}</p>
         </div>
         ${puedePurgar && list.length ? `<div class="actions"><button class="btn btn-danger" data-act="vaciar">${ICON.trash}Vaciar papelera</button></div>` : ''}
       </div>
@@ -2853,8 +2912,8 @@
     if (state.project && state.project.uid === uid) { resolverConflicto(cur); return; }
     if (!ev.local) return;
     const c = copiaDeCambios(ev.local, ' (cambios sin subir)');
-    const quien = ev.autores.length ? ev.autores.join(', ') : 'Otra persona';
-    toast(`${quien} modificó ${cur.codigo} v${cur.version} al mismo tiempo. Tus cambios quedaron en la versión ${c.version}.`, true);
+    const quien = ev.autores.length ? ev.autores.join(', ') : ev.origen === 'carpeta' ? 'Otro equipo' : 'Otra persona';
+    toast(`${quien} modificó ${cur.codigo} v${cur.version} al mismo tiempo. Tus cambios quedaron en ${c.codigo} v${c.version}.`, true);
     if (!state.project && !location.hash.startsWith('#/guia')) route();
   }
 
@@ -3099,8 +3158,8 @@
     if (!est.conectada) {
       const v = await ask({
         title: 'Conectar con el Análisis Financiero',
-        body: `<p>El formulador y el Análisis Financiero se comunican por una carpeta compartida de OneDrive: <b>Finanzas QUEMPIN › Intercambio</b>.
-          Elígela una vez y este navegador la recordará.</p>
+        body: `<p>El formulador y el Análisis Financiero se comunican por una carpeta de la biblioteca <b>Formulación de proyectos - Documentos</b> (sincronizada en tu OneDrive).
+          Elige la biblioteca una vez y este navegador la recordará.</p>
           <p class="small muted">El navegador pedirá permiso para ver y guardar archivos en esa carpeta. Solo se usan los archivos del intercambio; nada sale de tu equipo ni de OneDrive.</p>`,
         buttons: [{ label: 'Cancelar' }, { label: 'Elegir la carpeta', value: 'elegir', primary: true }]
       });
@@ -3194,13 +3253,13 @@
   }
 
   /* Navegadores sin acceso a carpetas (Firefox, Safari, celulares): descargar el envío para
-     dejarlo a mano en «Intercambio › buzon». */
+     dejarlo a mano en «.Herramientas formulación › Intercambio › buzon». */
   async function enviarAFDescarga(p, r) {
     const X = QI();
     const v0 = vinculoAF(p);
     const v = await ask({
       title: 'Enviar costos al Análisis Financiero',
-      body: `<p>Este navegador no puede abrir carpetas: se descarga el envío y lo dejas en <b>Finanzas QUEMPIN › Intercambio › buzon</b>. Con Chrome o Edge de escritorio se hace solo.</p>
+      body: `<p>Este navegador no puede abrir carpetas: se descarga el envío y lo dejas en <b>Formulación de proyectos › .Herramientas formulación › Intercambio › buzon</b>. Con Chrome o Edge de escritorio se hace solo.</p>
         <div class="fila-campos">
           <div class="campo"><label for="afd-tag">TAG del proyecto</label><input class="input" id="afd-tag" maxlength="10" autocomplete="off" value="${esc(v0 ? v0.tag : '')}"><span class="hint">El prefijo del N° de referencia en Centro de Costos.</span></div>
           <div class="campo"><label for="afd-nombre">Nombre, si es un proyecto nuevo</label><input class="input" id="afd-nombre" value="${esc(p.titulo || '')}"></div>
@@ -3218,7 +3277,7 @@
     const m = X.mensajePresupuesto(p, r.totals, crear ? { tag, nombre, crear: true } : { tag }, null, (u && u.email) || p.responsable || '');
     X.descargar(m);
     registrarEnvioAF(p, tag, crear ? nombre : '', m);
-    toast('Envío descargado: déjalo en Finanzas QUEMPIN › Intercambio › buzon');
+    toast('Envío descargado: déjalo en Formulación de proyectos › .Herramientas formulación › Intercambio › buzon');
   }
 
   /* Configuración: carpeta de intercambio conectada en este navegador */
@@ -3226,11 +3285,126 @@
     const el = $('#cfg-af');
     const X = QI();
     if (!el || !X) return;
-    if (!X.disponible()) { el.innerHTML = '<p class="af-linea">Este navegador no puede abrir carpetas: los envíos se descargan para dejarlos a mano en la carpeta de intercambio.</p>'; return; }
+    if (!X.disponible()) {
+      el.innerHTML = `<p class="af-linea">${nube.activa
+        ? 'Este navegador no puede abrir carpetas: los envíos se descargan para dejarlos a mano en la carpeta de intercambio.'
+        : `Este navegador no puede abrir carpetas (usa Chrome o Edge de escritorio). Cada presupuesto se descarga para dejarlo en <b>${esc(BUZON_EQUIPO)}</b>; los envíos al Análisis Financiero, también.`}</p>`;
+      return;
+    }
     const est = await X.estado();
-    el.innerHTML = `<p class="af-linea">${est.conectada ? `Carpeta conectada en este navegador: <b>${esc(est.nombre)}</b>.` : 'Sin conectar: se elige la primera vez que envías costos.'}</p>
+    // En modo local la carpeta es obligatoria: no se ofrece «Olvidar» (solo cambiarla).
+    el.innerHTML = `<p class="af-linea">${est.conectada ? `Carpeta conectada en este navegador: <b>${esc(est.nombre)}</b>.` : est.movida ? 'La carpeta que estaba conectada cambió de lugar.' : 'Sin conectar.'}
+        ${nube.activa ? 'Se usa para enviar costos al Análisis Financiero.' : 'Todos los presupuestos se guardan ahí para el equipo («.Herramientas formulación › Intercambio › publicado › formulador»), y desde ahí se envían costos al Análisis Financiero. Elige la biblioteca <b>Formulación de proyectos - Documentos</b> sincronizada en tu OneDrive.'}</p>
       <div class="actions"><button type="button" class="btn btn-sm" data-act="af-carpeta">${ICON.folder}${est.conectada ? 'Cambiar carpeta' : 'Conectar carpeta'}</button>
-      ${est.conectada ? '<button type="button" class="btn btn-sm" data-act="af-olvidar">Olvidar</button>' : ''}</div>`;
+      ${est.conectada && nube.activa ? '<button type="button" class="btn btn-sm" data-act="af-olvidar">Olvidar</button>' : ''}</div>`;
+  }
+
+  // ---------------------------------------------------------------------------
+  //  CARPETA COMPARTIDA: proyectos del equipo por OneDrive (modo local, js/compartida.js)
+  // ---------------------------------------------------------------------------
+  const QC = () => window.QCompartida;
+  function compartiendo() { return !nube.activa && !!QC() && QC().activa(); }
+  const BUZON_EQUIPO = 'Formulación de proyectos › .Herramientas formulación › Intercambio › buzon';
+  const notaCompartida = (texto, botones) => `<div class="nota compartida-nota" role="region" aria-label="Carpeta del equipo">
+      <span>${texto}</span><span class="actions">${botones}</span></div>`;
+  const BTN_DESCARGAR = (id) => `<button type="button" class="btn btn-sm" data-act="${id ? 'entregar' : 'entregar-pendientes'}"${id ? ` data-id="${esc(id)}"` : ''}>${ICON.download}Descargar para el equipo</button>`;
+
+  /* Por qué un presupuesto quedaría solo en este navegador, según la última sincronización (sin
+     leer la carpeta): 'sin-api', 'sin-carpeta', 'sin-permiso', 'error'; '' si está al día; null
+     mientras no se sabe. Compartir es obligatorio (pedido del usuario, 2026-09-30). */
+  function problemaCompartida() {
+    if (nube.activa || !QC() || !QI()) return '';
+    if (!QI().disponible()) return 'sin-api';
+    const i = QC().info();
+    if (i.sinCarpeta) return 'sin-carpeta';
+    if (i.sinPermiso) return 'sin-permiso';
+    if (i.error) return 'error';
+    return i.ultima ? '' : null;
+  }
+  let problemaPintado;   // para refrescar las marcas de la lista solo cuando cambia
+  /* Proyectos que solo están en este navegador, mientras haya un problema con la carpeta. */
+  function soloAqui(list) {
+    return problemaCompartida() ? new Set(QC().sinSubir(list).map((p) => p.uid)) : new Set();
+  }
+
+  /* Lista de proyectos: aviso para conectar la carpeta del equipo, o una línea con su estado. */
+  async function pintarCompartida() {
+    if (nube.activa || !QC() || !QI()) return;
+    const e = await QC().estado();
+    const caja = $('#compartida'), linea = $('#compartida-linea');
+    const pie = $('#footer-datos');
+    if (pie) pie.textContent = compartiendo()
+      ? 'Los presupuestos se guardan en este navegador y en la carpeta del equipo, en la biblioteca «Formulación de proyectos» de OneDrive.'
+      : 'Los presupuestos se guardan en este navegador: descárgalos para el equipo o respáldalos con «Exportar Excel».';
+    const prob = problemaCompartida();
+    if (prob !== problemaPintado) { problemaPintado = prob; if (!state.project && $('#list-body')) refreshList(); }
+    if (!caja || !linea) return;
+    const pend = QC().sinSubir(S.all()).length;
+    const cuantos = pend ? ` ${pend === 1 ? 'Un presupuesto está' : `${pend} presupuestos están`} solo en este navegador.` : '';
+    let html = '', txt = '';
+    if (!e.disponible) {
+      html = pend ? notaCompartida(`<strong>Este navegador no puede abrir la carpeta del equipo</strong> (usa Chrome o Edge de escritorio).${cuantos} Descárgalos y déjalos en <strong>${esc(BUZON_EQUIPO)}</strong>.`, BTN_DESCARGAR()) : '';
+    } else if (!e.conectada) {
+      html = notaCompartida(e.movida
+        ? `<strong>La carpeta del equipo cambió de lugar.</strong> Vuelve a conectarla eligiendo la biblioteca <strong>Formulación de proyectos - Documentos</strong> de tu OneDrive.${cuantos}`
+        : `<strong>Los presupuestos se guardan en la carpeta del equipo.</strong> Conecta la biblioteca <strong>Formulación de proyectos - Documentos</strong> de tu OneDrive: ahí quedan los tuyos y aparecen los de tus colegas.${cuantos}`,
+        `<button type="button" class="btn btn-primario btn-sm" data-act="compartir">${ICON.folder}Conectar carpeta</button>${pend ? BTN_DESCARGAR() : ''}`);
+    } else if (e.permiso !== 'granted') {
+      html = notaCompartida(`<strong>Presupuestos sin guardar en la carpeta del equipo.</strong> El navegador pide permiso una vez por sesión para usar la carpeta «${esc(e.nombre)}».${cuantos}`,
+        `<button type="button" class="btn btn-primario btn-sm" data-act="compartir">${ICON.folder}Dar permiso y sincronizar</button>`);
+    } else {
+      const i = QC().info();
+      txt = i.error ? `<span class="dot bad" aria-hidden="true"></span>No se pudo sincronizar con la carpeta del equipo: ${esc(i.error)} <button type="button" class="link-btn" data-act="compartir-ya">Reintentar</button>`
+        : `<span class="dot ${i.pendientes ? 'warn' : 'ok'}" aria-hidden="true"></span>Guardados en la carpeta del equipo «${esc(e.nombre)}»${i.ultima ? ` · revisada a las ${esc(new Date(i.ultima).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }))}` : ' · sincronizando…'}`;
+    }
+    if (caja.innerHTML !== html) caja.innerHTML = html;
+    linea.hidden = !txt;
+    if (linea.innerHTML !== txt) linea.innerHTML = txt;
+  }
+
+  /* Editor: aviso si el presupuesto abierto está solo en este navegador. */
+  function pintarEditorCompartida() {
+    const el = $('#ed-compartida');
+    const p = state.project;
+    if (!el || !p) return;
+    const prob = problemaCompartida();
+    let html = '';
+    if (prob && !QC().enRepositorio(p)) {
+      if (QC().entregado(p)) {
+        html = notaCompartida(`<strong>Descargado para el equipo.</strong> Déjalo en <strong>${esc(BUZON_EQUIPO)}</strong>. Si lo vuelves a cambiar, descárgalo de nuevo.`, '');
+      } else if (prob === 'sin-api') {
+        html = notaCompartida(`<strong>Este presupuesto está solo en este navegador.</strong> Este navegador no puede abrir la carpeta del equipo: descárgalo y déjalo en <strong>${esc(BUZON_EQUIPO)}</strong>.`, BTN_DESCARGAR(p.uid));
+      } else if (prob === 'error') {
+        html = notaCompartida(`<strong>No se pudo guardar en la carpeta del equipo:</strong> ${esc(QC().info().error)}`,
+          `<button type="button" class="btn btn-sm" data-act="compartir-ya">Reintentar</button>${BTN_DESCARGAR(p.uid)}`);
+      } else {
+        html = notaCompartida(`<strong>Este presupuesto está solo en este navegador.</strong> ${prob === 'sin-permiso' ? 'Da permiso a la carpeta del equipo para guardarlo ahí.' : 'Conecta la carpeta del equipo para guardarlo ahí.'}`,
+          `<button type="button" class="btn btn-primario btn-sm" data-act="compartir">${ICON.folder}${prob === 'sin-permiso' ? 'Dar permiso' : 'Conectar carpeta'}</button>${BTN_DESCARGAR(p.uid)}`);
+      }
+    }
+    if (el.innerHTML !== html) el.innerHTML = html;
+  }
+
+  /* Antes de crear un presupuesto (nuevo, importado, duplicado o versión): exigir la carpeta del
+     equipo. Sin la API o sin la biblioteca en el computador, se sigue y se entrega por archivo.
+     true = seguir. Debe llamarse desde un clic (el permiso y el selector lo necesitan). */
+  async function exigirCarpeta() {
+    if (nube.activa || !QC() || !QI() || !QI().disponible()) return true;
+    const e = await QI().estado();
+    if (e.conectada && e.permiso === 'granted') return true;
+    if (e.conectada && await QI().permitir()) { QC().sincronizar(); return true; }
+    const v = await ask({
+      title: 'Los presupuestos se guardan en la carpeta del equipo',
+      body: `<p>Antes de crear un presupuesto, ${e.movida ? 'vuelve a conectar' : 'conecta'} la biblioteca <b>Formulación de proyectos - Documentos</b> de tu OneDrive. Ahí queda guardado para todo el equipo.</p>
+        <p class="small muted">¿No tienes esa biblioteca en este computador? Puedes trabajar sin ella y descargar el presupuesto para dejarlo en «${esc(BUZON_EQUIPO)}».</p>`,
+      buttons: [{ label: 'Trabajar sin la carpeta', value: 'sin', left: true }, { label: 'Cancelar' }, { label: 'Conectar la biblioteca', value: 'conectar', primary: true }]
+    });
+    if (v === 'sin') return true;
+    if (v !== 'conectar') return false;
+    try { await QC().activar(); return true; } catch (err) {
+      if (!err || err.name !== 'AbortError') toast((err && err.message) || 'No se pudo abrir la carpeta.', true);
+      return false;
+    }
   }
 
   /* Carpeta del proyecto en la lista y en el encabezado. */
@@ -3270,6 +3444,8 @@
     window.QCloud.iniciar();
     if (location.hash.startsWith('#/guia')) route();
   } else {
+    // Modo local: los proyectos se comparten por la carpeta de OneDrive si este navegador lo activó.
+    if (QC()) QC().iniciar();
     route();
   }
 })();

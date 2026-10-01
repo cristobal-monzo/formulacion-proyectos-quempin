@@ -78,8 +78,10 @@
   let backend = null;   // { saveProject(p), deleteProject(id), saveConfig(shared) } en modo nube
   let usuario = null;   // { email, nombre, rol } en modo nube
   const listeners = [];
-  /* Eventos: {type:'remote', ids, autores} al llegar cambios de otros usuarios
-     (con conflicto: true y local: proyecto sin subir, si chocan con cambios de esta página),
+  /* Eventos: {type:'remote', ids, autores, origen} al llegar cambios de otros usuarios, de la
+     carpeta compartida (origen 'carpeta') o de otra pestaña (origen 'ventana'); con
+     conflicto: true y local: proyecto sin subir, si chocan con cambios de esta página,
+     {type:'local', ids} al guardar en este navegador (modo local; lo usa js/compartida.js),
      {type:'reset'} al cambiar de modo, {type:'config'} al cambiar la configuración compartida,
      {type:'sync', pendientes} al cambiar el estado de sincronización,
      {type:'error', mensaje} si la nube rechaza un cambio. */
@@ -136,8 +138,17 @@
   }
   function get(id) { return full().find((p) => p.uid === id) || null; }
   function firma() { return usuario ? usuario.email : ''; }
+  /* Fecha de modificación siempre posterior a la anterior del mismo proyecto: identifica cada
+     versión (la carpeta compartida y SharePoint comparan por ella), aunque se guarde dos veces
+     en el mismo milisegundo. */
+  function marca(anterior) {
+    let t = Date.now();
+    const a = Date.parse(anterior || '');
+    if (Number.isFinite(a) && t <= a) t = a + 1;
+    return new Date(t).toISOString();
+  }
   function upsert(p) {
-    p.modificado = new Date().toISOString();
+    p.modificado = marca(p.modificado);
     if (usuario) {
       p.modificadoPor = firma();
       if (!p.creadoPor) p.creadoPor = firma();
@@ -146,7 +157,9 @@
     const i = list.findIndex((x) => x.uid === p.uid);
     if (i >= 0) list[i] = p; else list.unshift(p);
     if (mode === 'nube') { backend.saveProject(p); return true; }
-    return persist();
+    const ok = persist();
+    emit({ type: 'local', ids: [p.uid] });
+    return ok;
   }
   /* Enviar a la papelera. */
   function remove(id) {
@@ -167,7 +180,9 @@
   function purge(id) {
     cache = full().filter((p) => p.uid !== id);
     if (mode === 'nube') { backend.deleteProject(id); return true; }
-    return persist();
+    const ok = persist();
+    emit({ type: 'local', ids: [id] });
+    return ok;
   }
 
   // ---- Nube -------------------------------------------------------------------
@@ -179,11 +194,13 @@
     mode = 'local'; backend = null; usuario = null; cache = null; sharedConfig = null;
     emit({ type: 'reset' });
   }
-  /* Cambios que llegan del servidor. borrados: uids cuyo archivo ya no existe.
-     opts.conflicto: la versión llegó mientras había cambios sin subir (opts.local). */
+  /* Cambios que llegan del servidor o de la carpeta compartida. borrados: uids cuyo archivo ya
+     no existe. opts.conflicto: la versión llegó mientras había cambios sin subir (opts.local).
+     opts.autores / opts.origen: quién y de dónde, para los avisos. En modo local se guardan
+     en este navegador. */
   function applyRemote(proyectos, borrados, opts) {
     const list = full();
-    const ids = [], autores = new Set();
+    const ids = [], autores = new Set((opts && opts.autores) || []);
     (proyectos || []).forEach((raw) => {
       const p = normalize(raw);
       const i = list.findIndex((x) => x.uid === p.uid);
@@ -196,11 +213,34 @@
       ids.push(...borrados);
     }
     if (ids.length) {
+      if (mode === 'local') persist();
       emit({
         type: 'remote', ids, autores: Array.from(autores), inicial: !!(opts && opts.inicial),
-        conflicto: !!(opts && opts.conflicto), local: (opts && opts.local) || null
+        conflicto: !!(opts && opts.conflicto), local: (opts && opts.local) || null,
+        origen: (opts && opts.origen) || ''
       });
     }
+  }
+
+  /* Otra pestaña de este navegador guardó proyectos (modo local): tomar su versión, para no
+     sobrescribirla con la copia vieja de esta página. Los que no cambiaron conservan su objeto. */
+  if (root.addEventListener) {
+    root.addEventListener('storage', (e) => {
+      if (mode !== 'local' || !cache || e.key !== LS_PROYECTOS) return;
+      let data;
+      try { data = JSON.parse(e.newValue || 'null'); } catch (err) { return; }
+      const antes = new Map(cache.map((p) => [p.uid, p]));
+      const ids = [];
+      cache = ((data && data.proyectos) || []).map((raw) => {
+        const a = antes.get(raw.uid);
+        if (a && a.modificado === raw.modificado) { antes.delete(raw.uid); return a; }
+        antes.delete(raw.uid);
+        ids.push(raw.uid);
+        return normalize(raw);
+      });
+      ids.push(...antes.keys());
+      if (ids.length) emit({ type: 'remote', ids, autores: [], origen: 'ventana' });
+    });
   }
   /* Proyectos guardados en este navegador en modo local (para subirlos a la nube).
      No se borran al subirlos: quedan como respaldo y se ofrecen solo los que falten en la nube. */

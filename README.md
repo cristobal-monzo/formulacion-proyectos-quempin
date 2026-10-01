@@ -21,6 +21,7 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
 - **Exporta la cartera** (todos los proyectos con sus KPI en una planilla) y un respaldo completo en JSON.
 - **Importa** proyectos exportados (Excel o JSON) y también **los Excel antiguos** (`.xlsm`) para migrarlos. Al importar un Excel antiguo verifica que el costo y el precio calculados coincidan con los del archivo original.
 - **Envía los costos al Análisis Financiero.** Cuando una oferta se adjudica, sus costos por categoría pasan a ser los costos proyectados del proyecto en ejecución, para compararlos con el gasto real del Centro de Costos. La comunicación va por una carpeta de intercambio compartida en OneDrive: no usa servidor ni inicio de sesión, y no depende de SharePoint. Ver [docs/INTERCAMBIO.md](docs/INTERCAMBIO.md).
+- **Comparte los proyectos con el equipo por esa misma carpeta** mientras no se use SharePoint: cada proyecto queda como un archivo en OneDrive y aparece en la lista de los demás equipos que la tengan conectada.
 
 ## Publicación y actualización
 
@@ -31,7 +32,8 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
   git commit -m "descripción del cambio"
   git push
   ```
-- El sitio es público, igual que las demás herramientas QUEMPIN publicadas con GitHub Pages. **No contiene datos de proyectos**: esos viven en SharePoint, donde cada persona entra con su cuenta de QUEMPIN, o en el navegador de cada usuario. Nunca se suben al repositorio archivos de la biblioteca.
+- El sitio es público, igual que las demás herramientas QUEMPIN publicadas con GitHub Pages. **No contiene datos de proyectos**: esos viven en SharePoint, donde cada persona entra con su cuenta de QUEMPIN, o en el navegador de cada usuario y la carpeta compartida de OneDrive. Nunca se suben al repositorio archivos de la biblioteca.
+- Al abrirla pide **la misma contraseña que los Tableros Financieros** (ver `GATE_PASSWORD_NORM` en `index.html`). Los scripts de la herramienta se cargan recién después de pasarla. Es una barrera del lado del cliente, no seguridad real: solo disuade a quien reciba el link. El navegador la recuerda (`quempin_viz_unlocked` en `localStorage`), la misma marca que usan los tableros, así que quien ya entró a uno no la vuelve a escribir.
 
 También funciona abriendo `index.html` directamente desde el computador (doble clic). Para exportar e importar Excel se usa la copia local de la librería en `vendor/`, así que no necesita internet. Sin conexión solo cambian las tipografías.
 
@@ -49,10 +51,12 @@ La herramienta tiene dos modos. Cuál se usa depende de `js/m365-config.js`.
 
 **Local**, el modo por defecto si SharePoint no está configurado o si se abre `index.html` como archivo.
 - Los proyectos se guardan en el **navegador de cada usuario** (`localStorage`, unos 5 MB compartidos con las demás herramientas de `cristobal-monzo.github.io`). Eso equivale a unos 450 proyectos medianos. Cada versión cuenta como un proyecto.
-- Cada persona ve solo los proyectos de su navegador. Para compartir, se **exporta a Excel o JSON** y se **importa**. Borrar los datos del navegador borra los proyectos.
+- **Todo presupuesto se guarda también en la carpeta del equipo (obligatorio).** Crear uno nuevo, importarlo, duplicarlo o hacer una nueva versión exige conectar la carpeta. Donde no se puede (Firefox, Safari, celulares, o sin la biblioteca en el computador), el presupuesto se descarga con *Descargar para el equipo* para dejarlo en el buzón, y Claude lo incorpora al repositorio en `/Actualizar_Finanzas`. Lo que queda solo en un navegador lleva la marca «Solo en este navegador».
+- **Para que el equipo vea los mismos proyectos**, cada navegador los comparte por la carpeta de intercambio, oculta en la biblioteca de SharePoint *Formulación de proyectos* (`.Herramientas formulación/Intercambio`), que el equipo ya tiene sincronizada en OneDrive (Chrome o Edge de escritorio). La lista de proyectos pide conectarla eligiendo la biblioteca; en **Configuración** se puede cambiar. Cada proyecto queda como un archivo en `publicado/formulador/` (el repositorio de las formulaciones), OneDrive lo lleva a los demás equipos y su formulador lo trae a la lista. Si dos equipos cambian el mismo proyecto a la vez, se conserva una versión y los otros cambios quedan como copia: nunca se pierde trabajo. Detalle en [docs/INTERCAMBIO.md](docs/INTERCAMBIO.md).
+- Sin esa carpeta, cada persona ve solo los proyectos de su navegador: se comparten **exportando a Excel o JSON** e **importando**. Borrar los datos del navegador borra los proyectos que no estén en la carpeta.
 - Al pasar a SharePoint, la herramienta ofrece guardar los proyectos del navegador en la carpeta de su oferta.
 
-En ambos modos, eliminar un proyecto lo envía a la **papelera** (*Más → Papelera*), desde donde se restaura. En modo local también se puede eliminar definitivamente. En SharePoint el archivo queda en su carpeta: para borrarlo del todo se hace en SharePoint.
+En ambos modos, eliminar un proyecto lo envía a la **papelera** (*Más → Papelera*), desde donde se restaura. En modo local sin carpeta compartida también se puede eliminar definitivamente. En SharePoint y en la carpeta compartida el archivo queda: para borrarlo del todo se hace allá.
 
 ## Uso rápido
 
@@ -80,6 +84,7 @@ js/m365-config.js       Registro en Microsoft Entra y biblioteca de SharePoint (
 redirect.html           Página de retorno del ingreso con Microsoft
 js/excel.js             Exportación e importación (Excel y JSON)
 js/intercambio.js       Carpeta de intercambio con las demás herramientas QUEMPIN (Análisis Financiero)
+js/compartida.js        Proyectos compartidos con el equipo por esa carpeta (modo local)
 js/app.js               Interfaz
 js/logo-data.js         Logo oficial embebido para el Excel exportado
 vendor/exceljs.min.js   Librería ExcelJS 4.4.0 (licencia MIT, ver vendor/exceljs.LICENSE)

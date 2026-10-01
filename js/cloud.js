@@ -221,13 +221,14 @@
   function numeroDe(nombre) { const m = RE_CARPETA_OFERTA.exec(nombre || ''); return m ? m[1] : ''; }
 
   /* Carpetas de oferta: las que cuelgan de la raíz o de una carpeta «0 …» (Presentadas,
-     Adjudicadas, Cerradas 2025…). Se omiten «1 CARPETA MODELO», «2 ARCHIVOS…» y similares. */
+     Adjudicadas, Cerradas 2025…). Se omiten «1 CARPETA MODELO», «2 ARCHIVOS…» y similares, y
+     las que empiezan con punto (ocultas, como «.Herramientas formulación» con el intercambio). */
   function carpetas() {
     const out = [];
     const recorrer = (id, grupo, ruta, prof) => {
       if (prof > 4) return;
       hijosDe(id).forEach((c) => {
-        if (!c.folder) return;
+        if (!c.folder || c.name.charAt(0) === '.') return;
         if (/^0 /.test(c.name)) { recorrer(c.id, grupoDe(c.name, grupo), ruta.concat(c.name), prof + 1); return; }
         if (/^[1-9] /.test(c.name) && !numeroDe(c.name)) return;
         const m = RE_CARPETA_OFERTA.exec(c.name);

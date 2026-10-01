@@ -229,6 +229,13 @@ select.is-set { border-color: var(--brand-orange) !important; box-shadow: inset 
 }
 .nota > span { flex: 1 1 320px; }
 .nota strong { color: var(--text-primary); }
+/* Carpeta compartida (proyectos del equipo por OneDrive): aviso en la lista y línea de estado */
+.nota.compartida-nota { align-items: center; }
+.nota > .actions { flex: 0 1 auto; }
+.compartida-linea { display: flex; align-items: center; flex-wrap: wrap; gap: 0 4px; margin: 4px 0 0; font-size: 12.5px; color: var(--text-muted); }
+.compartida-linea[hidden] { display: none; }
+.chip.solo-aqui { display: inline-block; margin-top: 4px; font-size: 11px; }
+#ed-compartida .nota { margin: 0 0 12px; }
 
 /* ---- KPIs (tarjetas de Análisis Financiero / Centro de Costos) -------------- */
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 12px; margin-bottom: 8px; }
@@ -1181,3 +1188,39 @@ a.meta-carpeta:hover { color: var(--brand-orange-ink); text-decoration: underlin
   .af-tabla th, .af-tabla td, .af-tabla th:first-child, .af-tabla td:first-child, .af-tabla th:last-child, .af-tabla td:last-child { padding-left: 6px; padding-right: 6px; }
 }
 .check-l { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 2px 0 10px; }
+
+/* Gate de contraseña: el mismo de los Tableros Financieros (misma clave y mismo aspecto).
+   Es hermano de .viz-root, por eso repite la tipografía. */
+.viz-gate {
+  font-family: 'Lato', system-ui, -apple-system, "Segoe UI", sans-serif;
+  position: fixed; inset: 0; z-index: 2000;
+  display: flex; align-items: center; justify-content: center;
+  background: #000000;
+  padding: 20px;
+}
+.viz-gate-card {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  padding: 32px 28px;
+  max-width: 340px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+}
+.viz-gate-card img { height: 52px; margin-bottom: 14px; }
+.viz-gate-card h2 { font-size: 15px; color: #fff; margin: 0 0 4px; font-weight: 700; }
+.viz-gate-card p.hint { font-size: 12px; color: #98989a; margin: 0 0 18px; line-height: 1.5; }
+.viz-gate-card input {
+  width: 100%; font-family: inherit; font-size: 14px; text-align: center;
+  padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.18);
+  background: #000000; color: #fff; margin-bottom: 10px;
+}
+.viz-gate-card input:focus { outline: 2px solid #ff5100; outline-offset: 1px; }
+.viz-gate-card button {
+  width: 100%; font-family: inherit; font-size: 13px; font-weight: 900;
+  padding: 10px 12px; border-radius: 8px; border: none;
+  background: #ff5100; color: #000000; cursor: pointer;
+}
+.viz-gate-card button:hover { filter: brightness(1.12); }
+.viz-gate-error { font-size: 12px; color: #ff8a4d; min-height: 16px; margin-top: 10px; }

@@ -19,7 +19,18 @@
   </script>
 </head>
 <body>
-<div class="viz-root" id="root">
+<div class="viz-gate" id="pwGate">
+  <form class="viz-gate-card" id="pwForm">
+    <img src="assets/logo-quempin-negativo.png" alt="QUEMPIN">
+    <h2>Formulación de Proyectos</h2>
+    <p class="hint">Acceso restringido. Ingresa la contraseña para usar la herramienta.</p>
+    <input id="pwInput" type="password" placeholder="Contraseña" autocomplete="off" autocapitalize="off">
+    <button type="submit">Entrar</button>
+    <div class="viz-gate-error" id="pwError"></div>
+  </form>
+</div>
+
+<div class="viz-root" id="root" style="display:none">
   <header class="viz-header">
     <div class="viz-container">
       <a class="viz-logo" href="#/" aria-label="Inicio: proyectos formulados"><span class="viz-wordmark">QUEMP<span class="in">IN</span></span></a>
@@ -53,17 +64,61 @@
 
 <noscript><p style="padding:24px;font-family:sans-serif">Esta herramienta necesita JavaScript habilitado.</p></noscript>
 
-<script src="js/logo-data.js"></script>
-<script src="js/kpis.js"></script>
-<script src="js/calc.js"></script>
-<script src="js/store.js"></script>
+<!-- Scripts de la herramienta. Se cargan solo después de pasar el gate de contraseña (ver abajo),
+     para que no arranque el ingreso con Microsoft ni se lean datos antes. -->
 <!-- SharePoint: el ingreso con Microsoft usa MSAL 5.23.0 (copia local en vendor/msal, licencia MIT),
-     que cloud.js carga solo si la conexión está configurada -->
-<script src="js/m365-config.js"></script>
-<script src="js/cloud.js"></script>
-<!-- Intercambio con las demás herramientas de QUEMPIN (Análisis Financiero): carpeta compartida, sin servidor -->
-<script src="js/intercambio.js"></script>
-<script src="js/excel.js"></script>
-<script src="js/app.js"></script>
+     que cloud.js carga solo si la conexión está configurada.
+     intercambio.js: intercambio con las demás herramientas de QUEMPIN (Análisis Financiero) por carpeta compartida, sin servidor.
+     compartida.js: en modo local, comparte los proyectos con el equipo por esa misma carpeta de OneDrive. -->
+<script>
+(function () {
+  // Gate de contraseña: el mismo de los Tableros Financieros de QUEMPIN (misma clave y misma marca
+  // en localStorage, así que quien ya entró a uno no la vuelve a escribir en el mismo navegador).
+  // Es una barrera del lado del cliente, no seguridad real: solo disuade a quien tenga el link.
+  var GATE_PASSWORD_NORM = 'combustion';
+  var SCRIPTS = ['js/logo-data.js', 'js/kpis.js', 'js/calc.js', 'js/store.js', 'js/m365-config.js',
+    'js/cloud.js', 'js/intercambio.js', 'js/compartida.js', 'js/excel.js', 'js/app.js'];
+  function normalizePassword(s) {
+    return String(s == null ? '' : s)
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quita tildes
+      .trim();
+  }
+  var gate = document.getElementById('pwGate');
+  var gateForm = document.getElementById('pwForm');
+  var gateInput = document.getElementById('pwInput');
+  var gateError = document.getElementById('pwError');
+  var unlocked = false;
+
+  function unlock() {
+    if (unlocked) return;
+    unlocked = true;
+    gate.style.display = 'none';
+    document.getElementById('root').style.display = '';
+    try { localStorage.setItem('quempin_viz_unlocked', '1'); } catch (e) {}
+    SCRIPTS.forEach(function (src) {
+      var el = document.createElement('script');
+      el.src = src;
+      el.async = false; // conserva el orden de ejecución
+      document.body.appendChild(el);
+    });
+  }
+
+  gateForm.addEventListener('submit', function (evt) {
+    evt.preventDefault();
+    if (normalizePassword(gateInput.value) === GATE_PASSWORD_NORM) {
+      unlock();
+    } else {
+      gateError.textContent = 'Contraseña incorrecta. Intenta de nuevo.';
+      gateInput.value = '';
+      gateInput.focus();
+    }
+  });
+
+  var alreadyUnlocked = false;
+  try { alreadyUnlocked = localStorage.getItem('quempin_viz_unlocked') === '1'; } catch (e) {}
+  if (alreadyUnlocked) unlock(); else gateInput.focus();
+})();
+</script>
 </body>
 </html>

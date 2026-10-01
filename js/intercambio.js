@@ -17,6 +17,8 @@
   const ESQUEMA = 'quempin.intercambio/1';
   const MANIFIESTO = 'intercambio.json';
   const HERRAMIENTA = 'formulador';
+  const BIBLIOTECA = 'Formulación de proyectos - Documentos';
+  const CARPETA_HERRAMIENTAS = '.Herramientas formulación';
   const DB = 'qpn-intercambio';
   const TIENDA = 'carpetas';
   const CLAVE = 'intercambio';
@@ -33,6 +35,7 @@
 
   let carpeta = null;   // FileSystemDirectoryHandle
   let cargada = false;
+  const oyentes = [];   // avisos al conectar, cambiar u olvidar la carpeta
 
   const disponible = () => typeof root.showDirectoryPicker === 'function';
 
@@ -62,7 +65,9 @@
     carpeta = h;
     cargada = true;
     try { await idb('readwrite', (s) => (h ? s.put(h, CLAVE) : s.delete(CLAVE))); } catch (e) { /* solo esta sesión */ }
+    oyentes.slice().forEach((fn) => { try { fn(h); } catch (e) { console.error(e); } });
   }
+  function onCambio(fn) { oyentes.push(fn); }
 
   // ---- Archivos -------------------------------------------------------------------------------
   async function sub(dir, nombre, crear) {
@@ -82,12 +87,28 @@
   }
   const esManifiesto = (m) => !!(m && typeof m.esquema === 'string' && m.esquema.indexOf('quempin.intercambio/') === 0);
 
-  /* Si eligieron la carpeta de arriba (Finanzas QUEMPIN), bajar a «Intercambio». Una carpeta
-     «Intercambio» nueva y vacía se prepara acá mismo (el Análisis Financiero haría lo mismo). */
+  /* Subcarpeta sin distinguir mayúsculas ni la forma de las tildes: en el disco la carpeta de
+     herramientas quedó como «.HERRAMIENTAS FORMULACIÓN». */
+  const clave = (s) => String(s || '').normalize('NFC').toLowerCase();
+  async function hijaComo(dir, nombre) {
+    const k = clave(nombre);
+    try {
+      for await (const [n, h] of dir.entries()) if (h.kind === 'directory' && clave(n) === k) return h;
+    } catch (e) { /* sin acceso */ }
+    return null;
+  }
+  /* La carpeta vive en la biblioteca de SharePoint «Formulación de proyectos - Documentos», en
+     «.Herramientas formulación › Intercambio» (oculta). Se acepta elegir la carpeta misma, la de
+     herramientas o la biblioteca completa, y se baja sola. Una carpeta «Intercambio» nueva y
+     vacía se prepara acá mismo (el Análisis Financiero haría lo mismo). */
+  const RUTAS = [['Intercambio'], [CARPETA_HERRAMIENTAS, 'Intercambio']];
   async function resolverCarpeta(h) {
     if (esManifiesto(await leerJSON(h, MANIFIESTO))) return h;
-    const hija = await sub(h, 'Intercambio');
-    if (hija && esManifiesto(await leerJSON(hija, MANIFIESTO))) return hija;
+    for (const ruta of RUTAS) {
+      let d = h;
+      for (const n of ruta) d = d && await hijaComo(d, n);
+      if (d && esManifiesto(await leerJSON(d, MANIFIESTO))) return d;
+    }
     if (/^intercambio$/i.test(h.name)) {
       for (const n of ['buzon', 'procesado', 'publicado']) await h.getDirectoryHandle(n, { create: true });
       await escribirJSON(h, MANIFIESTO, {
@@ -104,17 +125,22 @@
   async function permiso(h) {
     try { return await h.queryPermission({ mode: 'readwrite' }); } catch (e) { return 'prompt'; }
   }
+  /* ¿Sigue ahí la carpeta recordada? (se mueve o se borra por fuera del navegador) */
+  const vigente = async (h) => esManifiesto(await leerJSON(h, MANIFIESTO));
+  /* movida: la carpeta recordada ya no está donde estaba; hay que volver a elegirla. */
   async function estado() {
     if (!disponible()) return { disponible: false, conectada: false };
     const h = await cargar();
     if (!h) return { disponible: true, conectada: false };
-    return { disponible: true, conectada: true, nombre: h.name, permiso: await permiso(h) };
+    const p = await permiso(h);
+    if (p === 'granted' && !(await vigente(h))) return { disponible: true, conectada: false, movida: true, nombre: h.name };
+    return { disponible: true, conectada: true, nombre: h.name, permiso: p };
   }
   /* Abre el selector de carpetas: debe llamarse desde un clic. */
   async function conectar() {
     const h = await root.showDirectoryPicker({ id: 'quempin-intercambio', mode: 'readwrite' });
     const c = await resolverCarpeta(h);
-    if (!c) throw new Error('Esa carpeta no es la de intercambio. Elige «Finanzas QUEMPIN › Intercambio».');
+    if (!c) throw new Error(`Ahí no está la carpeta de intercambio. Elige la biblioteca «${BIBLIOTECA}» de tu OneDrive.`);
     await recordar(c);
     return estado();
   }
@@ -126,6 +152,11 @@
     try { return (await h.requestPermission({ mode: 'readwrite' })) === 'granted'; } catch (e) { return false; }
   }
   async function desconectar() { await recordar(null); }
+  /* La carpeta recordada, solo si ya hay permiso para usarla y sigue ahí (no pide nada). */
+  async function carpetaConPermiso() {
+    const h = disponible() ? await cargar() : null;
+    return h && (await permiso(h)) === 'granted' && (await vigente(h)) ? h : null;
+  }
 
   // ---- Leer lo publicado y enviar mensajes ---------------------------------------------------
   async function leerPublicacion(nombre) {
@@ -210,7 +241,7 @@
   }
 
   root.QIntercambio = {
-    ESQUEMA, CATEGORIAS_AF, disponible, estado, conectar, permitir, desconectar,
-    leerCatalogoAF, enviar, enBuzon, descargar, mensajePresupuesto, costosAF, nombreArchivo
+    ESQUEMA, CATEGORIAS_AF, BIBLIOTECA, CARPETA_HERRAMIENTAS, disponible, estado, conectar, permitir, desconectar, onCambio,
+    carpeta: carpetaConPermiso, leerCatalogoAF, enviar, enBuzon, descargar, mensajePresupuesto, costosAF, nombreArchivo, nuevoId, isoLocal
   };
 })(window);
