@@ -54,7 +54,11 @@
       .slice(0, 40).replace(/^-+|-+$/g, '') || 'proyecto';
   }
   function fileBase(p) {
-    return `${p.codigo || 'SIN-CODIGO'}_v${p.version || 1}_${slug(p.titulo)}`;
+    // Registrada en el Control de Documentos (tipo 81): el archivo lleva ese número adelante,
+    // como los demás documentos de QUEMPIN («812602_…»). Solo si es de esta misma versión.
+    const reg = p.vinculos && p.vinculos.controlDocumentos;
+    const folio = reg && /^81\d{4,}$/.test(String(reg.folio || '')) && String(reg.nombreArchivo || '').indexOf(`v${p.version || 1}`) >= 0 ? `${reg.folio}_` : '';
+    return `${folio}${p.codigo || 'SIN-CODIGO'}_v${p.version || 1}_${slug(p.titulo)}`;
   }
   function download(blob, name) {
     const a = document.createElement('a');

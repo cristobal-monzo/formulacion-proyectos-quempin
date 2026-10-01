@@ -21,6 +21,11 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
 - **Exporta la cartera** (todos los proyectos con sus KPI en una planilla) y un respaldo completo en JSON.
 - **Importa** proyectos exportados (Excel o JSON) y también **los Excel antiguos** (`.xlsm`) para migrarlos. Al importar un Excel antiguo verifica que el costo y el precio calculados coincidan con los del archivo original.
 - **Envía los costos al Análisis Financiero.** Cuando una oferta se adjudica, sus costos por categoría pasan a ser los costos proyectados del proyecto en ejecución, para compararlos con el gasto real del Centro de Costos. La comunicación va por una carpeta de intercambio compartida en OneDrive: no usa servidor ni inicio de sesión, y no depende de SharePoint. Ver [docs/INTERCAMBIO.md](docs/INTERCAMBIO.md).
+- **Trabaja con las demás herramientas QUEMPIN por esa misma carpeta** (desde el 2026-10-01):
+  - **N° de requerimiento** (paso 1): une el presupuesto con su requerimiento de la *Planilla de Ingreso*; «Completar desde la planilla» trae título, ubicación y presupuesto.
+  - **Precios de referencia** (paso 3, botón **$** en materiales y equipos): lo que QUEMPIN pagó por productos parecidos, sin IVA y reajustado por UF (Cotizador Histórico).
+  - **Sesgo real** (paso 5, simulador de sobrecostos): «Simular con el sesgo real» usa cuánto se desvió el gasto real del presupuesto en los proyectos terminados (Análisis Financiero).
+  - **Otras herramientas QUEMPIN** (paso 5): prepara la cotización en **Sistema QUEMPIN** (llega a «Borradores del Formulador», donde se revisa y se emite), envía la **venta** al Análisis Financiero, avisa a la **Planilla de Ingreso** el estado y el valor, y **registra la evaluación de costos** (tipo 81) en el Control de Documentos; el Excel exportado lleva ese número.
 - **Comparte los proyectos con el equipo por esa misma carpeta** mientras no se use SharePoint: cada proyecto queda como un archivo en OneDrive y aparece en la lista de los demás equipos que la tengan conectada.
 
 ## Publicación y actualización
@@ -84,6 +89,9 @@ js/m365-config.js       Registro en Microsoft Entra y biblioteca de SharePoint (
 redirect.html           Página de retorno del ingreso con Microsoft
 js/excel.js             Exportación e importación (Excel y JSON)
 js/intercambio.js       Carpeta de intercambio con las demás herramientas QUEMPIN (Análisis Financiero)
+js/herramientas.js      Lo demás que se intercambia: requerimientos, precios, sesgo, cotización, venta, planilla, Control de Documentos
+js/esquemas.js          Validador del catálogo de mensajes (copia textual de Finanzas QUEMPIN/Sistema Intercambio/esquemas.js)
+js/busqueda.js          Buscador de precios (copia textual del de Cotizador Historico/Visualizador Web/busqueda.js)
 js/compartida.js        Proyectos compartidos con el equipo por esa carpeta (modo local)
 js/app.js               Interfaz
 js/logo-data.js         Logo oficial embebido para el Excel exportado

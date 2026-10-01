@@ -166,6 +166,11 @@
     return sobre && sobre.esquema === ESQUEMA && sobre.datos ? Object.assign({ generado: sobre.generado }, sobre.datos) : null;
   }
   const leerCatalogoAF = () => leerPublicacion('analisis-financiero');
+  /* Un JSON de la raíz de la carpeta (p. ej. esquemas.json, el catálogo que deja el procesador). */
+  async function leerRaiz(nombre) {
+    const h = await cargar();
+    return h ? leerJSON(h, nombre) : null;
+  }
 
   function nombreArchivo(m) {
     const t = String(m.origen.enviado).slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
@@ -242,6 +247,6 @@
 
   root.QIntercambio = {
     ESQUEMA, CATEGORIAS_AF, BIBLIOTECA, CARPETA_HERRAMIENTAS, disponible, estado, conectar, permitir, desconectar, onCambio,
-    carpeta: carpetaConPermiso, leerCatalogoAF, enviar, enBuzon, descargar, mensajePresupuesto, costosAF, nombreArchivo, nuevoId, isoLocal
+    carpeta: carpetaConPermiso, leerCatalogoAF, leerPublicacion, leerRaiz, enviar, enBuzon, descargar, mensajePresupuesto, costosAF, nombreArchivo, nuevoId, isoLocal
   };
 })(window);

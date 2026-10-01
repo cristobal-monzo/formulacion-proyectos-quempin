@@ -1127,8 +1127,8 @@
     body.innerHTML = html + (state.imprimir ? '' : pasoNav(tab));
     history.replaceState(null, '', `#/p/${state.project.uid}/${tab}`);
     updateCalc();
-    if (tab === 'ficha') updateCodigoHint();
-    if (tab === 'evaluacion' && !state.imprimir) { pintarPanelAF(); actualizarEstadoAF(state.project, false); }
+    if (tab === 'ficha') { updateCodigoHint(); pintarRequerimiento(); }
+    if (tab === 'evaluacion' && !state.imprimir) { pintarPanelAF(); actualizarEstadoAF(state.project, false); pintarSesgo(); pintarHerramientas(); }
     if (focusKey) {
       const el = $(focusKey, body);
       if (el) { el.focus(); if (el.select && el.type !== 'number' && el.tagName === 'INPUT') el.select(); }
@@ -1214,6 +1214,7 @@
             ${fInput('fecha', 'Fecha de formulación', { type: 'date' })}
             ${fInput('codigo', 'Código', { hint: ' ', hintId: 'codigo-hint' })}
             ${fInput('version', 'Versión', { type: 'num' })}
+            ${campoRequerimiento(p)}
             <div class="campo ancho"><label for="f-descripcion">Descripción / alcance <span class="opc">(opcional)</span></label>
               <textarea class="textarea" id="f-descripcion" data-f="descripcion" rows="3">${esc(p.descripcion)}</textarea></div>
           </div>
@@ -1370,7 +1371,7 @@
         <td data-label="Partida">${partidaPicker(key, it)}</td>
         <td class="tercio" data-label="Cantidad">${rowInput(key, it, 'cantidad', `Cantidad por unidad de partida de ${code}`, 'w-sm', true)}</td>
         <td class="tercio" data-label="Unidad">${rowUnit(key, it, `unidad de ${code}`)}</td>
-        <td class="tercio" data-label="Costo unitario">${rowInput(key, it, 'costoUnitario', `Costo unitario de ${code}`, 'w-md', true)}</td>
+        <td class="tercio" data-label="Costo unitario"><div class="costo-ref">${rowInput(key, it, 'costoUnitario', `Costo unitario de ${code}`, 'w-md', true)}${botonPrecioRef(key, it, code)}</div></td>
         <td class="num calc veces tercio" data-label="× Partida"><span>× <span data-c="L:${key}:${it.uid}:qtyPartida" data-fmt="num"></span></span></td>
         <td class="num calc strong dos-tercios" data-label="Subtotal" data-formula="${key}:${it.uid}" data-c="L:${key}:${it.uid}:subtotal" data-fmt="clp"></td>
         <td class="cell-actions">${btnFila(key, it.uid, code)}</td>
@@ -1540,6 +1541,7 @@
           <div class="panel">
             ${sensRow('mat', 'Materiales', 'cat-mat')}${sensRow('eq', 'Equipos', 'cat-eq')}${sensRow('mo', 'Mano de obra', 'cat-mo')}${sensRow('otros', 'Otros', 'cat-otros')}
             <button type="button" class="btn btn-sm no-print" data-act="sens-reset">Restablecer (mano de obra +10 %)</button>
+            <div class="sens-sesgo no-print" id="sens-sesgo"></div>
           </div>
           <div id="res-sens"></div>
         </div>
@@ -1559,6 +1561,11 @@
       <section class="section no-print" id="analisis-financiero">
         <div class="section-head"><h4 class="seccion-titulo">Análisis Financiero</h4><p>Después de adjudicar: estos costos como costos proyectados del proyecto en ejecución.</p></div>
         <div class="panel af-panel" id="af-panel"></div>
+      </section>
+
+      <section class="section no-print" id="otras-herramientas">
+        <div class="section-head"><h4 class="seccion-titulo">Otras herramientas QUEMPIN</h4><p>La cotización en Sistema QUEMPIN, la venta, la Planilla de Ingreso y el Control de Documentos, sin copiar a mano.</p></div>
+        <div class="panel herr-panel" id="herr-panel"><p class="af-linea">Revisando la carpeta del equipo…</p></div>
       </section>`;
   }
 
@@ -1950,6 +1957,7 @@
       return;
     }
     if (el.type === 'radio' && e.type === 'input') return; // los radios se procesan en 'change'
+    if (el.id === 'f-req') { if (e.type === 'change') fijarRequerimiento(el.value); return; }
     let touched = false;
     if (el.dataset.f) {
       const v = readVal(el);
@@ -2295,6 +2303,14 @@
         case 'config': await openConfig(); break;
         case 'enviar-af': await enviarAF(id); break;
         case 'af-estado': await actualizarEstadoAF(p, true); toast('Estado del envío actualizado'); break;
+        case 'req-completar': await completarDesdePlanilla(); break;
+        case 'precio-ref': await abrirPrecios(d.list, d.uid); break;
+        case 'sens-sesgo': simularSesgo(); break;
+        case 'herr-actualizar': if (await asegurarCarpeta()) { QH().olvidar(); await pintarHerramientas(); pintarSesgo(); } break;
+        case 'herr-cotizacion': await prepararCotizacion(); break;
+        case 'herr-venta': await enviarVenta(); break;
+        case 'herr-planilla': await avisarPlanilla(); break;
+        case 'herr-registro': await registrarEvaluacion(); break;
         case 'af-carpeta': {
           try { await QI().conectar(); } catch (e) { if (!e || e.name !== 'AbortError') toast((e && e.message) || 'No se pudo abrir la carpeta.', true); }
           await pintarCfgAF();
@@ -3296,8 +3312,465 @@
     el.innerHTML = `<p class="af-linea">${est.conectada ? `Carpeta conectada en este navegador: <b>${esc(est.nombre)}</b>.` : est.movida ? 'La carpeta que estaba conectada cambió de lugar.' : 'Sin conectar.'}
         ${nube.activa ? 'Se usa para enviar costos al Análisis Financiero.' : 'Todos los presupuestos se guardan ahí para el equipo («.Herramientas formulación › Intercambio › publicado › formulador»), y desde ahí se envían costos al Análisis Financiero. Elige la biblioteca <b>Formulación de proyectos - Documentos</b> sincronizada en tu OneDrive.'}</p>
       <div class="actions"><button type="button" class="btn btn-sm" data-act="af-carpeta">${ICON.folder}${est.conectada ? 'Cambiar carpeta' : 'Conectar carpeta'}</button>
-      ${est.conectada && nube.activa ? '<button type="button" class="btn btn-sm" data-act="af-olvidar">Olvidar</button>' : ''}</div>`;
+      ${est.conectada && nube.activa ? '<button type="button" class="btn btn-sm" data-act="af-olvidar">Olvidar</button>' : ''}</div>
+      <p class="af-nota" id="cfg-pulso"></p>`;
+    if (est.conectada && est.permiso === 'granted' && QH()) {
+      const l = QH().lecturaEstado(await QH().publicacion('estado', true));
+      const pulso = $('#cfg-pulso');
+      if (pulso && l) pulso.innerHTML = `<span class="dot ${l.nivel}" aria-hidden="true"></span> ${esc(l.texto)}`;
+    }
   }
+
+  // ---------------------------------------------------------------------------
+  //  OTRAS HERRAMIENTAS QUEMPIN (plan de integración, 2026-10-01): N° de requerimiento de la
+  //  Planilla de Ingreso, precios de referencia del Cotizador Histórico, sesgo real del
+  //  presupuesto, cotización en Sistema QUEMPIN, venta, sugerencias a la Planilla y registro en
+  //  el Control de Documentos. La lógica (mensajes, lecturas, búsqueda) vive en js/herramientas.js.
+  // ---------------------------------------------------------------------------
+  const QH = () => window.QHerramientas;
+  const usuarioActual = (p) => { const u = S.getUser(); return (u && u.email) || (p && p.responsable) || S.getConfig().responsable || ''; };
+  const CLAVE_INICIALES = 'qpn.formulacion.iniciales';
+  const leerIniciales = () => { try { return localStorage.getItem(CLAVE_INICIALES) || ''; } catch (e) { return ''; } };
+  const guardarIniciales = (v) => { try { localStorage.setItem(CLAVE_INICIALES, v); } catch (e) { /* solo esta vez */ } };
+
+  /* ¿Se puede leer la carpeta sin pedir nada? (los pintores no pueden abrir diálogos) */
+  async function carpetaLista() {
+    const X = QI();
+    if (!X || !QH() || !X.disponible()) return false;
+    const est = await X.estado();
+    return est.conectada && est.permiso === 'granted';
+  }
+  /* Desde un clic: conecta la carpeta o pide el permiso de la sesión. true = lista. */
+  async function asegurarCarpeta() {
+    const X = QI();
+    if (!X || !QH()) return false;
+    if (!X.disponible()) { toast('Este navegador no puede abrir la carpeta del equipo: usa Chrome o Edge de escritorio.', true); return false; }
+    const est = await X.estado();
+    if (est.conectada) {
+      if (est.permiso === 'granted' || await X.permitir()) return true;
+      toast('Sin permiso para usar la carpeta de intercambio.', true);
+      return false;
+    }
+    const v = await ask({
+      title: 'Conectar la carpeta del equipo',
+      body: `<p>Las herramientas de QUEMPIN se comunican por una carpeta de la biblioteca <b>Formulación de proyectos - Documentos</b> (sincronizada en tu OneDrive). Elige la biblioteca una vez y este navegador la recordará.</p>`,
+      buttons: [{ label: 'Cancelar' }, { label: 'Elegir la carpeta', value: 'elegir', primary: true }]
+    });
+    if (v !== 'elegir') return false;
+    try { await X.conectar(); QH().olvidar(); return true; } catch (e) {
+      if (!e || e.name !== 'AbortError') toast((e && e.message) || 'No se pudo abrir la carpeta.', true);
+      return false;
+    }
+  }
+
+  // ---- N° de requerimiento (paso 1) ------------------------------------------------
+  const ESTADOS_AL_FINAL = ['Descartado', 'No adjudicado'];
+  function campoRequerimiento(p) {
+    const v = (p.vinculos && p.vinculos.requerimiento) || null;
+    const enCodigo = enSP() && QH() && !v ? QH().reqDe(p) : null;
+    return `<div class="campo ancho"><label for="f-req">N° de requerimiento <span class="opc">(Planilla de Ingreso)</span></label>
+        <div class="req-fila"><input class="input" id="f-req" list="dl-req" inputmode="numeric" autocomplete="off" value="${esc(v && v.numero ? v.numero : '')}" placeholder="${enCodigo ? `${esc(enCodigo)} (el código)` : 'Ej.: 280'}">
+          <button type="button" class="btn btn-sm" data-act="req-completar" data-tip="<b>Completar desde la planilla</b>Trae el título, la ubicación y el presupuesto del requerimiento a los campos que estén vacíos.">Completar desde la planilla</button></div>
+        <datalist id="dl-req"></datalist>
+        <span class="hint" id="req-hint">El N° con que se registró el requerimiento: une este presupuesto con su cotización, el Análisis Financiero y el Flujo de Caja.</span></div>`;
+  }
+  async function pintarRequerimiento() {
+    const dl = $('#dl-req'), hint = $('#req-hint');
+    const p = state.project;
+    if (!dl || !p || !(await carpetaLista())) return;
+    const datos = await QH().publicacion('requerimientos');
+    const lista = ((datos && datos.requerimientos) || []).slice()
+      .sort((a, b) => (ESTADOS_AL_FINAL.includes(a.estado) - ESTADOS_AL_FINAL.includes(b.estado)) || (b.numero - a.numero));
+    dl.innerHTML = lista.map((r) => `<option value="${r.numero}">${esc(r.titulo || '')}${r.estado ? ` (${esc(r.estado)})` : ''}</option>`).join('');
+    const req = QH().reqDe(p);
+    const r = req && lista.find((x) => String(x.numero) === req);
+    if (hint && r) {
+      hint.textContent = `${r.titulo || 'Sin título'} · ${r.estado || 'sin estado'}${ok(r.presupuesto) ? ` · presupuesto ${clp(r.presupuesto)} con IVA` : ''}${r.cierre ? ` · cierre ${fechaCorta(String(r.cierre).slice(0, 10))}` : ''}`;
+    } else if (hint && req && lista.length) {
+      hint.textContent = `El N° ${req} no está en la planilla de ingreso publicada.`;
+    }
+  }
+  function fijarRequerimiento(valor) {
+    const p = state.project;
+    const n = String(valor || '').trim().replace(/\D/g, '');
+    const vinculos = Object.assign({}, p.vinculos);
+    if (!n) delete vinculos.requerimiento;
+    else vinculos.requerimiento = { numero: n };
+    p.vinculos = vinculos;
+    scheduleSave();
+    pintarRequerimiento();
+  }
+  async function completarDesdePlanilla() {
+    const p = state.project;
+    const req = QH() && QH().reqDe(p);
+    if (!req) { toast('Primero escribe el N° de requerimiento.', true); return; }
+    if (!(await asegurarCarpeta())) return;
+    const datos = await QH().publicacion('requerimientos', true);
+    const r = ((datos && datos.requerimientos) || []).find((x) => String(x.numero) === req);
+    if (!r) { toast(`El N° ${req} no está en la planilla de ingreso publicada.`, true); return; }
+    const hechos = [];
+    if (!String(p.titulo || '').trim() && r.titulo) { p.titulo = r.titulo; hechos.push('título'); }
+    if (!String(p.ubicacion || '').trim() && r.ubicacion) { p.ubicacion = r.ubicacion; hechos.push('ubicación'); }
+    if (!(num(p.parametros.presupuestoMaximo) > 0) && ok(r.presupuesto) && r.presupuesto > 0) {
+      p.parametros.presupuestoMaximo = r.presupuesto;
+      p.parametros.presupuestoIncluyeIva = true;
+      hechos.push('presupuesto (con IVA)');
+    }
+    p.vinculos = Object.assign({}, p.vinculos, { requerimiento: { numero: req, titulo: r.titulo || '' } });
+    recalc();
+    renderTab('#f-req');
+    updateHeader();
+    scheduleSave();
+    toast(hechos.length ? `Desde la planilla: ${hechos.join(', ')}.` : 'Los campos ya tenían datos: no se cambió nada.');
+  }
+
+  // ---- Precios de referencia (paso 3) -------------------------------------------------
+  function botonPrecioRef(key, it, code) {
+    if (key !== 'materiales' && key !== 'equipos') return '';
+    const ref = it.precioRef && num(it.costoUnitario) === ref_valor(it) ? it.precioRef : null;
+    return `<button type="button" class="icon-btn precio-ref ${ref ? 'usado' : ''}" data-act="precio-ref" data-list="${key}" data-uid="${it.uid}" aria-label="Precios de compra de referencia de ${esc(code)}"
+      data-tip="${ref ? `<b>Precio de referencia</b>${esc(ref.tipo === 'ultimo' ? 'Última compra' : 'Promedio')} de «${esc(ref.nombre)}», reajustado por UF.` : '<b>Precios de compra de referencia</b>Lo que QUEMPIN pagó por productos parecidos, reajustado por UF (Cotizador Histórico).'}">$</button>`;
+  }
+  const ref_valor = (it) => (it.precioRef ? num(it.precioRef.valor) : NaN);
+
+  async function abrirPrecios(list, uid) {
+    const it = findItem(list, uid);
+    if (!it || !(await asegurarCarpeta())) return;
+    const datos = await QH().preciosReferencia(true);
+    if (!datos || !Array.isArray(datos.hojas)) {
+      toast('La carpeta todavía no tiene los precios del Cotizador Histórico: se publican en su próxima actualización.', true);
+      return;
+    }
+    let resultados = [];
+    const fila = (h, i) => `<tr>
+        <td><b>${esc(h.nombre)}</b><div class="small muted">${esc([h.categoria, h.material, h.medida].filter(Boolean).join(' · '))}</div></td>
+        <td class="num">${h.n}</td>
+        <td class="num">${clp(h.precio.promedio)}<div class="small muted">${clp(h.precio.minimo)} a ${clp(h.precio.maximo)}</div></td>
+        <td class="num">${clp(h.precio.ultimo)}<div class="small muted">${esc(fechaCorta(h.ultimaCompra))}</div></td>
+        <td class="pr-usar"><button class="btn btn-sm" value="p:${i}">Usar promedio</button><button class="btn btn-sm" value="u:${i}">Usar última</button></td></tr>`;
+    const promesa = ask({
+      title: 'Precios de compra de referencia',
+      wide: true,
+      body: `<p>Lo que QUEMPIN pagó en compras reales (Centro de Costos), <b>sin IVA</b> y reajustado por UF al ${esc(fechaCorta(String(datos.uf.fecha).slice(0, 10)))}. Cada fila es un mismo producto, material y medida.</p>
+        <div class="fila-campos"><div class="campo ancho"><label for="pr-q">Buscar</label><input class="input" id="pr-q" autocomplete="off" value="${esc(it.descripcion || '')}" placeholder="Ej.: válvula de bola bronce 2&quot;"></div></div>
+        <div id="pr-res"></div>`,
+      buttons: [{ label: 'Cerrar' }]
+    });
+    const q = $('#pr-q'), caja = $('#pr-res');
+    let t = null;
+    const pintar = async () => {
+      const r = await QH().buscarPrecios(q.value, 8);
+      resultados = r.resultados;
+      caja.innerHTML = resultados.length
+        ? `<div class="tabla-contenedor"><table class="tbl pr-tabla"><thead><tr><th>Producto</th><th class="num">Compras</th><th class="num">Promedio<span class="th-sub">rango</span></th><th class="num">Última<span class="th-sub">fecha</span></th><th><span class="visualmente-oculto">Usar</span></th></tr></thead>
+            <tbody>${resultados.map(fila).join('')}</tbody></table></div>`
+        : `<p class="af-nota">${q.value.trim() ? 'No hay compras parecidas. Prueba con otra palabra o con la medida («codo cobre 3/4»).' : 'Escribe qué buscas.'}</p>`;
+    };
+    q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(pintar, 180); });
+    await pintar();
+    const v = await promesa;
+    if (!v || !/^[pu]:\d+$/.test(v)) return;
+    const [tipo, i] = v.split(':');
+    const h = resultados[+i];
+    if (!h) return;
+    const valor = tipo === 'p' ? h.precio.promedio : h.precio.ultimo;
+    it.costoUnitario = valor;
+    it.precioRef = { clave: h.clave, nombre: h.nombre, tipo: tipo === 'p' ? 'promedio' : 'ultimo', valor, compras: h.n, uf: datos.uf.fecha };
+    recalc();
+    renderTab(`[data-list="${list}"][data-uid="${uid}"][data-k="costoUnitario"]`);
+    flashRow(uid);
+    scheduleSave();
+    toast(`Costo unitario ${clp(valor)}: ${tipo === 'p' ? 'promedio' : 'última compra'} de «${h.nombre}»`);
+  }
+
+  // ---- Sesgo real del presupuesto (paso 5) ----------------------------------------------
+  const SENS_ETIQ = [['mat', 'materiales'], ['eq', 'equipos'], ['mo', 'mano de obra'], ['otros', 'otros']];
+  let sesgoVigente = null;
+  async function pintarSesgo() {
+    const el = $('#sens-sesgo');
+    const p = state.project;
+    if (!el || !p) return;
+    sesgoVigente = null;
+    if (!(await carpetaLista())) { el.innerHTML = ''; return; }
+    const cat = await QH().publicacion('analisis-financiero');
+    const sens = QH().sensibilidadDesdeSesgo(cat && cat.sesgo);
+    if (!sens) { el.innerHTML = ''; return; }
+    sesgoVigente = { sens, n: cat.sesgo.proyectosTerminados, calculado: cat.sesgo.calculado || cat.generado || '' };
+    const s = p.parametros.sensibilidad;
+    const igual = SENS_ETIQ.every(([k]) => num(s[k]) === sens[k]);
+    const txt = SENS_ETIQ.map(([k, l]) => `${l} ${sens[k] > 0 ? '+' : ''}${nf(sens[k])} %`).join(' · ');
+    el.innerHTML = `<p class="sens-nota">En ${plural(sesgoVigente.n, 'proyecto terminado', 'proyectos terminados')} del Análisis Financiero, el gasto real se desvió del presupuesto: ${esc(txt)}.</p>
+      ${igual ? '<p class="sens-nota"><span class="chip ok">✓ Simulando el sesgo real</span></p>' : '<button type="button" class="btn btn-sm" data-act="sens-sesgo">Simular con el sesgo real</button>'}`;
+  }
+  function simularSesgo() {
+    const p = state.project;
+    if (!p || !sesgoVigente) return;
+    Object.assign(p.parametros.sensibilidad, sesgoVigente.sens);
+    p.parametros.sensibilidadOrigen = { fuente: 'analisis-financiero', proyectos: sesgoVigente.n, calculado: sesgoVigente.calculado };
+    recalc();
+    renderTab();
+    scheduleSave();
+    toast('Simulación con el sesgo real de la cartera terminada');
+  }
+
+  // ---- Panel «Otras herramientas QUEMPIN» (paso 5) -------------------------------------
+  const ESTADO_SISTEMA = {
+    pendiente: { cls: 'warn', t: 'En espera' }, aplicado: { cls: 'ok', t: 'Listo' }, 'sin-cambios': { cls: 'ok', t: 'Listo' },
+    descartado: { cls: 'na', t: 'Descartado' }, rechazado: { cls: 'bad', t: 'Rechazado' }, reemplazado: { cls: 'na', t: 'Reemplazado' }
+  };
+  const bloque = (titulo, cuerpo, acciones) => `<div class="herr-bloque"><h5 class="panel-t">${titulo}</h5><div class="herr-cuerpo">${cuerpo}</div>${acciones ? `<div class="actions">${acciones}</div>` : ''}</div>`;
+  const linea = (html) => `<p class="af-linea">${html}</p>`;
+  const chipEstado = (e) => { const x = ESTADO_SISTEMA[e] || ESTADO_SISTEMA.pendiente; return `<span class="chip ${x.cls}">${x.t}</span>`; };
+
+  function montoVenta(p, cots) {
+    const c = cots.find((d) => d.moneda === 'CLP' && ok(d.neto) && d.neto > 0);
+    if (c) return { monto: c.neto, desde: { herramienta: 'sistema-quempin', folio: c.folio, pais: c.pais, fecha: c.fecha }, texto: `de la cotización ${c.folio} del ${fechaCorta(c.fecha)}` };
+    return { monto: cotizacion().neto, desde: { herramienta: 'formulador' }, texto: 'del precio neto del paso 4 (no hay una cotización emitida en pesos)' };
+  }
+  function valorConIva(p, cots) {
+    const c = cots.find((d) => d.moneda === 'CLP' && ok(d.total) && d.total > 0);
+    return c ? { valor: c.total, texto: `total con IVA de la cotización ${c.folio}` } : { valor: cotizacion().bruto, texto: 'total con IVA del paso 4' };
+  }
+
+  async function pintarHerramientas() {
+    const el = $('#herr-panel');
+    const p = state.project;
+    if (!el || !p) return;
+    if (!QI() || !QH() || !QI().disponible()) {
+      el.innerHTML = linea('Este navegador no puede abrir la carpeta del equipo: usa Chrome o Edge de escritorio para enviar a las demás herramientas.');
+      return;
+    }
+    if (!(await carpetaLista())) {
+      el.innerHTML = linea('Conecta la carpeta del equipo (o da el permiso de esta sesión) para preparar la cotización en Sistema QUEMPIN, enviar la venta y registrar la evaluación.')
+        + `<div class="actions"><button type="button" class="btn" data-act="herr-actualizar">${ICON.folder}Conectar o dar permiso</button></div>`;
+      return;
+    }
+    const [docs, af, folios, reqs, estado] = await Promise.all(['documentos-comerciales', 'analisis-financiero', 'folios', 'requerimientos', 'estado'].map((n) => QH().publicacion(n)));
+    if (state.project !== p || !$('#herr-panel')) return;
+    const v = p.vinculos || {};
+    const cots = QH().cotizacionesDe(p, docs);
+    const partes = [];
+
+    // 1. Cotización en Sistema QUEMPIN
+    const borr = (v.sistemaQuempin || {}).ultimoBorrador;
+    const eb = borr ? QH().estadoEnSistema(docs, borr.id) : null;
+    let tCot = linea('Prepara la cotización con los valores por partida del paso 4: llega a <b>Borradores del Formulador</b> en Sistema QUEMPIN, donde se revisa y se emite con su número.');
+    if (borr) {
+      const det = eb && eb.estado === 'aplicado' && eb.folio ? `Emitida como cotización <b>${esc(eb.folio)}</b>.`
+        : eb && eb.estado === 'rechazado' ? esc((eb.detalle || []).join(' '))
+          : eb && eb.estado === 'descartado' ? 'Se descartó en Sistema QUEMPIN.' : 'Espera en Sistema QUEMPIN a que alguien la revise y la emita.';
+      tCot = linea(`${chipEstado(eb ? eb.estado : 'pendiente')} Versión ${esc(borr.version)} enviada el ${esc(fechaHora(borr.fecha))}. ${det}`);
+    }
+    if (cots.length) tCot += linea('Emitidas: ' + cots.slice(0, 4).map((c) => `<span class="code-badge">${esc(c.folio)}</span> ${esc(fechaCorta(c.fecha))} · neto ${c.moneda === 'CLP' ? clp(c.neto) : `${nf(c.neto)} ${esc(c.moneda)}`}`).join(' · '));
+    partes.push(bloque('Cotización en Sistema QUEMPIN', tCot,
+      `<button type="button" class="btn ${p.estado === 'En revisión' || p.estado === 'Enviada' ? 'btn-primario' : ''}" data-act="herr-cotizacion" ${state.result.partidas.length ? '' : 'disabled'}>${ICON.enviar}${borr ? 'Preparar de nuevo…' : 'Preparar cotización…'}</button>`));
+
+    // 2. Venta al Análisis Financiero
+    const vAF = vinculoAF(p);
+    let tVenta, bVenta = '';
+    if (p.estado !== 'Adjudicada') tVenta = linea('Cuando la oferta se adjudique, envía el monto de venta al Análisis Financiero: así el proyecto entra completo a sus indicadores.');
+    else if (!vAF) tVenta = linea('Primero envía los costos al Análisis Financiero (arriba): ahí se elige a qué proyecto corresponde.');
+    else {
+      const mv = montoVenta(p, cots);
+      const q = ((af && af.proyectos) || []).find((x) => x.tag === vAF.tag);
+      const ven = q && q.venta;
+      const ult = (v.ventaAF || {}).ultimoEnvio;
+      const ev = ult && af && af.mensajes ? af.mensajes[ult.id] : null;
+      tVenta = linea(`<span class="code-badge">${esc(vAF.tag)}</span> Se enviaría ${clp(mv.monto)} sin IVA, ${esc(mv.texto)}.`)
+        + (ven ? linea(ven.cargada ? (ven.origen ? 'El Análisis Financiero ya tiene una venta enviada desde aquí.' : '<span class="af-aviso">El Análisis Financiero tiene un monto escrito a mano: el envío quedará esperando que lo confirmen allá.</span>') : 'El Análisis Financiero todavía no tiene el monto de venta.') : '')
+        + (ult ? linea(`${chipEstado(ev ? ev.estado : 'pendiente')} Enviada el ${esc(fechaHora(ult.fecha))} (${clp(ult.monto)}).`) : '');
+      bVenta = `<button type="button" class="btn ${ult ? '' : 'btn-primario'}" data-act="herr-venta">${ICON.enviar}${ult ? 'Volver a enviar la venta' : 'Enviar la venta'}</button>`;
+    }
+    partes.push(bloque('Venta al Análisis Financiero', tVenta, bVenta));
+
+    // 3. Planilla de Ingreso
+    const req = QH().reqDe(p);
+    let tPla, bPla = '';
+    if (!req) tPla = linea('Escribe el N° de requerimiento en <button type="button" class="link-btn" data-act="tab" data-tab="ficha">Datos del proyecto</button> para avisar a la Planilla de Ingreso cuando la oferta se envíe o se adjudique.');
+    else {
+      const r = ((reqs && reqs.requerimientos) || []).find((x) => String(x.numero) === req);
+      const vi = valorConIva(p, cots);
+      const cambios = QH().cambiosParaPlanilla(p, vi.valor);
+      const enPlanilla = r ? `La planilla dice: ${esc(r.estado || 'sin estado')}${ok(r.valorOfertado) ? ` · ofertado ${clp(r.valorOfertado)}` : ''}${ok(r.valorAdjudicado) ? ` · adjudicado ${clp(r.valorAdjudicado)}` : ''}.` : `El N° ${esc(req)} no está en la planilla publicada.`;
+      const ult = (v.planilla || {}).ultimaSugerencia;
+      const yaEsta = r && cambios && Object.keys(cambios).every((k) => (k === 'estado' ? String(r.estado || '').toLowerCase() === cambios.estado.toLowerCase() : Math.abs(num(r[k]) - cambios[k]) < 1));
+      tPla = linea(`<span class="code-badge">N° ${esc(req)}</span> ${enPlanilla}`)
+        + (!cambios ? linea('Cuando la oferta pase a <b>Enviada</b> o <b>Adjudicada</b>, avisa el estado y el valor a la planilla.')
+          : yaEsta ? linea('<span class="chip ok">Al día</span> La planilla ya muestra el estado y el valor de esta oferta.')
+            : linea(`Se sugeriría: <b>${esc(cambios.estado)}</b> con ${clp(cambios.valorOfertado || cambios.valorAdjudicado)} (${esc(vi.texto)}).`)
+              + (ult ? linea(`${chipEstado('pendiente')} Aviso enviado el ${esc(fechaHora(ult.fecha))}: espera que alguien lo pase a la planilla.`) : ''));
+      if (cambios && !yaEsta) bPla = `<button type="button" class="btn" data-act="herr-planilla">${ICON.enviar}Avisar a la Planilla de Ingreso</button>`;
+    }
+    partes.push(bloque('Planilla de Ingreso de Requerimientos', tPla, bPla));
+
+    // 4. Control de Documentos (evaluación de costos, tipo 81)
+    const reg = v.controlDocumentos;
+    const er = reg ? QH().estadoEnSistema(docs, reg.id) : null;
+    if (reg && er && er.estado === 'aplicado' && er.folio && er.folio !== reg.folio) {
+      // Sistema QUEMPIN asignó otro número (el propuesto ya estaba usado): el proyecto y el
+      // nombre del Excel exportado se quedan con el definitivo.
+      reg.folioPropuesto = reg.folio;
+      reg.nombreArchivo = String(reg.nombreArchivo || '').replace(reg.folio, er.folio);
+      reg.folio = er.folio;
+      scheduleSave();
+    }
+    const sig = QH().siguienteFolio(folios, '81', (reg && reg.pais) || 'Chile');
+    let tReg = linea(`Registra esta evaluación de costos con su número en el Control de Documentos${sig && sig.siguiente ? ` (el siguiente es el <b>${esc(sig.siguiente)}</b>)` : ''}. El Excel exportado lleva ese número en el nombre.`);
+    if (reg) {
+      const folio = er && er.folio ? er.folio : reg.folio;
+      tReg = linea(`${chipEstado(er ? er.estado : 'pendiente')} <span class="code-badge">${esc(folio)}</span> ${er && er.estado === 'aplicado'
+        ? (er.reasignado ? `El ${esc(reg.folioPropuesto || reg.folio)} ya estaba usado: quedó como ${esc(folio)}.` : 'Registrada en el Control de Documentos.')
+        : er && er.estado === 'rechazado' ? esc((er.detalle || []).join(' ')) : 'Se registra cuando Sistema QUEMPIN revise la carpeta.'}`);
+    }
+    partes.push(bloque('Control de Documentos', tReg,
+      `<button type="button" class="btn" data-act="herr-registro">${ICON.enviar}${reg ? 'Registrar otra versión…' : 'Registrar evaluación…'}</button>`));
+
+    const l = QH().lecturaEstado(estado);
+    el.innerHTML = partes.join('') + (l ? `<p class="af-nota herr-pulso"><span class="dot ${l.nivel}" aria-hidden="true"></span> ${esc(l.texto)} <button type="button" class="link-btn" data-act="herr-actualizar">Actualizar</button></p>` : '');
+  }
+
+  // ---- Acciones del panel -----------------------------------------------------------------
+  async function prepararCotizacion() {
+    const p = state.project;
+    if (!p || !(await asegurarCarpeta())) return;
+    if (saveTimer) saveNow();
+    const cot = cotizacion();
+    if (!cot.lineas.length) { toast('El proyecto no tiene partidas.', true); return; }
+    const contrapartes = await QH().publicacion('contrapartes', true);
+    const clientes = ((contrapartes && contrapartes.clientes) || []).filter((c) => c.razon_social);
+    const nErr = state.result.warnings.filter((w) => w.level === 'error').length;
+    const promesa = ask({
+      title: 'Preparar la cotización en Sistema QUEMPIN',
+      wide: true,
+      body: `<p>Llega a <b>Borradores del Formulador</b> en Sistema QUEMPIN. Ahí alguien la revisa, completa los términos y la emite con su número; este proyecto verá el número.</p>
+        ${nErr ? `<p class="af-linea af-aviso">Hay ${plural(nErr, 'error')} en los costos: revísalos antes de cotizar.</p>` : ''}
+        <div class="fila-campos">
+          <div class="campo ancho"><label for="cq-cli">Cliente (razón social)</label><input class="input" id="cq-cli" list="dl-cli" autocomplete="off" value="${esc(p.cliente || '')}">
+            <datalist id="dl-cli">${clientes.map((c) => `<option value="${esc(c.razon_social)}">${esc(c.rut || '')}</option>`).join('')}</datalist>
+            <span class="hint">Si el cliente ya cotizó antes, Sistema QUEMPIN usa su ficha completa.</span></div>
+          <div class="campo"><label for="cq-rut">RUT <span class="opc">(opcional)</span></label><input class="input" id="cq-rut" autocomplete="off"></div>
+          <div class="campo"><label for="cq-pais">País</label><select class="input" id="cq-pais"><option value="Chile">Chile</option><option value="Peru">Perú</option></select></div>
+          <div class="campo ancho"><label for="cq-ref">Referencia</label><input class="input" id="cq-ref" value="${esc(p.titulo || '')}"><span class="hint">Con ella Sistema QUEMPIN arma el nombre del PDF.</span></div>
+          <div class="campo"><label for="cq-plazo">Plazo de entrega <span class="opc">(opcional)</span></label><input class="input" id="cq-plazo" placeholder="Ej.: 30 días"></div>
+        </div>
+        <div class="tabla-contenedor"><table class="tbl af-tabla"><thead><tr><th>Partida</th><th class="num">Cantidad</th><th class="num">Precio unitario neto</th><th class="num">Total neto</th></tr></thead>
+          <tbody>${cot.lineas.map(({ pt, pu, total }) => `<tr><td>${esc(pt.code)} · ${esc(pt.descripcion || 'Sin descripción')}</td><td class="num">${nf(pt.cantidad)} ${esc(pt.unidad || '')}</td><td class="num">${pu === null ? '—' : clp(pu)}</td><td class="num">${clp(total)}</td></tr>`).join('')}</tbody>
+          <tfoot><tr><td colspan="3">Total neto (en pesos)</td><td class="num">${clp(cot.neto)}</td></tr></tfoot></table></div>`,
+      buttons: [{ label: 'Cancelar' }, { label: 'Enviar a Sistema QUEMPIN', value: 'enviar', primary: true }]
+    });
+    const cli = $('#cq-cli'), rut = $('#cq-rut');
+    const llenarRut = () => { const c = clientes.find((x) => x.razon_social === cli.value); if (c && c.rut && !rut.value) rut.value = c.rut; };
+    cli.addEventListener('change', llenarRut);
+    llenarRut();
+    const datos = () => ({
+      pais: $('#cq-pais').value, moneda: 'CLP', referencia: $('#cq-ref').value, plazoEntrega: $('#cq-plazo').value.trim(),
+      cliente: { razon_social: cli.value, rut: rut.value }
+    });
+    const btn = $('#modal .modal-foot .btn-primario');
+    const validar = () => { const d = datos(); btn.disabled = !d.cliente.razon_social.trim() || !d.referencia.trim(); };
+    ['#cq-cli', '#cq-ref'].forEach((sel) => $(sel).addEventListener('input', validar));
+    validar();
+    if (await promesa !== 'enviar') return;
+    const m = QH().mensajeBorrador(p, cot, datos(), usuarioActual(p));
+    try { await QH().enviar(m); } catch (e) { toast('No se pudo enviar a Sistema QUEMPIN: ' + ((e && e.message) || e), true); return; }
+    p.vinculos = Object.assign({}, p.vinculos, { sistemaQuempin: { ultimoBorrador: { id: m.id, fecha: m.origen.enviado, version: p.version, neto: cot.neto } } });
+    scheduleSave();
+    QH().olvidar();
+    pintarHerramientas();
+    toast('Cotización enviada a Sistema QUEMPIN: aparece en «Borradores del Formulador»');
+  }
+
+  async function enviarVenta() {
+    const p = state.project;
+    const vAF = vinculoAF(p);
+    if (!p || !vAF || !(await asegurarCarpeta())) return;
+    const [docs, af] = await Promise.all([QH().publicacion('documentos-comerciales', true), QH().publicacion('analisis-financiero', true)]);
+    const mv = montoVenta(p, QH().cotizacionesDe(p, docs));
+    if (!(mv.monto > 0)) { toast('No hay un monto de venta que enviar.', true); return; }
+    const q = ((af && af.proyectos) || []).find((x) => x.tag === vAF.tag);
+    const ven = q && q.venta;
+    const manual = ven && ven.cargada && !ven.origen;
+    const v = await ask({
+      title: 'Enviar la venta al Análisis Financiero',
+      body: `<p>Monto de venta <b>${clp(mv.monto)} sin IVA</b> para <span class="code-badge">${esc(vAF.tag)}</span>, ${esc(mv.texto)}.</p>
+        ${manual ? '<p class="af-linea af-aviso">El Análisis Financiero ya tiene un monto escrito a mano: el envío quedará esperando que lo confirmen allá.</p>' : ''}
+        <p class="af-nota">Se aplica en su próxima actualización, con respaldo. Nunca reemplaza un valor escrito a mano sin que lo confirmen.</p>`,
+      buttons: [{ label: 'Cancelar' }, { label: 'Enviar', value: 'enviar', primary: true }]
+    });
+    if (v !== 'enviar') return;
+    // If-Match: si allá está vacío, se autoriza solo sobre vacío; con un valor (de aquí o a mano),
+    // decide el registro de procedencia del Análisis Financiero.
+    const visto = ven && !ven.cargada ? null : undefined;
+    const m = QH().mensajeVenta(p, mv.monto, mv.desde, vAF.tag, visto, usuarioActual(p));
+    try { await QH().enviar(m); } catch (e) { toast('No se pudo dejar el envío: ' + ((e && e.message) || e), true); return; }
+    p.vinculos = Object.assign({}, p.vinculos, { ventaAF: { ultimoEnvio: { id: m.id, fecha: m.origen.enviado, monto: m.venta.montoSinIva, folio: mv.desde.folio || '' } } });
+    scheduleSave();
+    QH().olvidar();
+    pintarHerramientas();
+    toast(`Venta enviada al Análisis Financiero (${vAF.tag})`);
+  }
+
+  async function avisarPlanilla() {
+    const p = state.project;
+    const req = QH() && QH().reqDe(p);
+    if (!p || !req || !(await asegurarCarpeta())) return;
+    const [docs, reqs] = await Promise.all([QH().publicacion('documentos-comerciales', true), QH().publicacion('requerimientos', true)]);
+    const vi = valorConIva(p, QH().cotizacionesDe(p, docs));
+    const cambios = QH().cambiosParaPlanilla(p, vi.valor);
+    if (!cambios) { toast('Solo se avisa cuando la oferta está Enviada o Adjudicada.', true); return; }
+    const r = ((reqs && reqs.requerimientos) || []).find((x) => String(x.numero) === req);
+    const reemplaza = {};
+    Object.keys(cambios).forEach((k) => { reemplaza[k] = r ? (r[k] === undefined ? null : r[k]) : null; });
+    const m = QH().mensajeSugerencia(p, req, cambios, reemplaza, usuarioActual(p));
+    try { await QH().enviar(m); } catch (e) { toast('No se pudo dejar el aviso: ' + ((e && e.message) || e), true); return; }
+    p.vinculos = Object.assign({}, p.vinculos, { planilla: { ultimaSugerencia: { id: m.id, fecha: m.origen.enviado, cambios } } });
+    scheduleSave();
+    QH().olvidar();
+    pintarHerramientas();
+    toast('Aviso enviado: quien lleva la planilla lo verá con /Sugerencias_Requerimientos');
+  }
+
+  const nombreSeguro = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9 _.-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+  async function registrarEvaluacion() {
+    const p = state.project;
+    if (!p || !(await asegurarCarpeta())) return;
+    const folios = await QH().publicacion('folios', true);
+    const sigDe = (pais) => (QH().siguienteFolio(folios, '81', pais) || {}).siguiente || '';
+    const nombre = (folio) => `${folio}_${nombreSeguro(`${p.codigo || ''} v${p.version} ${p.titulo || ''}`)}`;
+    const promesa = ask({
+      title: 'Registrar la evaluación de costos',
+      body: `<p>Queda en el Control de Documentos como <b>Evaluación de costos</b> (tipo 81). Si el número ya se usó cuando Sistema QUEMPIN lo registre, toma el siguiente y lo verás aquí.</p>
+        <div class="fila-campos">
+          <div class="campo"><label for="rg-pais">País</label><select class="input" id="rg-pais"><option value="Chile">Chile</option><option value="Peru">Perú</option></select></div>
+          <div class="campo"><label for="rg-folio">N° de documento</label><input class="input" id="rg-folio" inputmode="numeric" value="${esc(sigDe('Chile'))}"><span class="hint" id="rg-hint">${folios ? 'El siguiente según el Control de Documentos.' : 'La carpeta todavía no tiene los números del Control de Documentos: escríbelo.'}</span></div>
+          <div class="campo"><label for="rg-ini">Tus iniciales</label><input class="input" id="rg-ini" maxlength="4" value="${esc(leerIniciales())}"></div>
+          <div class="campo ancho"><label for="rg-ref">Referencia o cliente</label><input class="input" id="rg-ref" value="${esc(p.cliente || p.titulo || '')}"></div>
+        </div>
+        <p class="af-nota" id="rg-nombre"></p>`,
+      buttons: [{ label: 'Cancelar' }, { label: 'Registrar', value: 'registrar', primary: true }]
+    });
+    const folio = $('#rg-folio'), pais = $('#rg-pais'), ini = $('#rg-ini'), ref = $('#rg-ref'), btn = $('#modal .modal-foot .btn-primario');
+    const capt = {};
+    const pintar = () => {
+      capt.folio = folio.value.trim(); capt.pais = pais.value; capt.autor = ini.value.trim().toUpperCase(); capt.referencia = ref.value.trim();
+      $('#rg-nombre').textContent = /^81\d{4,}$/.test(capt.folio) ? `Nombre del archivo: ${nombre(capt.folio)}` : 'El número debe empezar con 81 (ej.: 812602).';
+      btn.disabled = !/^81\d{4,}$/.test(capt.folio) || !capt.autor || !capt.referencia;
+    };
+    pais.addEventListener('change', () => { folio.value = sigDe(pais.value) || folio.value; pintar(); });
+    [folio, ini, ref].forEach((x) => x.addEventListener('input', pintar));
+    pintar();
+    if (await promesa !== 'registrar') return;
+    guardarIniciales(capt.autor);
+    const hoyIso = X_hoy();
+    const m = QH().mensajeRegistro(p, { folio: capt.folio, pais: capt.pais, fecha: hoyIso, autor: capt.autor, referencia: capt.referencia, nombreArchivo: nombre(capt.folio) }, usuarioActual(p));
+    try { await QH().enviar(m); } catch (e) { toast('No se pudo dejar el registro: ' + ((e && e.message) || e), true); return; }
+    p.vinculos = Object.assign({}, p.vinculos, { controlDocumentos: { id: m.id, folio: capt.folio, pais: capt.pais, fecha: m.origen.enviado, nombreArchivo: nombre(capt.folio) } });
+    scheduleSave();
+    QH().olvidar();
+    pintarHerramientas();
+    toast(`Registro ${capt.folio} enviado al Control de Documentos`);
+  }
+  const X_hoy = () => { const d = new Date(); const z = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`; };
 
   // ---------------------------------------------------------------------------
   //  CARPETA COMPARTIDA: proyectos del equipo por OneDrive (modo local, js/compartida.js)

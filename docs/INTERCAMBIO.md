@@ -76,6 +76,30 @@ Cómo se resuelve quién gana, sin un reloj común entre equipos:
 - Las copias que deja OneDrive en un conflicto (`<uid>-EQUIPO.json`) y cualquier archivo que no sea `<uid>.json` se ignoran.
 - Dos pestañas del mismo navegador se avisan los cambios y sincronizan de a una.
 
+## Con las demás herramientas (plan de integración, 2026-10-01)
+
+Además de los costos, el formulador usa la carpeta para trabajar con el resto de las herramientas
+de QUEMPIN. Todo está en `js/herramientas.js` (la interfaz, en la sección *OTRAS HERRAMIENTAS* de
+`js/app.js`) y nada requiere iniciar sesión.
+
+| Dónde | Qué hace | Mensaje o publicación |
+|---|---|---|
+| Paso 1 · N° de requerimiento | La clave común de proyecto: el N° de la *Planilla de Ingreso*. La lista sale de la planilla publicada; «Completar desde la planilla» llena título, ubicación y presupuesto (con IVA) **solo si están vacíos**. Se guarda en `vinculos.requerimiento`. En modo SharePoint, el código ya es ese N°. | lee `publicado/requerimientos.json` |
+| Paso 3 · botón **$** (materiales y equipos) | Busca compras parecidas con el mismo buscador del tablero del Cotizador y ofrece el **promedio** o la **última compra**, sin IVA y reajustadas por UF. El ítem guarda de dónde salió (`precioRef`). | lee `publicado/precios-referencia.json` |
+| Paso 5 · simulador de sobrecostos | «Simular con el sesgo real»: usa la desviación real del presupuesto por categoría en los proyectos terminados. Queda anotado en `parametros.sensibilidadOrigen`. | lee `sesgo` de `publicado/analisis-financiero.json` |
+| Paso 5 · Cotización en Sistema QUEMPIN | Envía las partidas con su precio neto unitario. En Sistema QUEMPIN aparecen en «Borradores del Formulador»; una persona la revisa y la emite, y el panel muestra el número. | mensaje `borrador-cotizacion`; lee `publicado/documentos-comerciales.json` y `contrapartes.json` |
+| Paso 5 · Venta al Análisis Financiero | Con la oferta **Adjudicada** y el proyecto ya elegido al enviar los costos: el monto sale de la cotización emitida en pesos o, si no hay, del precio neto del paso 4. Mismas garantías que los costos. | mensaje `venta-proyecto` |
+| Paso 5 · Planilla de Ingreso | Con la oferta **Enviada** (Ofertado) o **Adjudicada** (Adjudicado), avisa el estado y el valor con IVA. **Nadie escribe la planilla**: quien la lleva lo pasa a mano (`/Sugerencias_Requerimientos`) y el aviso se cierra solo cuando la planilla ya lo muestra. | mensaje `actualizar-requerimiento` |
+| Paso 5 · Control de Documentos | Registra la evaluación de costos (tipo 81) con el número siguiente; si ya se usó, Sistema QUEMPIN asigna otro y el proyecto se queda con el definitivo. El Excel exportado lleva el número adelante. | mensaje `registro-documento`; lee `publicado/folios.json` |
+| Paso 5 y Configuración · pulso | «Las demás herramientas revisaron la carpeta hace N min»: lo publica el procesador del intercambio cada 15 minutos. | lee `publicado/estado.json` |
+
+Antes de dejar cualquier mensaje, se valida contra el catálogo de esquemas que el procesador deja
+en la carpeta (`esquemas.json`, con `js/esquemas.js`, gemelo de `esquemas.py`). El formato de cada
+mensaje y publicación está en `Finanzas QUEMPIN/Sistema Intercambio/esquemas/`.
+
+Pruebas: `.prueba/integracion/` (datos ficticios con `generar_datos.py`, y `e2e.js` sobre una
+biblioteca simulada en el almacenamiento privado del navegador; 22 comprobaciones).
+
 ## La carpeta
 
 ```
