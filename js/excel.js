@@ -1,8 +1,9 @@
 /*
  * excel.js — Exportación e importación de proyectos.
  *
- * Exportar proyecto (.xlsx): hojas Ficha, Partidas, Materiales, Equipos, Mano de obra,
- * Otros y Parámetros, con fórmulas vivas (el Excel recalcula si se editan valores) y
+ * Exportar proyecto (.xlsx): hojas Ficha (resumen visual: tarjetas, cascada del precio,
+ * semáforos y barras), Parámetros, Partidas, Materiales, Equipos, Mano de obra, Otros y
+ * Guía (qué mide cada indicador), con fórmulas vivas (el Excel recalcula si se editan valores) y
  * una hoja oculta "_datos" con el proyecto completo en JSON para volver a importarlo.
  *
  * Importar: JSON de la herramienta, Excel exportado por la herramienta, o el Excel
@@ -17,7 +18,10 @@
   const FONT = 'Lato';
   const C = {
     brand: 'FFFF5100', dark: 'FF000000', gray: 'FF54565A', light: 'FFF4F4F4',
-    line: 'FFD9D9DA', input: 'FF0000FF', link: 'FF008000', white: 'FFFFFFFF'
+    line: 'FFD9D9DA', input: 'FF0000FF', link: 'FF008000', white: 'FFFFFFFF',
+    zebra: 'FFFAFAFA', bar: 'FFFFB58A',
+    // Semáforo de la Ficha (fondo claro + texto oscuro del mismo tono)
+    okBg: 'FFE3F4E8', okFg: 'FF1E7B34', warnBg: 'FFFFF1D6', warnFg: 'FF9A6700', badBg: 'FFFDE2DD', badFg: 'FFC62828'
   };
   const FMT = {
     clp: '"$"#,##0;-"$"#,##0;"-"',
@@ -139,6 +143,7 @@
     const wsE = wb.addWorksheet('Equipos', { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }] });
     const wsH = wb.addWorksheet('Mano de obra', { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }] });
     const wsO = wb.addWorksheet('Otros', { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }] });
+    const wsG = wb.addWorksheet('Guía', { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }] });
     const wsD = wb.addWorksheet('_datos', { state: 'hidden' });
     const ident = `${p.codigo} · v${p.version} · ${p.titulo || 'Sin título'}`;
 
@@ -308,141 +313,315 @@
     tH.getCell(13).value = F(`SUM(M5:M${hEnd})`, T.mo);
     styleTotal(tH); tH.getCell(12).numFmt = FMT.num; tH.getCell(13).numFmt = FMT.clp;
 
-    // ---------------- Ficha ----------------
-    wsF.columns = [{ width: 36 }, { width: 20 }, { width: 26 }, { width: 46 }, { width: 90 }];
-    // Encabezado: logo oficial en la columna A (170 px ≈ 4,5 cm, sobre el mínimo de 4 cm del manual)
+    // ---------------- Ficha: resumen visual de una página ----------------
+    // Rejilla de 8 columnas iguales; cada tarjeta de indicador ocupa 2 columnas.
+    wsF.columns = Array.from({ length: 8 }, () => ({ width: 15 }));
+    const NC = 8;
+    const solid = (argb) => ({ type: 'pattern', pattern: 'solid', fgColor: { argb } });
+    const rowCells = (rr, fn) => { for (let ci = 1; ci <= NC; ci++) fn(wsF.getRow(rr).getCell(ci), ci); };
+    /* Escribe en un rango (lo combina si tiene más de una celda) y devuelve la celda principal. */
+    const put = (rng, value, font, extra) => {
+      if (rng.indexOf(':') > 0) wsF.mergeCells(rng);
+      const c = wsF.getCell(rng.split(':')[0]);
+      c.value = value;
+      c.font = Object.assign({ name: FONT, size: 10, color: { argb: C.dark } }, font || {});
+      c.alignment = Object.assign({ vertical: 'middle' }, (extra && extra.alignment) || {});
+      if (extra && extra.numFmt) c.numFmt = extra.numFmt;
+      return c;
+    };
+    const semaforo = (ref, cellRef) => wsF.addConditionalFormatting({
+      ref,
+      rules: [['✔', C.okBg, C.okFg], ['▲', C.warnBg, C.warnFg], ['✖', C.badBg, C.badFg]].map(([s, bg, fg], i) => ({
+        type: 'expression', priority: i + 1, formulae: [`LEFT(${cellRef},1)="${s}"`],
+        style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: bg } }, font: { color: { argb: fg } } }
+      }))
+    });
+    const barras = (ref, max) => wsF.addConditionalFormatting({
+      ref,
+      rules: [{
+        type: 'dataBar', priority: 1, minLength: 0, maxLength: 100, gradient: false, border: false,
+        cfvo: [{ type: 'num', value: 0 }, max === undefined ? { type: 'max' } : { type: 'num', value: max }],
+        color: { argb: C.bar }
+      }]
+    });
+
+    // Encabezado: logo oficial en A:B (160 px ≈ 4,2 cm, sobre el mínimo de 4 cm del manual)
     for (let rr = 1; rr <= 7; rr++) wsF.getRow(rr).height = 20;
     const logo = logoOficial();
     if (logo) {
       const imgId = wb.addImage({ base64: logo.png, extension: 'png' });
-      wsF.addImage(imgId, { tl: { col: 0.12, row: 0.35 }, ext: { width: 170, height: Math.round(170 * logo.alto / logo.ancho) } });
+      wsF.addImage(imgId, { tl: { col: 0.15, row: 0.4 }, ext: { width: 160, height: Math.round(160 * logo.alto / logo.ancho) } });
     }
-    const head = [
-      ['B2', 'FORMULACIÓN DE PROYECTO', { size: 16, bold: true, color: { argb: C.dark } }],
-      ['B3', `${p.codigo} · versión ${p.version}`, { size: 12, bold: true, color: { argb: C.brand } }],
-      ['B4', p.titulo || 'Sin título', { size: 11, bold: true, color: { argb: C.dark } }],
-      ['B5', [p.cliente, p.ubicacion, p.responsable, p.fecha, p.estado].filter(Boolean).join(' · '), { size: 9, color: { argb: C.gray } }]
-    ];
+    put('C2:H2', 'FORMULACIÓN DE PROYECTO', { size: 16, bold: true });
+    put('C3:H3', `${p.codigo} · versión ${p.version}`, { size: 12, bold: true, color: { argb: C.brand } });
+    put('C4:H4', p.titulo || 'Sin título', { size: 11, bold: true }, { alignment: { wrapText: true } });
+    put('C5:H5', [p.cliente, p.ubicacion, p.responsable, p.fecha, p.estado].filter(Boolean).join(' · '), { size: 9, color: { argb: C.gray } });
     // La copia de la carpeta de la oferta se reescribe con cada cambio: avisarlo antes de que alguien la edite
-    if (copia) head.push(['B6', 'Copia automática del Formulador: se actualiza sola al guardar el presupuesto. Lo que se cambie en este archivo se reemplaza; para cambiar el presupuesto, usa el Formulador.', { size: 9, italic: true, color: { argb: C.gray } }]);
-    head.forEach(([addr, val, font]) => {
-      const r0 = addr.slice(1);
-      wsF.mergeCells(`B${r0}:E${r0}`);
-      wsF.getCell(addr).value = val;
-      wsF.getCell(addr).font = Object.assign({ name: FONT }, font);
-      wsF.getCell(addr).alignment = { vertical: 'middle' };
-    });
-    for (let ci = 1; ci <= 5; ci++) wsF.getRow(7).getCell(ci).border = { bottom: { style: 'medium', color: { argb: C.brand } } };
+    if (copia) {
+      put('C6:H6', 'Copia automática del Formulador: se actualiza sola al guardar el presupuesto. Lo que se cambie en este archivo se reemplaza; para cambiar el presupuesto, usa el Formulador.',
+        { size: 8, italic: true, color: { argb: C.gray } }, { alignment: { wrapText: true } });
+      wsF.getRow(6).height = 26;
+    }
+    rowCells(7, (c) => { c.border = { bottom: { style: 'medium', color: { argb: C.brand } } }; });
 
-    let fr = 9;
-    const section = (text) => {
-      const c = wsF.getCell(`A${fr}`);
-      c.value = text;
-      c.font = { name: FONT, size: 11, bold: true, color: { argb: C.brand } };
-      wsF.getRow(fr).border = {};
-      for (let ci = 1; ci <= 5; ci++) wsF.getRow(fr).getCell(ci).border = { bottom: { style: 'thin', color: { argb: C.brand } } };
+    const nErr = r.warnings.filter((w) => w.level === 'error').length;
+    const nWarn = r.warnings.filter((w) => w.level === 'warn').length;
+    if (nErr + nWarn) {
+      put('A8:H8', `⚠  ${nErr + nWarn} alerta(s) de validación${nErr ? ` (${nErr} error${nErr > 1 ? 'es' : ''})` : ''}: revísalas en «Alertas» al final de esta hoja.`,
+        { size: 9, bold: true, color: { argb: nErr ? C.badFg : C.warnFg } }, { alignment: { indent: 1 } });
+      rowCells(8, (c) => { c.fill = solid(nErr ? C.badBg : C.warnBg); });
+      wsF.getRow(8).height = 20;
+    } else wsF.getRow(8).height = 8;
+
+    // Las tarjetas (filas 9–15) leen celdas de las tablas de abajo: primero se arman las tablas.
+    const CARDS1 = 9, CARDS2 = 13;
+    wsF.getRow(12).height = 8; wsF.getRow(16).height = 10;
+    let fr = 17;
+    const section = (text, sub) => {
+      put(`A${fr}:E${fr}`, text, { size: 11, bold: true, color: { argb: C.brand } }, { alignment: { vertical: 'bottom' } });
+      if (sub) put(`F${fr}:H${fr}`, sub, { size: 8, italic: true, color: { argb: C.gray } }, { alignment: { vertical: 'bottom', horizontal: 'right' } });
+      rowCells(fr, (c) => { c.border = { bottom: { style: 'thin', color: { argb: C.brand } } }; });
+      wsF.getRow(fr).height = 24;
       fr++;
     };
-    section('IDENTIFICACIÓN DEL PROYECTO');
+    const header = (cols) => {
+      cols.forEach(([rng, text, right]) => put(rng.split(':').map((L) => L + fr).join(':'), text,
+        { size: 9, bold: true, color: { argb: C.white } }, { alignment: { horizontal: right ? 'right' : 'left', indent: 1, wrapText: true } }));
+      rowCells(fr, (c) => { c.fill = solid(C.dark); });
+      wsF.getRow(fr).height = 20;
+      fr++;
+    };
+    const hairline = (rr) => rowCells(rr, (c) => { c.border = Object.assign({}, c.border, { bottom: { style: 'hair', color: { argb: C.line } } }); });
+
+    // ---- ¿Cómo se forma el precio? (cascada con barras) ----
+    const A = {}; // dirección de cada resultado en Ficha
+    const EV = {}; // dirección de cada evaluación (semáforo)
+    section('¿CÓMO SE FORMA EL PRECIO?', 'Barras: % del precio de venta neto');
+    header([['A:C', 'Concepto'], ['D', 'Monto', true], ['E:H', '% del precio neto']]);
+    const cascada = [
+      ['mat', 'Materiales', () => PT('E'), T.mat, 'item'],
+      ['eq', 'Equipos', () => PT('F'), T.eq, 'item'],
+      ['mo', 'Mano de obra', () => PT('G'), T.mo, 'item'],
+      ['ot', 'Otros', () => PT('H'), T.otros, 'item'],
+      ['cd', 'Costo directo', () => PT('I'), T.cd, 'sub'],
+      ['gg', 'Gastos generales', () => `${A.cd}*${PR.gg}`, T.gg, 'item'],
+      ['imp', 'Imprevistos', () => `${A.cd}*${PR.imp}`, T.imp, 'item'],
+      ['ct', 'Costo total', () => `${A.cd}+${A.gg}+${A.imp}`, T.costoTotal, 'sub'],
+      ['ut', 'Utilidad', () => PT('M'), T.utilidad, 'util'],
+      ['pn', 'Precio de venta neto', () => `${A.ct}+${A.ut}`, T.precioNeto, 'total'],
+      ['iva', 'IVA', () => `${A.pn}*${PR.iva}`, T.iva, 'item'],
+      ['pb', 'Precio de venta bruto (con IVA)', () => `${A.pn}+${A.iva}`, T.precioBruto, 'sub']
+    ];
+    const cFrom = fr;
+    cascada.forEach(([key], i) => { A[key] = `$D$${cFrom + i}`; });
+    cascada.forEach(([key, label, formula, result, kind]) => {
+      const total = kind === 'total', sub = kind === 'sub', util = kind === 'util';
+      const color = { argb: total ? C.white : (util ? C.brand : C.dark) };
+      const bold = kind !== 'item';
+      put(`A${fr}:C${fr}`, label, { bold, color, size: total ? 11 : 10 }, { alignment: { indent: kind === 'item' ? 2 : 1 } });
+      put(`D${fr}`, F(formula(), result), { bold, color, size: total ? 11 : 10 }, { numFmt: FMT.clp });
+      put(`E${fr}:H${fr}`, F(`IFERROR(${A[key]}/${A.pn},0)`, T.precioNeto ? result / T.precioNeto : 0), { size: 9, color: { argb: total ? C.white : C.gray } }, { numFmt: FMT.pct, alignment: { indent: 1 } });
+      if (total) rowCells(fr, (c) => { c.fill = solid(C.dark); });
+      else if (sub) rowCells(fr, (c) => { c.fill = solid(C.light); c.border = { top: { style: 'thin', color: { argb: C.gray } } }; });
+      else hairline(fr);
+      wsF.getRow(fr).height = total ? 22 : 18;
+      fr++;
+    });
+    barras(`E${cFrom}:E${fr - 1}`, 1);
+    fr++;
+
+    // ---- Indicadores de evaluación (con semáforo) ----
+    section('INDICADORES DE EVALUACIÓN', 'Qué mide cada uno: hoja «Guía»');
+    header([['A:C', 'Indicador'], ['D', 'Valor', true], ['E:F', 'Evaluación'], ['G:H', 'Referencia']]);
+    const k = r.kpis;
+    const m = (x) => (x || 0);
+    const fmtDH = Number.isInteger(Math.round(m(k.dh) * 100) / 100) ? FMT.int : '#,##0.0#';
+    const mObj = num(par.margenObjetivo) / 100, mMin = num(par.margenMinimo) / 100;
+    const metaDH = num(par.metaUtilidadDH), pres = num(par.presupuestoMaximo), ajust = num(par.umbralAjustado || 95) / 100;
+    const deltaF = `(${A.mat}*${PR.sMat}+${A.eq}*${PR.sEq}+${A.mo}*${PR.sMo}+${A.ot}*${PR.sOt})`;
+    const compF = `IF(${PR.pres}>0,IF(${PR.presIva}="Sí",${A.pb},${A.pn})/${PR.pres},0)`;
+    const indicadores = [
+      ['margen', 'Margen sobre venta', `IFERROR(${A.ut}/${A.pn},0)`, m(k.margen), FMT.pct,
+        [`IF(${A.pn}=0,"—",IF(${A.ut}/${A.pn}>=${PR.mObj},"✔ Sobre el objetivo",IF(${A.ut}/${A.pn}>=${PR.mMin},"▲ Entre mínimo y objetivo","✖ Bajo el mínimo")))`,
+          !T.precioNeto ? '—' : (m(k.margen) >= mObj ? '✔ Sobre el objetivo' : (m(k.margen) >= mMin ? '▲ Entre mínimo y objetivo' : '✖ Bajo el mínimo'))],
+        [`"Objetivo "&TEXT(${PR.mObj},"0%")&" · mínimo "&TEXT(${PR.mMin},"0%")`, `Objetivo ${Math.round(mObj * 100)}% · mínimo ${Math.round(mMin * 100)}%`]],
+      ['markup', 'Recargo sobre costo (markup)', `IFERROR(${A.ut}/${A.ct},0)`, m(k.markup), FMT.pct, null,
+        'Cuánto pueden subir los costos sin pérdida'],
+      ['dh', 'Días-hombre de ejecución', PT('J'), k.dh, fmtDH, null, 'Esfuerzo total, no el plazo'],
+      ['rentDH', 'Utilidad por día-hombre', `IFERROR(${A.ut}/${A.dh},0)`, m(k.rentDH), FMT.clp,
+        [`IF(${PR.metaDH}<=0,"Sin meta definida",IF(IFERROR(${A.ut}/${A.dh},0)>=${PR.metaDH},"✔ Cumple la meta","✖ Bajo la meta"))`,
+          metaDH <= 0 ? 'Sin meta definida' : (m(k.rentDH) >= metaDH ? '✔ Cumple la meta' : '✖ Bajo la meta')],
+        [`IF(${PR.metaDH}>0,"Meta $"&FIXED(${PR.metaDH},0),"Meta en hoja Parámetros")`, metaDH > 0 ? `Meta $${Math.round(metaDH).toLocaleString('es-CL')}` : 'Meta en hoja Parámetros']],
+      ['incMO', 'Incidencia de MO sobre venta', `IFERROR(${A.mo}/${A.pn},0)`, m(k.incidenciaMO), FMT.pct, null, 'Peso de la mano de obra en el precio'],
+      ['holMO', 'Holgura de mano de obra', `IFERROR(${A.ut}/${A.mo},0)`, m(k.holguraMO), FMT.pct, null, 'Cuánto puede crecer la MO antes de perder'],
+      ['sens', 'Sensibilidad de la utilidad', `IFERROR(-${deltaF}/${A.ut},0)`, m(k.sensVarUtilidad), FMT.pct, null, 'Variación de la utilidad en el escenario'],
+      ['sensU', 'Utilidad en el escenario', `${A.ut}-${deltaF}`, m(k.sensUtilidad), FMT.clp,
+        [`IF(${A.ut}-${deltaF}<0,"✖ El escenario genera pérdida",IF(IFERROR((${A.ut}-${deltaF})/${A.pn},0)<${PR.mMin},"▲ Margen bajo el mínimo","✔ Resiste el escenario"))`,
+          m(k.sensUtilidad) < 0 ? '✖ El escenario genera pérdida' : (m(k.sensMargen) < mMin ? '▲ Margen bajo el mínimo' : '✔ Resiste el escenario')],
+        [`"Sobrecosto simulado $"&FIXED(${deltaF},0)`, `Sobrecosto simulado $${Math.round(m(T.utilidad) - m(k.sensUtilidad)).toLocaleString('es-CL')}`]],
+      ['sensM', 'Margen en el escenario', `IFERROR((${A.ut}-${deltaF})/${A.pn},0)`, m(k.sensMargen), FMT.pct, null, 'Variaciones en hoja Parámetros'],
+      ['comp', 'Competitividad de la oferta', compF, m(k.competitividad), FMT.pct,
+        [`IF(${PR.pres}<=0,"Sin presupuesto informado",IF(${compF}>1,"✖ Excede el presupuesto",IF(${compF}>=${PR.ajust},"▲ Oferta ajustada","✔ Con holgura")))`,
+          pres <= 0 ? 'Sin presupuesto informado' : (m(k.competitividad) > 1 ? '✖ Excede el presupuesto' : (m(k.competitividad) >= ajust ? '▲ Oferta ajustada' : '✔ Con holgura'))],
+        [`IF(${PR.pres}>0,"Presupuesto $"&FIXED(${PR.pres},0)&IF(${PR.presIva}="Sí"," con IVA"," neto"),"Sin presupuesto del mandante")`,
+          pres > 0 ? `Presupuesto $${Math.round(pres).toLocaleString('es-CL')}${par.presupuestoIncluyeIva ? ' con IVA' : ' neto'}` : 'Sin presupuesto del mandante']]
+    ];
+    indicadores.forEach(([key, label, formula, result, fmt, ev, ref]) => {
+      const sub = key === 'sensU' || key === 'sensM';
+      put(`A${fr}:C${fr}`, label, { bold: !sub }, { alignment: { indent: sub ? 2 : 1 } });
+      put(`D${fr}`, F(formula, result), { bold: true }, { numFmt: fmt });
+      A[key] = `$D$${fr}`;
+      if (ev) {
+        put(`E${fr}:F${fr}`, F(ev[0], ev[1]), { size: 9, bold: true, color: { argb: C.gray } }, { alignment: { indent: 1 } });
+        EV[key] = `$E$${fr}`;
+        semaforo(`E${fr}:F${fr}`, EV[key]);
+      }
+      put(`G${fr}:H${fr}`, Array.isArray(ref) ? F(ref[0], ref[1]) : ref, { size: 8, color: { argb: C.gray } }, { alignment: { indent: 1, wrapText: true } });
+      hairline(fr);
+      wsF.getRow(fr).height = 20;
+      fr++;
+    });
+    fr++;
+
+    // ---- Partidas: dónde está el precio ----
+    const TOP = 12;
+    section('PARTIDAS: DÓNDE ESTÁ EL PRECIO', r.partidas.length > TOP ? `Las ${TOP} de mayor precio de ${r.partidas.length}` : 'Ordenadas por precio');
+    header([['A', 'ID'], ['B:D', 'Partida'], ['E', 'Costo directo', true], ['F', 'Precio neto', true], ['G:H', '% del precio']]);
+    const orden = r.partidas.map((pt, i) => ({ pt, rr: 5 + i })).sort((a, b) => b.pt.precio - a.pt.precio);
+    const pFrom = fr;
+    if (!orden.length) {
+      put(`A${fr}:H${fr}`, 'Sin partidas.', { color: { argb: C.gray } }, { alignment: { indent: 1 } }); fr++;
+    }
+    orden.slice(0, TOP).forEach(({ pt, rr }, i) => {
+      put(`A${fr}`, pt.code, { size: 9, color: { argb: C.gray } }, { alignment: { indent: 1 } });
+      put(`B${fr}:D${fr}`, pt.descripcion || '(sin descripción)', {}, { alignment: { indent: 1 } });
+      put(`E${fr}`, F(`Partidas!$I$${rr}`, pt.cd), { color: { argb: C.gray } }, { numFmt: FMT.clp });
+      put(`F${fr}`, F(`Partidas!$O$${rr}`, pt.precio), { bold: true }, { numFmt: FMT.clp });
+      put(`G${fr}:H${fr}`, F(`IFERROR(F${fr}/${A.pn},0)`, pt.pctPrecio || 0), { size: 9 }, { numFmt: FMT.pct, alignment: { indent: 1 } });
+      if (i % 2) rowCells(fr, (c) => { c.fill = solid(C.zebra); });
+      hairline(fr);
+      wsF.getRow(fr).height = 18;
+      fr++;
+    });
+    if (orden.length > TOP) {
+      const resto = orden.slice(TOP);
+      put(`A${fr}`, '…', { size: 9, color: { argb: C.gray } }, { alignment: { indent: 1 } });
+      put(`B${fr}:D${fr}`, `Otras ${resto.length} partidas`, { italic: true, color: { argb: C.gray } }, { alignment: { indent: 1 } });
+      put(`E${fr}`, F(`${A.cd}-SUM(E${pFrom}:E${fr - 1})`, resto.reduce((a, x) => a + x.pt.cd, 0)), { color: { argb: C.gray } }, { numFmt: FMT.clp });
+      put(`F${fr}`, F(`${A.pn}-SUM(F${pFrom}:F${fr - 1})`, resto.reduce((a, x) => a + x.pt.precio, 0)), { bold: true }, { numFmt: FMT.clp });
+      put(`G${fr}:H${fr}`, F(`IFERROR(F${fr}/${A.pn},0)`, resto.reduce((a, x) => a + (x.pt.pctPrecio || 0), 0)), { size: 9 }, { numFmt: FMT.pct, alignment: { indent: 1 } });
+      hairline(fr);
+      fr++;
+    }
+    if (orden.length) barras(`G${pFrom}:G${fr - 1}`);
+    fr++;
+
+    // ---- Alertas ----
+    section('ALERTAS DE VALIDACIÓN');
+    if (r.warnings.length === 0) {
+      put(`A${fr}:H${fr}`, '✔  Sin alertas: todos los ítems tienen partida, cantidad y costo.', { bold: true, color: { argb: C.okFg } }, { alignment: { indent: 1 } });
+      rowCells(fr, (c) => { c.fill = solid(C.okBg); });
+      wsF.getRow(fr).height = 20;
+      fr++;
+    } else {
+      r.warnings.forEach((w) => {
+        const [txt, bg, fg] = w.level === 'error' ? ['✖ Error', C.badBg, C.badFg] : (w.level === 'warn' ? ['▲ Advertencia', C.warnBg, C.warnFg] : ['Info', C.light, C.gray]);
+        put(`A${fr}`, txt, { size: 9, bold: true, color: { argb: fg } }, { alignment: { indent: 1 } });
+        wsF.getCell(`A${fr}`).fill = solid(bg);
+        put(`B${fr}:H${fr}`, w.msg, { size: 9 }, { alignment: { indent: 1, wrapText: true } });
+        hairline(fr);
+        wsF.getRow(fr).height = w.msg.length > 100 ? 30 : 18;
+        fr++;
+      });
+    }
+    fr++;
+
+    // ---- Datos del proyecto ----
+    section('DATOS DEL PROYECTO');
     const idRows = [
       ['Código', p.codigo], ['Versión', p.version], ['Título', p.titulo], ['Cliente / mandante', p.cliente],
       ['Ubicación', p.ubicacion], ['Responsable', p.responsable], ['Fecha de formulación', p.fecha],
       ['Estado', p.estado], ['Descripción', p.descripcion],
       [copia ? 'Actualizado el' : 'Exportado el', new Date().toLocaleString('es-CL')], ['ID interno', p.uid]
     ];
-    idRows.forEach(([k, v]) => {
-      wsF.getCell(`A${fr}`).value = k;
-      wsF.getCell(`A${fr}`).font = { name: FONT, size: 10, bold: true, color: { argb: C.gray } };
-      wsF.mergeCells(`B${fr}:E${fr}`);
-      wsF.getCell(`B${fr}`).value = v === undefined || v === null ? '' : v;
-      wsF.getCell(`B${fr}`).alignment = { wrapText: true, vertical: 'top', horizontal: 'left' };
+    idRows.forEach(([key, v]) => {
+      put(`A${fr}:B${fr}`, key, { size: 9, bold: true, color: { argb: C.gray } }, { alignment: { vertical: 'top', indent: 1 } });
+      const val = v === undefined || v === null ? '' : v;
+      put(`C${fr}:H${fr}`, val, { size: key === 'ID interno' ? 8 : 10, color: { argb: key === 'ID interno' ? C.gray : C.dark } },
+        { alignment: { vertical: 'top', horizontal: 'left', wrapText: true } });
+      const largo = String(val).length;
+      if (largo > 90) wsF.getRow(fr).height = Math.min(15 * Math.ceil(largo / 90), 120);
+      hairline(fr);
       fr++;
     });
     fr++;
+    put(`A${fr}:H${fr}`, 'Convención de colores: azul = dato ingresado · negro = fórmula · verde = vínculo a otra hoja. Los valores se recalculan al abrir el archivo.',
+      { size: 8, italic: true, color: { argb: C.gray } }, { alignment: { wrapText: true } });
+    const ultimaFila = fr;
 
-    const K = root.QKPIs.byKey;
-    const kpiHeader = () => {
-      const h = wsF.getRow(fr);
-      h.values = ['Indicador', 'Valor', 'Evaluación', 'Fórmula', 'Qué mide y cómo aporta a la evaluación'];
-      styleHeader(h); fr++;
+    // ---- Tarjetas de indicadores (arriba de todo) ----
+    const card = (slot, top, o) => {
+      const L1 = colL(1 + 2 * slot), L2 = colL(2 + 2 * slot);
+      put(`${L1}${top}:${L2}${top}`, o.label.toUpperCase(), { size: 8, bold: true, color: { argb: o.dark ? C.brand : C.gray } }, { alignment: { indent: 1, vertical: 'bottom' } });
+      put(`${L1}${top + 1}:${L2}${top + 1}`, o.value, { size: 18, bold: true, color: { argb: o.dark ? C.white : C.dark } }, { numFmt: o.fmt, alignment: { indent: 1, horizontal: 'left' } });
+      if (o.subValue !== undefined) {
+        put(`${L1}${top + 2}`, o.sub, { size: 8, color: { argb: o.dark ? C.line : C.gray } }, { alignment: { indent: 1 } });
+        put(`${L2}${top + 2}`, o.subValue, { size: 9, bold: true, color: { argb: o.dark ? C.white : C.dark } }, { numFmt: o.subFmt, alignment: { horizontal: 'right', indent: 1 } });
+      } else {
+        put(`${L1}${top + 2}:${L2}${top + 2}`, o.sub, { size: 8, bold: true, color: { argb: C.gray } }, { alignment: { indent: 1 } });
+      }
+      // Relleno y bordes después de combinar: al combinar, las celdas secundarias pierden su estilo
+      const bg = o.fill || (o.dark ? C.dark : C.light);
+      for (let rr = top; rr <= top + 2; rr++) {
+        [L1, L2].forEach((L) => {
+          const c = wsF.getCell(`${L}${rr}`);
+          c.fill = solid(bg);
+          const b = {};
+          if (rr === top) b.top = { style: 'thick', color: { argb: o.accent || C.brand } };
+          if (L === L2 && slot < 3) b.right = { style: 'thick', color: { argb: C.white } };
+          c.border = b;
+        });
+      }
+      if (o.semaforo) semaforo(`${L1}${top}:${L2}${top + 2}`, o.semaforo);
     };
-    const A = {}; // dirección de cada resultado en Ficha
-    const kpiRow = (key, label, formula, result, fmt, evalFormula, formulaText, desc) => {
-      const row = wsF.getRow(fr);
-      row.getCell(1).value = label;
-      row.getCell(1).font = { name: FONT, size: 10, bold: true };
-      row.getCell(2).value = F(formula, result);
-      calc(row.getCell(2), fmt);
-      row.getCell(2).font = { name: FONT, size: 10, bold: true };
-      if (evalFormula) { row.getCell(3).value = F(evalFormula, ''); }
-      row.getCell(4).value = formulaText || '';
-      row.getCell(5).value = desc || '';
-      [3, 4, 5].forEach((ci) => {
-        row.getCell(ci).alignment = { wrapText: true, vertical: 'top' };
-        row.getCell(ci).font = { name: FONT, size: 9, color: { argb: C.gray } };
+    const val = (key, v) => F(A[key], v);
+    const evv = (key, v) => F(EV[key], v);
+    [CARDS1, CARDS2].forEach((t) => { wsF.getRow(t).height = 18; wsF.getRow(t + 1).height = 32; wsF.getRow(t + 2).height = 18; });
+    const evText = (key) => indicadores.find((x) => x[0] === key)[5][1];
+    card(0, CARDS1, { dark: true, label: 'Precio de venta neto', value: val('pn', T.precioNeto), fmt: FMT.clp, sub: 'Con IVA', subValue: val('pb', T.precioBruto), subFmt: FMT.clp });
+    card(1, CARDS1, { label: 'Costo total', value: val('ct', T.costoTotal), fmt: FMT.clp, sub: 'Costo directo', subValue: val('cd', T.cd), subFmt: FMT.clp, accent: C.gray });
+    card(2, CARDS1, { label: 'Utilidad', value: val('ut', T.utilidad), fmt: FMT.clp, sub: 'Recargo s/costo', subValue: val('markup', m(k.markup)), subFmt: FMT.pct });
+    card(3, CARDS1, { label: 'Margen sobre venta', value: val('margen', m(k.margen)), fmt: FMT.pct, sub: evv('margen', evText('margen')), semaforo: EV.margen });
+    card(0, CARDS2, { label: 'Días-hombre', value: val('dh', k.dh), fmt: fmtDH, sub: 'Utilidad por DH', subValue: val('rentDH', m(k.rentDH)), subFmt: FMT.clp, accent: C.gray });
+    card(1, CARDS2, { label: 'Competitividad', value: val('comp', m(k.competitividad)), fmt: FMT.pct, sub: evv('comp', evText('comp')), semaforo: EV.comp, accent: C.gray });
+    card(2, CARDS2, { label: 'Utilidad si suben los costos', value: val('sensU', m(k.sensUtilidad)), fmt: FMT.clp, sub: evv('sensU', evText('sensU')), semaforo: EV.sensU, accent: C.gray });
+    card(3, CARDS2, {
+      label: 'Alertas', value: nErr + nWarn, fmt: FMT.int, accent: C.gray,
+      sub: nErr + nWarn ? `${nErr ? '✖' : '▲'} ${nErr} error(es) · ${nWarn} advertencia(s)` : '✔ Sin alertas',
+      fill: nErr ? C.badBg : (nWarn ? C.warnBg : C.okBg)
+    });
+
+    // ---------------- Guía de indicadores ----------------
+    styleTitle(wsG, 'GUÍA DE INDICADORES', `${ident} — Qué mide cada indicador de la Ficha y cómo se lee.`);
+    wsG.columns = [{ width: 30 }, { width: 42 }, { width: 55 }, { width: 70 }, { width: 45 }];
+    const hg = wsG.getRow(4); hg.values = ['Indicador', 'Fórmula', 'Qué mide', 'Cómo aporta a la evaluación', 'Cómo se lee']; styleHeader(hg);
+    let gr = 5;
+    [['economico', 'RESULTADO ECONÓMICO'], ['indicador', 'INDICADORES DE EVALUACIÓN']].forEach(([grupo, titulo]) => {
+      wsG.getCell(`A${gr}`).value = titulo;
+      wsG.getCell(`A${gr}`).font = { name: FONT, size: 10, bold: true, color: { argb: C.brand } };
+      gr++;
+      root.QKPIs.KPIS.filter((x) => x.grupo === grupo).forEach((x, i) => {
+        const row = wsG.getRow(gr);
+        row.values = [x.nombre, x.formula, x.queMide, x.aporte, x.lectura || ''];
+        row.eachCell({ includeEmpty: true }, (c, ci) => {
+          c.alignment = { wrapText: true, vertical: 'top' };
+          c.font = { name: FONT, size: ci === 1 ? 10 : 9, bold: ci === 1, color: { argb: ci === 1 ? C.dark : C.gray } };
+          if (i % 2) c.fill = solid(C.zebra);
+        });
+        gr++;
       });
-      row.getCell(1).alignment = { vertical: 'top' }; row.getCell(2).alignment = { vertical: 'top' };
-      A[key] = `$B$${fr}`;
-      fr++;
-    };
-    const txt = (k) => (K[k] ? `${K[k].queMide} ${K[k].aporte}` : '');
-
-    section('RESULTADO ECONÓMICO');
-    kpiHeader();
-    kpiRow('mat', 'Materiales', PT('E'), T.mat, FMT.clp, null, 'Σ subtotales de materiales', '');
-    kpiRow('eq', 'Equipos', PT('F'), T.eq, FMT.clp, null, 'Σ subtotales de equipos', '');
-    kpiRow('mo', 'Mano de obra', PT('G'), T.mo, FMT.clp, null, 'Σ subtotales de mano de obra', '');
-    kpiRow('ot', 'Otros', PT('H'), T.otros, FMT.clp, null, 'Σ subtotales de otros', '');
-    kpiRow('cd', 'Costo directo', PT('I'), T.cd, FMT.clp, null, K.cd.formula, txt('cd'));
-    kpiRow('gg', 'Gastos generales', `${A.cd}*${PR.gg}`, T.gg, FMT.clp, null, 'Costo directo × % GG', '');
-    kpiRow('imp', 'Imprevistos', `${A.cd}*${PR.imp}`, T.imp, FMT.clp, null, 'Costo directo × % imprevistos', '');
-    kpiRow('ct', 'Costo total', `${A.cd}+${A.gg}+${A.imp}`, T.costoTotal, FMT.clp, null, K.costoTotal.formula, txt('costoTotal'));
-    kpiRow('ut', 'Utilidad', PT('M'), T.utilidad, FMT.clp, null, K.utilidad.formula, txt('utilidad'));
-    kpiRow('pn', 'Precio de venta neto', `${A.ct}+${A.ut}`, T.precioNeto, FMT.clp, null, K.precioNeto.formula, txt('precioNeto'));
-    kpiRow('iva', 'IVA', `${A.pn}*${PR.iva}`, T.iva, FMT.clp, null, K.iva.formula, txt('iva'));
-    kpiRow('pb', 'Precio de venta bruto', `${A.pn}+${A.iva}`, T.precioBruto, FMT.clp, null, K.precioBruto.formula, txt('precioBruto'));
-    fr++;
-
-    section('INDICADORES DE EVALUACIÓN');
-    kpiHeader();
-    const k = r.kpis;
-    kpiRow('margen', 'Margen sobre venta', `IFERROR(${A.ut}/${A.pn},0)`, k.margen, FMT.pct,
-      `IF(${A.pn}=0,"—",IF(${A.ut}/${A.pn}>=${PR.mObj},"✔ Sobre el objetivo",IF(${A.ut}/${A.pn}>=${PR.mMin},"▲ Entre mínimo y objetivo","✖ Bajo el mínimo")))`,
-      K.margen.formula, txt('margen'));
-    kpiRow('markup', 'Recargo sobre costo (markup)', `IFERROR(${A.ut}/${A.ct},0)`, k.markup, FMT.pct, null, K.markup.formula, txt('markup'));
-    kpiRow('dh', 'Días-Hombre de ejecución', PT('J'), k.dh, FMT.num, null, K.dh.formula, txt('dh'));
-    kpiRow('rentDH', 'Utilidad por día-hombre', `IFERROR(${A.ut}/${A.dh},0)`, k.rentDH, FMT.clp,
-      `IF(${PR.metaDH}<=0,"Sin meta definida",IF(IFERROR(${A.ut}/${A.dh},0)>=${PR.metaDH},"✔ Cumple la meta","✖ Bajo la meta"))`,
-      K.rentDH.formula, txt('rentDH'));
-    kpiRow('incMO', 'Incidencia de MO sobre venta', `IFERROR(${A.mo}/${A.pn},0)`, k.incidenciaMO, FMT.pct, null, K.incidenciaMO.formula, txt('incidenciaMO'));
-    kpiRow('holMO', 'Holgura de mano de obra', `IFERROR(${A.ut}/${A.mo},0)`, k.holguraMO, FMT.pct, null, K.holguraMO.formula, txt('holguraMO'));
-    const deltaF = `(${A.mat}*${PR.sMat}+${A.eq}*${PR.sEq}+${A.mo}*${PR.sMo}+${A.ot}*${PR.sOt})`;
-    kpiRow('sens', 'Sensibilidad de la utilidad', `IFERROR(-${deltaF}/${A.ut},0)`, k.sensVarUtilidad, FMT.pct, null, K.sensibilidad.formula, txt('sensibilidad'));
-    kpiRow('sensU', '   Utilidad en el escenario', `${A.ut}-${deltaF}`, k.sensUtilidad, FMT.clp,
-      `IF(${A.ut}-${deltaF}<0,"✖ El escenario genera pérdida",IF(IFERROR((${A.ut}-${deltaF})/${A.pn},0)<${PR.mMin},"▲ Margen bajo el mínimo","✔ Resiste el escenario"))`,
-      'Utilidad − Σ(costo × variación)', 'Variaciones simuladas definidas en la hoja Parámetros.');
-    kpiRow('sensM', '   Margen en el escenario', `IFERROR((${A.ut}-${deltaF})/${A.pn},0)`, k.sensMargen, FMT.pct, null, 'Utilidad escenario ÷ Precio neto', '');
-    const compF = `IF(${PR.pres}>0,IF(${PR.presIva}="Sí",${A.pb},${A.pn})/${PR.pres},0)`;
-    kpiRow('comp', 'Competitividad de la oferta', compF, k.competitividad || 0, FMT.pct,
-      `IF(${PR.pres}<=0,"Sin presupuesto informado",IF(${compF}>1,"✖ Excede el presupuesto",IF(${compF}>=${PR.ajust},"▲ Oferta ajustada","✔ Con holgura")))`,
-      K.competitividad.formula, txt('competitividad'));
-    fr++;
-
-    section('ALERTAS DE VALIDACIÓN');
-    if (r.warnings.length === 0) {
-      wsF.getCell(`A${fr}`).value = 'Sin alertas.'; fr++;
-    } else {
-      r.warnings.forEach((w) => {
-        wsF.getCell(`A${fr}`).value = w.level === 'error' ? 'Error' : (w.level === 'warn' ? 'Advertencia' : 'Info');
-        wsF.getCell(`A${fr}`).font = { name: FONT, size: 10, bold: true, color: { argb: w.level === 'error' ? 'FFC62828' : 'FF9A6700' } };
-        wsF.mergeCells(`B${fr}:E${fr}`);
-        wsF.getCell(`B${fr}`).value = w.msg;
-        fr++;
-      });
-    }
-    fr++;
-    wsF.getCell(`A${fr}`).value = 'Convención de colores: azul = dato ingresado · negro = fórmula · verde = vínculo a otra hoja. Los valores se recalculan al abrir el archivo.';
-    wsF.getCell(`A${fr}`).font = { name: FONT, size: 8, italic: true, color: { argb: C.gray } };
+      gr++;
+    });
 
     // ---------------- Datos para re-importar ----------------
     const json = JSON.stringify(p);
@@ -450,12 +629,26 @@
     const CH = 30000;
     for (let i = 0, rr = 2; i < json.length; i += CH, rr++) wsD.getCell(`A${rr}`).value = json.slice(i, i + CH);
 
-    [wsF, wsPar, wsP, wsM, wsE, wsH, wsO].forEach(baseFont);
-    [wsP, wsM, wsE, wsH, wsO, wsPar].forEach((ws) => {
+    [wsF, wsPar, wsP, wsM, wsE, wsH, wsO, wsG].forEach(baseFont);
+    // Filas alternadas en las tablas de detalle (sin tapar los rellenos de aviso)
+    [[wsP, pEnd, 17], [wsM, mEnd, 8], [wsE, eEnd, 8], [wsH, hEnd, 13], [wsO, oEnd, 8]].forEach(([ws, end, nc]) => {
+      for (let rr = 5; rr <= end; rr++) {
+        for (let ci = 1; ci <= nc; ci++) {
+          const c = ws.getRow(rr).getCell(ci);
+          if ((rr - 5) % 2 && !c.fill) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.zebra } };
+          c.border = { bottom: { style: 'hair', color: { argb: C.line } } };
+        }
+      }
+    });
+    [wsP, wsM, wsE, wsH, wsO, wsPar, wsG].forEach((ws) => {
       ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
       ws.headerFooter = { oddFooter: `&L${p.codigo} v${p.version}&RPágina &P de &N` };
     });
-    wsF.pageSetup = { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+    wsF.pageSetup = {
+      orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9, horizontalCentered: true,
+      printArea: `A1:H${ultimaFila}`, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.6, header: 0.3, footer: 0.3 }
+    };
+    wsF.headerFooter = { oddFooter: `&L&8${p.codigo} v${p.version}&R&8Página &P de &N` };
 
     const buf = await wb.xlsx.writeBuffer();
     if (opts && opts.soloDatos) return buf;
