@@ -18,6 +18,8 @@ window.QPN_M365 = {
   raiz: '',
   // Planilla de ingreso en la raíz de la biblioteca (solo lectura)
   planilla: 'Planilla de Ingreso de Requerimientos.xlsx',
+  // La misma planilla en Excel para la web: el link «Abrir la planilla» junto al N° de requerimiento
+  planillaWeb: 'https://quempinspa2020.sharepoint.com/sites/Licitaciones-Enproceso/Documentos%20compartidos/Planilla%20de%20Ingreso%20de%20Requerimientos.xlsx?web=1',
   // Carpeta donde queda «Formulador - configuración.json» (tarifas, IVA y metas del equipo)
   carpetaConfig: '2 ARCHIVOS Y INFORMACION FRECUENTE'
 };

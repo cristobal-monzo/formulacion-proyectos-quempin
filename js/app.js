@@ -3431,9 +3431,11 @@
   function campoRequerimiento(p) {
     const v = (p.vinculos && p.vinculos.requerimiento) || null;
     const enCodigo = enSP() && QH() && !v ? QH().reqDe(p) : null;
+    const planillaWeb = (window.QPN_M365 || {}).planillaWeb;
     return `<div class="campo ancho"><label for="f-req">N° de requerimiento <span class="opc">(Planilla de Ingreso)</span></label>
         <div class="req-fila"><input class="input" id="f-req" list="dl-req" inputmode="numeric" autocomplete="off" value="${esc(v && v.numero ? v.numero : '')}" placeholder="${enCodigo ? `${esc(enCodigo)} (el código)` : 'Ej.: 280'}">
-          <button type="button" class="btn btn-sm" data-act="req-completar" data-tip="<b>Completar desde la planilla</b>Trae el título, la ubicación y el presupuesto del requerimiento a los campos que estén vacíos.">Completar desde la planilla</button></div>
+          <button type="button" class="btn btn-sm" data-act="req-completar" data-tip="<b>Completar desde la planilla</b>Trae el título, la ubicación y el presupuesto del requerimiento a los campos que estén vacíos.">Completar desde la planilla</button>
+          ${planillaWeb ? `<a class="link-btn req-abrir" href="${esc(planillaWeb)}" target="_blank" rel="noopener" data-tip="<b>Abrir la planilla de ingreso</b>Se abre en Excel para la web, en otra pestaña, para buscar o verificar el N°.">${ICON.open}Abrir la planilla</a>` : ''}</div>
         <datalist id="dl-req"></datalist>
         <span class="hint" id="req-hint">El N° con que se registró el requerimiento: une este presupuesto con su cotización, el Análisis Financiero y el Flujo de Caja.</span></div>`;
   }

@@ -1236,8 +1236,10 @@ button.meta-carpeta .dot { margin: 0 0 0 2px; flex: 0 0 auto; }
 .viz-gate-error { font-size: 12px; color: #ff8a4d; min-height: 16px; margin-top: 10px; }
 
 /* ---- Otras herramientas QUEMPIN (plan de integración, 2026-10-01) ---- */
-.req-fila { display: flex; gap: 8px; align-items: center; }
+.req-fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .req-fila .input { max-width: 160px; }
+.req-abrir { display: inline-flex; align-items: center; gap: 4px; margin-left: 4px; white-space: nowrap; }
+.req-abrir svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .costo-ref { display: flex; align-items: center; gap: 4px; }
 .icon-btn.precio-ref { width: 28px; height: 28px; font-weight: 900; font-size: 13px; color: var(--text-secondary); border: 1px solid var(--gridline); border-radius: 6px; }
 .icon-btn.precio-ref.usado { color: var(--brand-orange-ink); border-color: var(--brand-orange); }
