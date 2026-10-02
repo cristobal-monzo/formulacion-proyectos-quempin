@@ -3,7 +3,8 @@
  * además de los costos al Análisis Financiero (ese canal vive en intercambio.js y app.js).
  * Plan de integración del 2026-09-30 (Proyectos Claude/2026-09-30-plan-integracion-herramientas.md):
  *
- *   lee        requerimientos.json        Planilla de Ingreso (N° de requerimiento, presupuesto…)
+ *   lee        requerimientos.json        Planilla de Ingreso (N° de requerimiento, presupuesto…); con
+ *                                         la biblioteca conectada, la planilla misma (al día)
  *              precios-referencia.json    precios de compra reajustados por UF (Cotizador Histórico)
  *              documentos-comerciales     cotizaciones emitidas en Sistema QUEMPIN
  *              contrapartes / folios      clientes con RUT y último N° de cada tipo de documento
@@ -35,7 +36,117 @@
     cache[nombre] = { t: Date.now(), datos };
     return datos;
   }
-  function olvidar() { cache = {}; buscador = null; }
+  function olvidar() { cache = {}; buscador = null; planilla = null; }
+
+  // ---- Planilla de Ingreso, leída donde vive ----------------------------------------------------
+  /* La planilla está en la raíz de la biblioteca «Formulación de proyectos - Documentos», la misma
+     que abre el equipo. Con la biblioteca conectada se lee ahí, al día; si no, se usa la copia que el
+     procesador publica cada 2 horas. Mismo formato que publicado/requerimientos.json (requerimientos.py
+     de Sistema Intercambio): las columnas se buscan por su encabezado, no por su posición. */
+  const PLANILLA = 'Planilla de Ingreso de Requerimientos.xlsx';
+  const HOJA = 'Listado Requerimientos';
+  const COLUMNAS = {
+    n: 'numero', estado: 'estado', canal: 'canal', capt: 'captador', eval: 'evaluador', titulo: 'titulo',
+    ubicacion: 'ubicacion', 'id o referencia': 'referencia', apertura: 'apertura', cierre: 'cierre',
+    visita: 'visita', visitador: 'visitador', 'presupuesto (iva inc)': 'presupuesto',
+    'valor ofertado (iva inc)': 'valorOfertado', 'valor adjudicado (iva inc)': 'valorAdjudicado',
+    'entrega (dias)': 'entregaDias', 'plazo oferta (dias)': 'plazoOfertaDias'
+  };
+  const NUMERICAS = ['presupuesto', 'valorOfertado', 'valorAdjudicado', 'entregaDias', 'plazoOfertaDias'];
+  const ERROR_EXCEL = /^#(VALUE|REF|N\/A|NAME|DIV\/0|NUM|NULL|SPILL|CALC)[!?]?$/i;
+  let planilla = null;   // { firma, datos (promesa) }: se vuelve a leer solo si el archivo cambió
+
+  const encabezado = (t) => String(t === null || t === undefined ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[°º.]/g, '').replace(/\s+/g, ' ').trim();
+  /* Valor de una celda de ExcelJS: el resultado de una fórmula, el texto de un link o texto con formato. */
+  function celda(v) {
+    if (v === null || v === undefined) return null;
+    if (v instanceof Date || typeof v !== 'object') return v;
+    if ('result' in v) return celda(v.result);
+    if (v.error) return null;
+    if (v.richText) return v.richText.map((t) => t.text).join('');
+    if ('text' in v) return celda(v.text);
+    return null;
+  }
+  const dos = (n) => String(n).padStart(2, '0');
+  function valor(v, clave) {
+    v = celda(v);
+    if (v === null || v === undefined) return null;
+    if (typeof v === 'string') {
+      const t = v.trim();
+      if (!t || ERROR_EXCEL.test(t)) return null;
+      if (!NUMERICAS.includes(clave)) return t;
+      const s = t.replace(/\./g, '').replace(/,/g, '.');
+      return /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(s) ? Number(s) : null;
+    }
+    if (typeof v === 'boolean') return v;
+    if (v instanceof Date) {
+      if (isNaN(v)) return null;
+      // ExcelJS entrega las fechas en UTC: así se leen igual que en Excel, sin correrse por la zona horaria
+      const f = `${v.getUTCFullYear()}-${dos(v.getUTCMonth() + 1)}-${dos(v.getUTCDate())}`;
+      return v.getUTCHours() || v.getUTCMinutes() ? `${f}T${dos(v.getUTCHours())}:${dos(v.getUTCMinutes())}` : f;
+    }
+    if (typeof v === 'number') return !Number.isFinite(v) ? null : NUMERICAS.includes(clave) ? v : String(v);
+    return String(v);
+  }
+  function numero(v) {
+    v = celda(v);
+    if (typeof v === 'number' && Number.isInteger(v) && v >= 1) return v;
+    if (typeof v === 'string' && /^\d+$/.test(v.trim()) && parseInt(v, 10) >= 1) return parseInt(v, 10);
+    return null;
+  }
+  /* Partes de la hoja que no hacen falta para leer valores. Sin ellas la planilla real (2 000 filas
+     con validaciones, formato condicional y links) se lee en ~0,2 s en vez de ~3 s, y los valores
+     quedan como los lee el procesador: el texto de un link y nada repetido en celdas combinadas.
+     «Plazo oferta (días)» es una fórmula con HOY() que ExcelJS no entrega: queda vacía (no se usa acá). */
+  const SIN_LEER = ['dataValidations', 'conditionalFormatting', 'hyperlinks', 'mergeCells', 'extLst', 'sheetPr', 'dimension',
+    'sheetViews', 'sheetFormatPr', 'cols', 'autoFilter', 'rowBreaks', 'pageMargins', 'pageSetup', 'headerFooter',
+    'printOptions', 'picture', 'drawing', 'sheetProtection', 'tableParts'];
+  async function interpretar(archivo) {
+    const ExcelJS = await root.QExcel.ensureExcelJS();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await archivo.arrayBuffer(), { ignoreNodes: SIN_LEER });
+    const ws = wb.getWorksheet(HOJA) || wb.worksheets[0];
+    const col = {};
+    ws.getRow(1).eachCell((c, i) => {
+      const clave = COLUMNAS[encabezado(celda(c.value))];
+      if (clave && !col[clave]) col[clave] = i;
+    });
+    if (!col.numero) throw new Error(`la hoja «${ws.name}» no tiene la columna N°`);
+    const lista = [], vistos = new Set(), avisos = [];
+    ws.eachRow((row, r) => {
+      if (r === 1) return;
+      const n = numero(row.getCell(col.numero).value);
+      if (n === null) return;
+      if (vistos.has(n)) { avisos.push(`El N° ${n} aparece más de una vez en la planilla: se usa la primera fila.`); return; }
+      vistos.add(n);
+      const reg = { numero: n, estado: null, titulo: null };
+      Object.keys(col).forEach((k) => { if (k !== 'numero') reg[k] = valor(row.getCell(col[k]).value, k); });
+      lista.push(reg);
+    });
+    return { fuente: 'Planilla de Ingreso de Requerimientos', actualizado: new Date(archivo.lastModified).toISOString(), requerimientos: lista, avisos, origen: 'planilla' };
+  }
+  async function leerPlanilla() {
+    const bib = X() && X().biblioteca ? await X().biblioteca() : null;
+    if (!bib) return null;
+    let archivo;
+    try { archivo = await (await bib.getFileHandle(PLANILLA)).getFile(); } catch (e) { return null; }
+    const firma = `${archivo.lastModified}|${archivo.size}`;
+    if (!planilla || planilla.firma !== firma) {
+      // También se recuerda si falló: no se reintenta (ni se avisa de nuevo) hasta que el archivo cambie
+      planilla = { firma, datos: interpretar(archivo) };
+      planilla.datos.catch((e) => console.warn('No se pudo leer la Planilla de Ingreso en la biblioteca; se usa la copia publicada.', e));
+    }
+    return planilla.datos;
+  }
+  /* La Planilla de Ingreso como la publica el procesador ({ requerimientos: [...], actualizado… }),
+     con origen: 'planilla' (leída en la biblioteca, al día) o 'publicado' (la copia). null si no hay. */
+  async function requerimientos(fresca) {
+    const d = await leerPlanilla().catch(() => null);
+    if (d) return d;
+    const pub = await publicacion('requerimientos', fresca);
+    return pub ? Object.assign({ origen: 'publicado' }, pub) : null;
+  }
 
   async function paquete() {
     const c = cache['__esquemas'];
@@ -213,7 +324,7 @@
   }
 
   root.QHerramientas = {
-    publicacion, olvidar, paquete, validar, enviar,
+    publicacion, requerimientos, olvidar, paquete, validar, enviar,
     reqDe, tagDe, proyecto,
     mensajeBorrador, mensajeVenta, mensajeRegistro, mensajeSugerencia, cambiosParaPlanilla,
     sensibilidadDesdeSesgo, preciosReferencia, buscarPrecios,

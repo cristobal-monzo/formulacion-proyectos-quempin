@@ -1998,7 +1998,11 @@
       return;
     }
     if (el.type === 'radio' && e.type === 'input') return; // los radios se procesan en 'change'
-    if (el.id === 'f-req') { if (e.type === 'change') fijarRequerimiento(el.value); return; }
+    if (el.id === 'f-req') {
+      if (e.type === 'change') fijarRequerimiento(el.value);
+      else { const dl = $('#dl-req'); if (dl) dl.innerHTML = opcionesRequerimiento(el.value); }
+      return;
+    }
     let touched = false;
     if (el.dataset.f) {
       const v = readVal(el);
@@ -3495,7 +3499,18 @@
   }
 
   // ---- N° de requerimiento (paso 1) ------------------------------------------------
-  const ESTADOS_AL_FINAL = ['Descartado', 'No adjudicado'];
+  const REQ_RECIENTES = 20;
+  let reqLista = [];   // la planilla completa, del N° más alto (el último ingresado) al más bajo
+  const enLaPlanilla = (datos) => (datos && datos.origen === 'planilla' ? 'la planilla de ingreso' : 'la planilla de ingreso publicada');
+  /* Opciones del N°: los 20 últimos ingresados (el N° es correlativo), del más nuevo al más antiguo.
+     Con texto escrito se suman, detrás, los anteriores que empiezan con ese N° o lo tienen en el
+     título (hasta 20 más); el navegador muestra de todas las que calzan con lo escrito. */
+  function opcionesRequerimiento(texto) {
+    const q = norm(String(texto || '').trim());
+    const anteriores = q ? reqLista.slice(REQ_RECIENTES).filter((r) => String(r.numero).startsWith(q) || norm(r.titulo).includes(q)) : [];
+    return reqLista.slice(0, REQ_RECIENTES).concat(anteriores.slice(0, REQ_RECIENTES))
+      .map((r) => `<option value="${r.numero}">${esc(r.titulo || '')}${r.estado ? ` (${esc(r.estado)})` : ''}</option>`).join('');
+  }
   function campoRequerimiento(p) {
     const v = (p.vinculos && p.vinculos.requerimiento) || null;
     const enCodigo = enSP() && QH() && !v ? QH().reqDe(p) : null;
@@ -3505,22 +3520,23 @@
           <button type="button" class="btn btn-sm" data-act="req-completar" data-tip="<b>Completar desde la planilla</b>Trae el título, la ubicación y el presupuesto del requerimiento a los campos que estén vacíos.">Completar desde la planilla</button>
           ${planillaWeb ? `<a class="link-btn req-abrir" href="${esc(planillaWeb)}" target="_blank" rel="noopener" data-tip="<b>Abrir la planilla de ingreso</b>Se abre en Excel para la web, en otra pestaña, para buscar o verificar el N°.">${ICON.open}Abrir la planilla</a>` : ''}</div>
         <datalist id="dl-req"></datalist>
-        <span class="hint" id="req-hint">El N° con que se registró el requerimiento: une este presupuesto con su cotización, el Análisis Financiero y el Flujo de Caja.</span></div>`;
+        <span class="hint" id="req-hint">El N° con que se registró el requerimiento: une este presupuesto con su cotización, el Análisis Financiero y el Flujo de Caja. La lista muestra los ${REQ_RECIENTES} últimos ingresados; para uno anterior, escribe su N° o parte del título.</span></div>`;
   }
   async function pintarRequerimiento() {
     const dl = $('#dl-req'), hint = $('#req-hint');
     const p = state.project;
     if (!dl || !p || !(await carpetaLista())) return;
-    const datos = await QH().publicacion('requerimientos');
-    const lista = ((datos && datos.requerimientos) || []).slice()
-      .sort((a, b) => (ESTADOS_AL_FINAL.includes(a.estado) - ESTADOS_AL_FINAL.includes(b.estado)) || (b.numero - a.numero));
-    dl.innerHTML = lista.map((r) => `<option value="${r.numero}">${esc(r.titulo || '')}${r.estado ? ` (${esc(r.estado)})` : ''}</option>`).join('');
+    const datos = await QH().requerimientos();
+    if (state.project !== p || !$('#dl-req')) return;
+    reqLista = ((datos && datos.requerimientos) || []).slice().sort((a, b) => b.numero - a.numero);
+    const input = $('#f-req');
+    dl.innerHTML = opcionesRequerimiento(input ? input.value : '');
     const req = QH().reqDe(p);
-    const r = req && lista.find((x) => String(x.numero) === req);
+    const r = req && reqLista.find((x) => String(x.numero) === req);
     if (hint && r) {
       hint.textContent = `${r.titulo || 'Sin título'} · ${r.estado || 'sin estado'}${ok(r.presupuesto) ? ` · presupuesto ${clp(r.presupuesto)} con IVA` : ''}${r.cierre ? ` · cierre ${fechaCorta(String(r.cierre).slice(0, 10))}` : ''}`;
-    } else if (hint && req && lista.length) {
-      hint.textContent = `El N° ${req} no está en la planilla de ingreso publicada.`;
+    } else if (hint && req && reqLista.length) {
+      hint.textContent = `El N° ${req} no está en ${enLaPlanilla(datos)}.`;
     }
   }
   function fijarRequerimiento(valor) {
@@ -3538,9 +3554,9 @@
     const req = QH() && QH().reqDe(p);
     if (!req) { toast('Primero escribe el N° de requerimiento.', true); return; }
     if (!(await asegurarCarpeta())) return;
-    const datos = await QH().publicacion('requerimientos', true);
+    const datos = await QH().requerimientos(true);
     const r = ((datos && datos.requerimientos) || []).find((x) => String(x.numero) === req);
-    if (!r) { toast(`El N° ${req} no está en la planilla de ingreso publicada.`, true); return; }
+    if (!r) { toast(`El N° ${req} no está en ${enLaPlanilla(datos)}.`, true); return; }
     const hechos = [];
     if (!String(p.titulo || '').trim() && r.titulo) { p.titulo = r.titulo; hechos.push('título'); }
     if (!String(p.ubicacion || '').trim() && r.ubicacion) { p.ubicacion = r.ubicacion; hechos.push('ubicación'); }
@@ -3678,7 +3694,8 @@
         + `<div class="actions"><button type="button" class="btn" data-act="herr-actualizar">${ICON.folder}Conectar o dar permiso</button></div>`;
       return;
     }
-    const [docs, af, folios, reqs, estado] = await Promise.all(['documentos-comerciales', 'analisis-financiero', 'folios', 'requerimientos', 'estado'].map((n) => QH().publicacion(n)));
+    const [docs, af, folios, reqs, estado] = await Promise.all(['documentos-comerciales', 'analisis-financiero', 'folios', 'requerimientos', 'estado']
+      .map((n) => (n === 'requerimientos' ? QH().requerimientos() : QH().publicacion(n))));
     if (state.project !== p || !$('#herr-panel')) return;
     const v = p.vinculos || {};
     const cots = QH().cotizacionesDe(p, docs);
@@ -3724,7 +3741,7 @@
       const r = ((reqs && reqs.requerimientos) || []).find((x) => String(x.numero) === req);
       const vi = valorConIva(p, cots);
       const cambios = QH().cambiosParaPlanilla(p, vi.valor);
-      const enPlanilla = r ? `La planilla dice: ${esc(r.estado || 'sin estado')}${ok(r.valorOfertado) ? ` · ofertado ${clp(r.valorOfertado)}` : ''}${ok(r.valorAdjudicado) ? ` · adjudicado ${clp(r.valorAdjudicado)}` : ''}.` : `El N° ${esc(req)} no está en la planilla publicada.`;
+      const enPlanilla = r ? `La planilla dice: ${esc(r.estado || 'sin estado')}${ok(r.valorOfertado) ? ` · ofertado ${clp(r.valorOfertado)}` : ''}${ok(r.valorAdjudicado) ? ` · adjudicado ${clp(r.valorAdjudicado)}` : ''}.` : `El N° ${esc(req)} no está en ${enLaPlanilla(reqs)}.`;
       const ult = (v.planilla || {}).ultimaSugerencia;
       const yaEsta = r && cambios && Object.keys(cambios).every((k) => (k === 'estado' ? String(r.estado || '').toLowerCase() === cambios.estado.toLowerCase() : Math.abs(num(r[k]) - cambios[k]) < 1));
       tPla = linea(`<span class="code-badge">N° ${esc(req)}</span> ${enPlanilla}`)
@@ -3847,7 +3864,7 @@
     const p = state.project;
     const req = QH() && QH().reqDe(p);
     if (!p || !req || !(await asegurarCarpeta())) return;
-    const [docs, reqs] = await Promise.all([QH().publicacion('documentos-comerciales', true), QH().publicacion('requerimientos', true)]);
+    const [docs, reqs] = await Promise.all([QH().publicacion('documentos-comerciales', true), QH().requerimientos(true)]);
     const vi = valorConIva(p, QH().cotizacionesDe(p, docs));
     const cambios = QH().cambiosParaPlanilla(p, vi.valor);
     if (!cambios) { toast('Solo se avisa cuando la oferta está Enviada o Adjudicada.', true); return; }
@@ -4031,10 +4048,10 @@
   function ofertaActiva() { return !nube.activa && !!QO() && QO().activa(); }
   const ofertaOmitida = new Set();   // presupuestos en que se eligió «Ahora no» (solo esta sesión)
 
-  /* La planilla de ingreso publicada en la carpeta del equipo, como la lee el modo SharePoint:
+  /* La planilla de ingreso (leída en la biblioteca, o la copia publicada), como la lee el modo SharePoint:
      N° → { titulo, estado, ubicacion, referencia, cierre, presupuesto }. */
   async function planillaPublicada() {
-    const datos = QH() ? await QH().publicacion('requerimientos') : null;
+    const datos = QH() ? await QH().requerimientos() : null;
     const m = new Map();
     ((datos && datos.requerimientos) || []).forEach((r) => {
       const cierre = r.cierre ? new Date(r.cierre) : null;
