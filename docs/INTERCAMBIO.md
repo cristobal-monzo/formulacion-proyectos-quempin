@@ -91,7 +91,7 @@ de QUEMPIN. Todo está en `js/herramientas.js` (la interfaz, en la sección *OTR
 | Paso 5 · Venta al Análisis Financiero | Con la oferta **Adjudicada** y el proyecto ya elegido al enviar los costos: el monto sale de la cotización emitida en pesos o, si no hay, del precio neto del paso 4. Mismas garantías que los costos. | mensaje `venta-proyecto` |
 | Paso 5 · Planilla de Ingreso | Con la oferta **Enviada** (Ofertado) o **Adjudicada** (Adjudicado), avisa el estado y el valor con IVA. **Nadie escribe la planilla**: quien la lleva lo pasa a mano (`/Sugerencias_Requerimientos`) y el aviso se cierra solo cuando la planilla ya lo muestra. | mensaje `actualizar-requerimiento` |
 | Paso 5 · Control de Documentos | Registra la evaluación de costos (tipo 81) con el número siguiente; si ya se usó, Sistema QUEMPIN asigna otro y el proyecto se queda con el definitivo. El Excel exportado lleva el número adelante. | mensaje `registro-documento`; lee `publicado/folios.json` |
-| Paso 5 y Configuración · pulso | «Las demás herramientas revisaron la carpeta hace N min»: lo publica el procesador del intercambio cada 15 minutos. | lee `publicado/estado.json` |
+| Paso 5 y Configuración · pulso | «Las demás herramientas revisaron la carpeta hace N min»: lo publica el procesador del intercambio cada 2 horas. | lee `publicado/estado.json` |
 
 Antes de dejar cualquier mensaje, se valida contra el catálogo de esquemas que el procesador deja
 en la carpeta (`esquemas.json`, con `js/esquemas.js`, gemelo de `esquemas.py`). El formato de cada

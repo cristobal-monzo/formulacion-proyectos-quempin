@@ -205,7 +205,9 @@
     const min = Math.max(0, Math.round(((ahora || new Date()) - t) / 60000));
     const hace = min < 1 ? 'hace menos de un minuto' : min < 60 ? `hace ${min} min` : min < 48 * 60 ? `hace ${Math.round(min / 60)} h` : `hace ${Math.round(min / 1440)} días`;
     const fallas = Object.keys(estado.procesador.pasos || {}).filter((k) => estado.procesador.pasos[k] && estado.procesador.pasos[k].ok === false);
-    const nivel = fallas.length ? 'warn' : min <= 60 ? 'ok' : min <= 24 * 60 ? 'warn' : 'bad';
+    // El procesador corre cada 2 horas (decisión del usuario, 2026-10-02): en
+    // verde hasta 2 h y media, para no marcar «atrasado» entre dos corridas.
+    const nivel = fallas.length ? 'warn' : min <= 150 ? 'ok' : min <= 24 * 60 ? 'warn' : 'bad';
     const texto = `Las demás herramientas revisaron la carpeta ${hace}` + (fallas.length ? ` (con problemas en: ${fallas.join(', ')})` : '') + '.';
     return { nivel, texto, minutos: min };
   }
