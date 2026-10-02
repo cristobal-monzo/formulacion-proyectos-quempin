@@ -371,12 +371,15 @@
     } else if (key === 'proj' || key === 'editor-more') {
       const enEditor = key === 'editor-more';
       const ub = enSP() ? window.QCloud.ubicacion(id) : null;
+      const vo = !enSP() && ofertaActiva() ? QO().vinculo(S.get(id)) : undefined;
       items = [
         enEditor ? { icon: ICON.print, title: 'Imprimir resumen', desc: 'Utilidad, precio y evaluación en una página', act: 'imprimir' } : null,
         enEditor ? { sep: true } : null,
         enEditor ? null : { icon: ICON.open, title: 'Abrir', act: 'abrir', id },
         ub && ub.webUrl ? { icon: ICON.folder, title: 'Abrir la carpeta en SharePoint', desc: ub.ruta, act: 'abrir-carpeta', id } : null,
         ub ? { icon: ICON.sheet, title: 'Guardar Excel en la carpeta', desc: 'Copia para ver o imprimir desde SharePoint', act: 'excel-carpeta', id } : null,
+        vo ? { icon: ICON.sheet, title: 'Guardar Excel en la carpeta de la oferta', desc: vo.nombre, act: 'oferta-guardar', id } : null,
+        vo === null ? { icon: ICON.folder, title: 'Elegir la carpeta de la oferta', desc: 'Para dejar ahí una copia en Excel, al día', act: 'oferta-elegir', id } : null,
         enEditor ? null : { icon: ICON.download, title: 'Exportar a Excel', desc: 'Planilla con fórmulas vivas y ficha de KPI', act: 'exp-xlsx', id },
         { icon: ICON.file, title: 'Exportar a JSON', desc: 'Para respaldar o compartir y volver a importar', act: 'exp-json', id },
         { icon: ICON.enviar, title: 'Enviar costos al Análisis Financiero', desc: 'Como costos proyectados del proyecto adjudicado', act: 'enviar-af', id },
@@ -663,6 +666,8 @@
   function route() {
     if (saveTimer) saveNow();
     if (state.project && enSP()) window.QCloud.vaciar();
+    // Al salir de un presupuesto, su Excel de la carpeta de la oferta se pone al día de inmediato
+    if (state.project && ofertaActiva()) QO().guardarPendientes();
     closePop();
     const parts = location.hash.replace(/^#\/?/, '').split('/');
     if (nube.activa && !nube.lista && parts[0] !== 'guia') { state.project = null; renderNube(); return; }
@@ -943,6 +948,7 @@
           </div>
         </div>
         <div id="ed-compartida"></div>
+        <div id="ed-oferta"></div>
       </div>
       <div class="barra-pestanas">
         <div class="viz-container barra-pestanas-interior">
@@ -953,10 +959,20 @@
       <div class="viz-container page" id="tab-body"></div>`;
     renderTab();
     pintarEditorCompartida();
+    pintarEditorOferta();
   }
 
   function metaCarpeta(p, sep) {
-    const u = enSP() ? window.QCloud.ubicacion(p.uid) : null;
+    if (!enSP()) {
+      // Modo local: carpeta de la oferta donde queda el Excel, con el estado de la copia
+      const v = ofertaActiva() ? QO().vinculo(p) : null;
+      if (!v) return '';
+      const i = QO().info(p);
+      const dot = { guardado: 'ok', guardando: 'warn', pendiente: 'warn', error: 'bad' }[i.estado] || '';
+      const tip = textoEstadoOferta(i);
+      return `${sep}<button type="button" class="meta-carpeta" data-act="oferta-info" title="${esc(tip)}" aria-label="Carpeta de la oferta: ${esc(v.nombre)}. ${esc(tip)}">${ICON.folder}<span>${esc(v.nombre)}</span>${dot ? `<span class="dot ${dot}" aria-hidden="true"></span>` : ''}</button>`;
+    }
+    const u = window.QCloud.ubicacion(p.uid);
     if (!u) return '';
     const t = `${ICON.folder}<span>${esc(u.carpeta)}</span>`;
     return `${sep}${u.webUrl ? `<a class="meta-carpeta" href="${esc(u.webUrl)}" target="_blank" rel="noopener" title="Abrir la carpeta en SharePoint: ${esc(u.ruta)}">${t}</a>` : `<span class="meta-carpeta">${t}</span>`}`;
@@ -2153,8 +2169,16 @@
         case 'nuevo': {
           if (enSP()) { await nuevoEnSharePoint(); break; }
           if (!(await exigirCarpeta())) break;
+          // Con la biblioteca conectada: ¿de qué oferta? (ahí queda la copia en Excel)
+          const sel = await elegirOfertaLocal({
+            titulo: 'Nuevo presupuesto: ¿de qué oferta?',
+            texto: 'Elige la carpeta de la oferta en la biblioteca. Busca por el número de la planilla de ingreso o por el nombre.'
+          });
+          if (!sel) break;
           const np = S.newProject();
+          if (sel.carpeta) enOfertaLocal(np, sel, { datosOferta: true });
           S.upsert(np);
+          if (sel.carpeta) guardarExcelOferta(np.uid, true);
           goProject(np, 'ficha');
           setTimeout(() => { const t = $('[data-f="titulo"]'); if (t) t.focus(); }, 60);
           break;
@@ -2211,7 +2235,14 @@
           const cfg = S.getConfig();
           const c = S.cloneProject(src, { codigo: S.nextCodigo(cfg.prefijo, new Date().getFullYear()), version: 1, titulo: (src.titulo || 'Proyecto') + ' (copia)', estado: 'Borrador', fecha: S.hoy() });
           delete c.vinculos; // otra oferta: el envío al Análisis Financiero era de la original
+          const sel = await elegirOfertaLocal({
+            titulo: 'Duplicar: ¿de qué oferta es la copia?',
+            texto: `Se crea una copia de <b>${esc(src.codigo)} v${esc(src.version)}</b>. Elige la carpeta de la oferta de la copia.`
+          });
+          if (!sel) break;
+          if (sel.carpeta) enOfertaLocal(c, sel, {});
           S.upsert(c);
+          if (sel.carpeta) guardarExcelOferta(c.uid, true);
           toast(`Proyecto duplicado como ${c.codigo}`);
           goProject(c, 'ficha');
           break;
@@ -2336,6 +2367,25 @@
           break;
         }
         case 'compartir-ya': await QC().sincronizar(); break;
+        // Excel en la carpeta de la oferta (modo local)
+        case 'oferta-info': await dialogoOferta(id || (p && p.uid)); break;
+        case 'oferta-elegir': await elegirOfertaPara(id || (p && p.uid)); break;
+        case 'oferta-usar': {
+          const uid = id || (p && p.uid);
+          const c = ((await QO().carpetas()) || []).find((x) => x.id === d.ruta);
+          if (!c) { toast('Esa carpeta ya no está en la biblioteca: elige otra.', true); await elegirOfertaPara(uid); break; }
+          const pl = await planillaPublicada().catch(() => null);
+          const r = pl && c.numero ? pl.get(c.numero) || null : null;
+          await vincularOferta(uid, { carpeta: c, req: r && coincidePlanilla(c.titulo, r.titulo) ? r : null });
+          break;
+        }
+        case 'oferta-omitir': if (p) { ofertaOmitida.add(p.uid); pintarEditorOferta(); } break;
+        case 'oferta-guardar': {
+          const uid = id || (p && p.uid);
+          if (p && p.uid === uid && saveTimer) saveNow();
+          if (await asegurarBiblioteca()) await guardarExcelOferta(uid);
+          break;
+        }
         // Sin carpeta: el presupuesto se descarga para dejarlo en el buzón del equipo
         case 'entregar': {
           if (saveTimer) saveNow();
@@ -2728,7 +2778,11 @@
   /* Cambios que llegan de otros usuarios (o de otra ventana del mismo usuario). */
   S.on((ev) => {
     if (ev.type === 'error') { toast(ev.mensaje, true); if (state.project) setSaveState(ev.mensaje, 'err'); return; }
-    if (ev.type === 'sync') { showSyncState(); if (nube.activa) pintarCuenta(window.QCloud.info()); else pintarCompartida(); return; }
+    if (ev.type === 'oferta') { // el Excel de la carpeta de la oferta: pendiente, guardando, guardado o error
+      if (state.project && ev.ids.includes(state.project.uid)) { updateHeader(); pintarEditorOferta(); }
+      return;
+    }
+    if (ev.type === 'sync') { showSyncState(); if (nube.activa) pintarCuenta(window.QCloud.info()); else { pintarCompartida(); if (state.project) pintarEditorOferta(); } return; }
     if (ev.type === 'remote' && ev.conflicto) { alConflicto(ev); return; }
     if (ev.type === 'carpetas') { // una carpeta de oferta se movió o cambió de nombre en SharePoint
       if (!nube.lista) return;
@@ -2916,6 +2970,8 @@
     }
     const cfg = S.getConfig();
     const c = S.cloneProject(p, { codigo: S.nextCodigo(cfg.prefijo, new Date().getFullYear()), version: 1, titulo: (p.titulo || 'Proyecto') + sufijo });
+    // La copia no deja su propio Excel en la carpeta de la oferta hasta que alguien lo decida
+    if (c.vinculos && c.vinculos.carpetaOferta) { c.vinculos = Object.assign({}, c.vinculos); delete c.vinculos.carpetaOferta; }
     S.upsert(c);
     return c;
   }
@@ -2933,14 +2989,16 @@
     if (!state.project && !location.hash.startsWith('#/guia')) route();
   }
 
-  /* Selector de la carpeta de oferta. Devuelve { carpeta, req } (req: fila de la planilla) o null. */
+  /* Selector de la carpeta de oferta. Devuelve { carpeta, req } (req: fila de la planilla), o null.
+     En modo local se le pasan las carpetas de la biblioteca de OneDrive (opts.lista) y la planilla
+     publicada (opts.leerPlanilla); con opts.sinCarpeta ofrece seguir sin carpeta ({ ninguna: true }). */
   async function elegirCarpeta(opts) {
-    const lista = window.QCloud.carpetas();
+    const lista = (opts.lista || window.QCloud.carpetas()).slice();
     const orden = (g) => (g === 'En curso' ? 0 : g === 'Presentada' ? 1 : g === 'Adjudicada' ? 2 : 3);
     lista.sort((a, b) => orden(a.grupo) - orden(b.grupo) || String(b.grupo).localeCompare(String(a.grupo)) ||
       (parseInt(b.numero, 10) || 0) - (parseInt(a.numero, 10) || 0) || a.nombre.localeCompare(b.nombre, 'es'));
     let pl = null;
-    const cargaPlanilla = window.QCloud.planilla().catch((err) => { console.warn('Planilla de ingreso no disponible:', err); return null; });
+    const cargaPlanilla = (opts.leerPlanilla ? opts.leerPlanilla() : window.QCloud.planilla()).catch((err) => { console.warn('Planilla de ingreso no disponible:', err); return null; });
     const filas = () => {
       let g = null;
       return lista.map((c) => {
@@ -2962,7 +3020,7 @@
       wide: true,
       body: `<p>${opts.texto}</p>
         <div class="campo"><label for="cp-buscar">Buscar oferta</label>
-          <input class="input" id="cp-buscar" type="search" placeholder="Número o nombre, p. ej. 298 o calderas" autocomplete="off"></div>
+          <input class="input" id="cp-buscar" type="search" placeholder="Número o nombre, p. ej. 298 o calderas" autocomplete="off" value="${esc(opts.buscar || '')}"></div>
         <div class="cp-lista" id="cp-lista">${filas()}</div>
         <p class="muted cp-vacio" id="cp-vacio" ${lista.length ? 'hidden' : ''}>${lista.length ? 'Ninguna carpeta coincide con la búsqueda.' : 'No hay carpetas de oferta en la biblioteca.'}</p>
         ${opts.crear ? `<details class="cp-nueva" id="cp-nueva"><summary>¿La oferta aún no tiene carpeta? Crearla</summary>
@@ -2973,8 +3031,8 @@
           <p class="hint">Se crea «N°. Título» junto a las demás ofertas en curso. No se modifica nada más.</p>
           <button type="button" class="btn" id="cp-crear">${ICON.folder}Crear la carpeta y usarla</button>
           <p class="login-msg" id="cp-msg" role="status" aria-live="polite"></p>
-        </details>` : ''}`,
-      buttons: [{ label: 'Cancelar' }]
+        </details>` : ''}${opts.pie ? `<p class="hint cp-pie">${opts.pie}</p>` : ''}`,
+      buttons: [opts.sinCarpeta ? { label: opts.sinCarpeta, value: 'ninguna', left: true } : null, { label: 'Cancelar' }].filter(Boolean)
     });
     const dlg = $('#modal');
     const inp = $('#cp-buscar');
@@ -2995,6 +3053,7 @@
       const vis = Array.from(dlg.querySelectorAll('.cp-fila')).filter((b) => !b.hidden);
       if (vis.length === 1) dlg.close(vis[0].value);
     });
+    if (inp.value) filtrar();
     cargaPlanilla.then((m) => {
       pl = m;
       const el = $('#cp-lista');
@@ -3019,6 +3078,7 @@
       [num, tit].forEach((el) => el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); crear(); } }));
     }
     const v = await prom;
+    if (v === 'ninguna') return { ninguna: true };
     if (typeof v !== 'string' || !v.startsWith('c:')) return null;
     const carpeta = lista.find((c) => c.id === v.slice(2));
     if (!carpeta) return null;
@@ -3311,6 +3371,9 @@
     // En modo local la carpeta es obligatoria: no se ofrece «Olvidar» (solo cambiarla).
     el.innerHTML = `<p class="af-linea">${est.conectada ? `Carpeta conectada en este navegador: <b>${esc(est.nombre)}</b>.` : est.movida ? 'La carpeta que estaba conectada cambió de lugar.' : 'Sin conectar.'}
         ${nube.activa ? 'Se usa para enviar costos al Análisis Financiero.' : 'Todos los presupuestos se guardan ahí para el equipo («.Herramientas formulación › Intercambio › publicado › formulador»), y desde ahí se envían costos al Análisis Financiero. Elige la biblioteca <b>Formulación de proyectos - Documentos</b> sincronizada en tu OneDrive.'}</p>
+      ${!nube.activa && est.conectada ? `<p class="af-linea">${est.biblioteca
+        ? 'El Excel de cada presupuesto se guarda además en la carpeta de su oferta, que se elige una vez por presupuesto.'
+        : 'Para guardar también el Excel de cada presupuesto en la carpeta de su oferta, conecta la biblioteca <b>Formulación de proyectos - Documentos</b> completa (ahora está conectada solo una carpeta de adentro).'}</p>` : ''}
       <div class="actions"><button type="button" class="btn btn-sm" data-act="af-carpeta">${ICON.folder}${est.conectada ? 'Cambiar carpeta' : 'Conectar carpeta'}</button>
       ${est.conectada && nube.activa ? '<button type="button" class="btn btn-sm" data-act="af-olvidar">Olvidar</button>' : ''}</div>
       <p class="af-nota" id="cfg-pulso"></p>`;
@@ -3882,8 +3945,229 @@
 
   /* Carpeta del proyecto en la lista y en el encabezado. */
   function carpetaCorta(p) {
-    const u = enSP() ? window.QCloud.ubicacion(p.uid) : null;
+    if (!enSP()) {
+      const v = QO() && QO().vinculo(p);
+      return v ? `<div class="proj-carpeta" title="Excel en la carpeta de la oferta: ${esc(v.ruta.join(' › '))}">${ICON.folder}<span>${esc(QO().grupoDeRuta(v.ruta))} · ${esc(v.nombre)}</span></div>` : '';
+    }
+    const u = window.QCloud.ubicacion(p.uid);
     return u ? `<div class="proj-carpeta">${ICON.folder}<span>${esc(u.grupo)} · ${esc(u.carpeta)}</span></div>` : '';
+  }
+
+  // ---------------------------------------------------------------------------
+  //  CARPETA DE LA OFERTA: copia en Excel del presupuesto junto a los antecedentes de su oferta
+  //  (modo local, js/oferta.js). El presupuesto completo sigue en el repositorio del equipo.
+  // ---------------------------------------------------------------------------
+  const QO = () => window.QOferta;
+  function ofertaActiva() { return !nube.activa && !!QO() && QO().activa(); }
+  const ofertaOmitida = new Set();   // presupuestos en que se eligió «Ahora no» (solo esta sesión)
+
+  /* La planilla de ingreso publicada en la carpeta del equipo, como la lee el modo SharePoint:
+     N° → { titulo, estado, ubicacion, referencia, cierre, presupuesto }. */
+  async function planillaPublicada() {
+    const datos = QH() ? await QH().publicacion('requerimientos') : null;
+    const m = new Map();
+    ((datos && datos.requerimientos) || []).forEach((r) => {
+      const cierre = r.cierre ? new Date(r.cierre) : null;
+      m.set(String(r.numero), {
+        numero: String(r.numero), estado: r.estado || '', titulo: r.titulo || '', ubicacion: r.ubicacion || '',
+        referencia: r.referencia || '', cierre: cierre && !isNaN(cierre) ? cierre : null,
+        presupuesto: typeof r.presupuesto === 'number' && r.presupuesto > 0 ? r.presupuesto : null
+      });
+    });
+    return m;
+  }
+
+  /* Elegir la carpeta de la oferta en la biblioteca de OneDrive. null = canceló;
+     { ninguna: true } = sigue sin carpeta (o no hay biblioteca con permiso); { carpeta, req } = elegida. */
+  async function elegirOfertaLocal(opts) {
+    if (!ofertaActiva()) return { ninguna: true };
+    let lista = null;
+    try { lista = await QO().carpetas(true); } catch (err) { console.warn('Carpetas de oferta:', err); lista = null; }
+    if (!lista || !lista.length) return { ninguna: true };
+    return elegirCarpeta(Object.assign({
+      lista, leerPlanilla: planillaPublicada, planilla: true, sinCarpeta: 'Sin carpeta por ahora',
+      pie: 'Ahí queda una copia en Excel del presupuesto, al día con cada cambio. El presupuesto completo queda en el repositorio del equipo.'
+    }, opts));
+  }
+
+  /* Deja el presupuesto unido a la carpeta elegida. Con datosOferta (presupuesto nuevo), trae
+     además de la planilla el título, la ubicación y el presupuesto si están vacíos. */
+  function enOfertaLocal(p, sel, opts) {
+    const c = sel.carpeta, r = sel.req;
+    const v = Object.assign({}, p.vinculos, { carpetaOferta: QO().nuevoVinculo(c) });
+    // La planilla confirma que es la misma oferta: su N° pasa a ser el N° de requerimiento
+    if (r && !(v.requerimiento && v.requerimiento.numero)) v.requerimiento = { numero: r.numero, titulo: r.titulo || '' };
+    p.vinculos = v;
+    if (opts && opts.datosOferta) {
+      if (!String(p.titulo || '').trim()) p.titulo = (r && r.titulo) || c.titulo || '';
+      if (r && r.ubicacion && !String(p.ubicacion || '').trim()) p.ubicacion = r.ubicacion;
+      if (r && r.presupuesto && !(num(p.parametros.presupuestoMaximo) > 0)) {
+        p.parametros.presupuestoMaximo = r.presupuesto;
+        p.parametros.presupuestoIncluyeIva = true;
+      }
+      if (r && !String(p.descripcion || '').trim()) {
+        const partes = [r.referencia ? `Referencia ${r.referencia}` : '', r.cierre ? `cierre ${fechaUTC(r.cierre)}` : ''].filter(Boolean);
+        if (partes.length) p.descripcion = partes.join(' · ') + '.';
+      }
+    }
+    return p;
+  }
+
+  function textoEstadoOferta(i) {
+    const hora = i.hora ? new Date(i.hora).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }) : '';
+    switch (i.estado) {
+      case 'guardado': return `Excel al día en la carpeta de la oferta${hora ? ` (guardado a las ${hora})` : ''}.`;
+      case 'guardando': return 'Guardando el Excel en la carpeta de la oferta…';
+      case 'pendiente': return 'El Excel de la carpeta de la oferta se actualiza en unos segundos.';
+      case 'error': return `No se pudo guardar el Excel: ${i.error}`;
+      default: return 'El Excel de la carpeta de la oferta se actualiza cada vez que se cambia el presupuesto.';
+    }
+  }
+
+  /* Guarda ya el Excel del presupuesto y lo avisa. */
+  async function guardarExcelOferta(uid, silencio) {
+    try {
+      const w = await QO().guardar(uid);
+      if (!silencio) toast(`Excel guardado en la carpeta de la oferta: ${w.archivo}`);
+      return true;
+    } catch (err) {
+      toast(`No se pudo guardar el Excel en la carpeta de la oferta: ${(err && err.message) || err}`, true);
+      return false;
+    }
+  }
+
+  /* Une el presupuesto (abierto o de la lista) con una carpeta y escribe su Excel. */
+  async function vincularOferta(uid, sel) {
+    const abierto = state.project && state.project.uid === uid;
+    if (abierto && saveTimer) saveNow();
+    const p = abierto ? state.project : S.get(uid);
+    if (!p) return;
+    enOfertaLocal(p, sel, {});
+    ofertaOmitida.delete(uid);
+    if (abierto) { saveNow(); updateHeader(); if (state.tab === 'ficha') renderTab(); } else { S.upsert(p); refreshList(); }
+    const ok = await guardarExcelOferta(uid, true);
+    if (ok) toast(`Listo: el Excel de ${p.codigo} v${p.version} queda en «${sel.carpeta.nombre}» y se actualiza solo.`);
+    pintarEditorOferta();
+  }
+
+  async function elegirOfertaPara(uid) {
+    const p = (state.project && state.project.uid === uid) ? state.project : S.get(uid);
+    if (!p) return;
+    if (!(await asegurarBiblioteca())) return;
+    const v = QO().vinculo(p);
+    const req = QH() && QH().reqDe(p);
+    const sel = await elegirOfertaLocal({
+      titulo: 'Carpeta de la oferta',
+      texto: `Elige la carpeta de la oferta de <b>${esc(p.codigo)} v${esc(p.version)}</b> en la biblioteca <b>Formulación de proyectos - Documentos</b>.`,
+      actual: v ? v.ruta.join('/') : '', buscar: v ? '' : req || '', sinCarpeta: ''
+    });
+    if (!sel || !sel.carpeta) return;
+    await vincularOferta(uid, sel);
+  }
+
+  /* Para llegar a la carpeta de cada oferta hace falta la biblioteca completa, con permiso. Desde
+     un clic: la pide si falta (o pide de nuevo el permiso de la sesión). true = lista. */
+  async function asegurarBiblioteca() {
+    if (!ofertaActiva()) { toast('Este navegador no puede abrir carpetas: usa Chrome o Edge de escritorio.', true); return false; }
+    let e = await QI().estadoBiblioteca();
+    if (e.recordada && e.permiso !== 'granted') {
+      await QI().permitir();
+      e = await QI().estadoBiblioteca();
+    }
+    if (e.recordada && e.permiso === 'granted') return true;
+    const v = await ask({
+      title: 'Conectar la biblioteca completa',
+      body: `<p>Para guardar el Excel en la carpeta de la oferta, elige la biblioteca <b>Formulación de proyectos - Documentos</b> de tu OneDrive${e.conectada ? ' (ahora está conectada solo la carpeta de herramientas)' : ''}.</p>
+        <p class="small muted">El Formulador solo escribe su propio Excel («Formulación … .xlsx») en la carpeta de oferta que elijas; no toca nada más.</p>`,
+      buttons: [{ label: 'Cancelar' }, { label: 'Elegir la biblioteca', value: 'elegir', primary: true }]
+    });
+    if (v !== 'elegir') return false;
+    try { await QI().conectar(); } catch (err) {
+      if (!err || err.name !== 'AbortError') toast((err && err.message) || 'No se pudo abrir la carpeta.', true);
+      return false;
+    }
+    QH().olvidar();
+    if (QC()) QC().sincronizar();
+    e = await QI().estadoBiblioteca();
+    if (!e.recordada) { toast('Elige la biblioteca completa «Formulación de proyectos - Documentos», no una carpeta de adentro.', true); return false; }
+    return e.permiso === 'granted';
+  }
+
+  const notaOferta = (texto, botones) => `<div class="nota compartida-nota" role="region" aria-label="Carpeta de la oferta">
+      <span>${texto}</span><span class="actions">${botones}</span></div>`;
+
+  /* Editor: aviso para elegir la carpeta de la oferta, o el error del último guardado del Excel. */
+  async function pintarEditorOferta() {
+    const el = $('#ed-oferta');
+    const p = state.project;
+    if (!el || !p) return;
+    let html = '';
+    if (ofertaActiva()) {
+      const v = QO().vinculo(p);
+      const eb = await QI().estadoBiblioteca();
+      if (state.project !== p) return;
+      if (!v && eb.conectada && !ofertaOmitida.has(p.uid)) {
+        const omitir = `<button type="button" class="btn btn-ghost btn-sm" data-act="oferta-omitir">Ahora no</button>`;
+        if (!eb.recordada) {
+          html = notaOferta('<strong>Guarda el Excel en la carpeta de la oferta.</strong> Para llegar a las carpetas de las ofertas, conecta la biblioteca <strong>Formulación de proyectos - Documentos</strong> completa.',
+            `<button type="button" class="btn btn-primario btn-sm" data-act="oferta-elegir">${ICON.folder}Conectar la biblioteca</button>${omitir}`);
+        } else if (eb.permiso === 'granted') {
+          const sug = await QO().sugerencias(p).catch(() => []);
+          if (state.project !== p) return;
+          const una = sug.length === 1 ? sug[0] : null;
+          html = notaOferta(una
+            ? `<strong>¿La carpeta de esta oferta es «${esc(una.nombre)}»?</strong> Ahí queda una copia en Excel del presupuesto, al día con cada cambio.`
+            : '<strong>Guarda el Excel en la carpeta de la oferta.</strong> El presupuesto ya queda en el repositorio del equipo; elige la carpeta de su oferta y ahí quedará una copia en Excel, al día con cada cambio.',
+          (una ? `<button type="button" class="btn btn-primario btn-sm" data-act="oferta-usar" data-ruta="${esc(una.id)}">${ICON.folder}Usar esa carpeta</button><button type="button" class="btn btn-sm" data-act="oferta-elegir">Elegir otra</button>`
+            : `<button type="button" class="btn btn-primario btn-sm" data-act="oferta-elegir">${ICON.folder}Elegir carpeta</button>`) + omitir);
+        }
+      } else if (v) {
+        const i = QO().info(p);
+        if (i.estado === 'error') {
+          html = notaOferta(`<strong>No se pudo guardar el Excel en «${esc(v.nombre)}»:</strong> ${esc(i.error)}`,
+            `<button type="button" class="btn btn-sm" data-act="oferta-guardar">Reintentar</button><button type="button" class="btn btn-sm" data-act="oferta-elegir">Cambiar carpeta</button>`);
+        } else if (eb.conectada && !eb.recordada) {
+          html = notaOferta(`<strong>El Excel de este presupuesto va en «${esc(v.nombre)}».</strong> Para guardarlo ahí desde este navegador, conecta la biblioteca <strong>Formulación de proyectos - Documentos</strong> completa.`,
+            `<button type="button" class="btn btn-sm" data-act="oferta-elegir">${ICON.folder}Conectar la biblioteca</button>`);
+        }
+      }
+    }
+    if (el.innerHTML !== html) el.innerHTML = html;
+  }
+
+  /* Detalle del Excel de la carpeta de la oferta (botón de la carpeta en el encabezado). */
+  async function dialogoOferta(uid) {
+    const p = (state.project && state.project.uid === uid) ? state.project : S.get(uid);
+    const v = p && QO().vinculo(p);
+    if (!v) { await elegirOfertaPara(uid); return; }
+    const i = QO().info(p);
+    const eb = await QI().estadoBiblioteca();
+    const falta = !eb.recordada ? 'Para guardarlo desde este navegador, conecta la biblioteca completa («Guardar ahora» la pide).'
+      : eb.permiso !== 'granted' ? 'Falta el permiso de esta sesión para la biblioteca: se guarda al darlo («Guardar ahora» lo pide).' : '';
+    const r = await ask({
+      title: 'Excel en la carpeta de la oferta',
+      body: `<p>Una copia en Excel de este presupuesto queda en la carpeta de su oferta, junto a sus antecedentes, y se actualiza sola cada vez que se cambia.</p>
+        <dl class="oferta-dl">
+          <dt>Carpeta</dt><dd>Formulación de proyectos › ${esc(i.ruta.join(' › '))}</dd>
+          <dt>Archivo</dt><dd>${esc(i.archivo)}</dd>
+          <dt>Estado</dt><dd>${esc(falta || textoEstadoOferta(i))}</dd>
+        </dl>
+        <p class="small muted">El Excel es para consultar o imprimir: lo que se cambie en él se reemplaza en la siguiente actualización. El presupuesto completo, el que se vuelve a abrir aquí, queda en el repositorio del equipo (.Herramientas formulación › Intercambio › publicado › formulador).</p>`,
+      buttons: [{ label: 'Dejar de guardarlo aquí', value: 'quitar', left: true }, { label: 'Cambiar carpeta', value: 'cambiar' }, { label: 'Guardar ahora', value: 'guardar', primary: true }]
+    });
+    if (r === 'guardar') { if (await asegurarBiblioteca()) await guardarExcelOferta(uid); }
+    else if (r === 'cambiar') await elegirOfertaPara(uid);
+    else if (r === 'quitar') {
+      const abierto = state.project && state.project.uid === uid;
+      const x = abierto ? state.project : S.get(uid);
+      const vin = Object.assign({}, x.vinculos);
+      delete vin.carpetaOferta;
+      x.vinculos = vin;
+      ofertaOmitida.add(uid);
+      if (abierto) { saveNow(); updateHeader(); } else S.upsert(x);
+      toast('El Excel ya no se actualiza en esa carpeta. El que ya estaba ahí se queda.');
+      pintarEditorOferta();
+    }
   }
 
   // ---- Tema claro / oscuro (botón igual al de las demás herramientas QUEMPIN) ------------
@@ -3917,8 +4201,10 @@
     window.QCloud.iniciar();
     if (location.hash.startsWith('#/guia')) route();
   } else {
-    // Modo local: los proyectos se comparten por la carpeta de OneDrive si este navegador lo activó.
+    // Modo local: los proyectos se comparten por la carpeta de OneDrive si este navegador lo activó,
+    // y el Excel de cada uno se mantiene al día en la carpeta de su oferta.
     if (QC()) QC().iniciar();
+    if (QO()) QO().iniciar();
     route();
   }
 })();

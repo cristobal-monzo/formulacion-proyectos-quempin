@@ -103,22 +103,30 @@ biblioteca simulada en el almacenamiento privado del navegador; 22 comprobacione
 ## La carpeta
 
 ```
-Formulación de proyectos - Documentos/   biblioteca de SharePoint (las ofertas no se tocan)
-└── .Herramientas formulación/
-    └── Intercambio/
-        ├── intercambio.json   marca que identifica la carpeta (esquema quempin.intercambio/1)
-        ├── buzon/             mensajes que una herramienta le envía a otra
-        ├── procesado/AAAA-MM/ mensajes ya atendidos, con su resultado
-        └── publicado/         lo que cada herramienta publica para las demás
-            ├── analisis-financiero.json
-            └── formulador/    repositorio de formulaciones: un archivo por proyecto, <uid>.json
+Formulación de proyectos - Documentos/   biblioteca de SharePoint
+├── .Herramientas formulación/
+│   └── Intercambio/
+│       ├── intercambio.json   marca que identifica la carpeta (esquema quempin.intercambio/1)
+│       ├── buzon/             mensajes que una herramienta le envía a otra
+│       ├── procesado/AAAA-MM/ mensajes ya atendidos, con su resultado
+│       └── publicado/         lo que cada herramienta publica para las demás
+│           ├── analisis-financiero.json
+│           └── formulador/    repositorio de formulaciones: un archivo por proyecto, <uid>.json
+└── 301. Oferta de ejemplo/     carpeta de una oferta: el formulador solo agrega su copia en Excel
+    └── Formulación QPN-2026-001 v1.xlsx
 ```
 
 Reglas:
 - **Cada herramienta es dueña de sus datos.** El formulador nunca escribe los archivos de otra herramienta: deja mensajes en `buzon/` y lee lo que las otras publican en `publicado/`.
 - **El destinatario decide** si aplica cada mensaje, con sus propias validaciones y respaldos. Después lo mueve a `procesado/` con el resultado.
 
-Al conectar se puede elegir la biblioteca completa, `.Herramientas formulación` o la carpeta `Intercambio`: el formulador baja solo, sin distinguir mayúsculas. Elegir la biblioteca le da permiso al navegador sobre toda ella, pero el formulador solo escribe dentro de `Intercambio`. Una carpeta *Intercambio* nueva y vacía se prepara al conectarla.
+Al conectar se puede elegir la biblioteca completa, `.Herramientas formulación` o la carpeta `Intercambio`: el formulador baja solo, sin distinguir mayúsculas. Una carpeta *Intercambio* nueva y vacía se prepara al conectarla.
+
+Elegir la biblioteca le da permiso al navegador sobre toda ella. El formulador escribe en dos lugares:
+- dentro de `Intercambio`;
+- desde el 2026-10-02, en la carpeta de oferta elegida para cada presupuesto, solo su propio Excel (`Formulación <código> v<versión>.xlsx`, ver `js/oferta.js` y el README).
+
+Para eso recuerda la biblioteca además de la carpeta de intercambio. Quien conectó `.Herramientas formulación` o `Intercambio` sigue compartiendo igual, pero para el Excel en la carpeta de la oferta tiene que elegir la biblioteca completa (el editor lo avisa). Volver a elegir la misma carpeta no reinicia la sincronización.
 
 ## Mensaje `presupuesto-proyecto`
 

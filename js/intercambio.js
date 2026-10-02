@@ -10,6 +10,8 @@
  * solo deja mensajes. No usa servidores ni inicio de sesión (la página abre la carpeta con la
  * API de acceso a archivos del navegador: Chrome y Edge de escritorio) y no depende del modo
  * SharePoint ni lo cambia. La carpeta elegida se recuerda en este navegador (IndexedDB).
+ * Si se eligió la biblioteca completa, se recuerda también: con ella js/oferta.js llega a la
+ * carpeta de cada oferta para dejar ahí el Excel del presupuesto.
  */
 (function (root) {
   'use strict';
@@ -22,6 +24,7 @@
   const DB = 'qpn-intercambio';
   const TIENDA = 'carpetas';
   const CLAVE = 'intercambio';
+  const CLAVE_BIBLIOTECA = 'biblioteca';
 
   /* Categorías que el Análisis Financiero compara contra el costo real, y de dónde salen en
      el cálculo del formulador. Gastos generales e imprevistos no viajan: allá se comparan
@@ -33,7 +36,8 @@
     { k: 'Otros', total: 'otros' }
   ];
 
-  let carpeta = null;   // FileSystemDirectoryHandle
+  let carpeta = null;      // FileSystemDirectoryHandle de «Intercambio»
+  let biblioteca = null;   // la biblioteca completa, si fue lo que se eligió (o null)
   let cargada = false;
   const oyentes = [];   // avisos al conectar, cambiar u olvidar la carpeta
 
@@ -59,13 +63,21 @@
     if (cargada) return carpeta;
     cargada = true;
     try { carpeta = (await idb('readonly', (s) => s.get(CLAVE))) || null; } catch (e) { carpeta = null; }
+    try { biblioteca = carpeta ? (await idb('readonly', (s) => s.get(CLAVE_BIBLIOTECA))) || null : null; } catch (e) { biblioteca = null; }
     return carpeta;
   }
-  async function recordar(h) {
+  async function recordar(h, bib) {
+    const antes = carpeta;
     carpeta = h;
+    biblioteca = h ? bib || null : null;
     cargada = true;
     try { await idb('readwrite', (s) => (h ? s.put(h, CLAVE) : s.delete(CLAVE))); } catch (e) { /* solo esta sesión */ }
-    oyentes.slice().forEach((fn) => { try { fn(h); } catch (e) { console.error(e); } });
+    try { await idb('readwrite', (s) => (biblioteca ? s.put(biblioteca, CLAVE_BIBLIOTECA) : s.delete(CLAVE_BIBLIOTECA))); } catch (e) { /* solo esta sesión */ }
+    // La misma carpeta elegida otra vez (p. ej. ahora desde la biblioteca completa) no es un
+    // cambio: quien sincroniza con ella no tiene que empezar de cero.
+    let misma = false;
+    try { misma = !!(antes && h && await antes.isSameEntry(h)); } catch (e) { misma = false; }
+    if (!misma) oyentes.slice().forEach((fn) => { try { fn(h); } catch (e) { console.error(e); } });
   }
   function onCambio(fn) { oyentes.push(fn); }
 
@@ -102,12 +114,19 @@
      herramientas o la biblioteca completa, y se baja sola. Una carpeta «Intercambio» nueva y
      vacía se prepara acá mismo (el Análisis Financiero haría lo mismo). */
   const RUTAS = [['Intercambio'], [CARPETA_HERRAMIENTAS, 'Intercambio']];
+  const DESDE_BIBLIOTECA = RUTAS[1];
+  async function bajar(h, ruta) {
+    let d = h;
+    for (const n of ruta) d = d && await hijaComo(d, n);
+    return d && esManifiesto(await leerJSON(d, MANIFIESTO)) ? d : null;
+  }
+  /* { carpeta, biblioteca }: la carpeta de intercambio y, si lo elegido fue la biblioteca
+     completa, la biblioteca (para llegar a la carpeta de cada oferta). null si no está ahí. */
   async function resolverCarpeta(h) {
-    if (esManifiesto(await leerJSON(h, MANIFIESTO))) return h;
+    if (esManifiesto(await leerJSON(h, MANIFIESTO))) return { carpeta: h, biblioteca: null };
     for (const ruta of RUTAS) {
-      let d = h;
-      for (const n of ruta) d = d && await hijaComo(d, n);
-      if (d && esManifiesto(await leerJSON(d, MANIFIESTO))) return d;
+      const d = await bajar(h, ruta);
+      if (d) return { carpeta: d, biblioteca: ruta === DESDE_BIBLIOTECA ? h : null };
     }
     if (/^intercambio$/i.test(h.name)) {
       for (const n of ['buzon', 'procesado', 'publicado']) await h.getDirectoryHandle(n, { create: true });
@@ -116,7 +135,7 @@
         descripcion: 'Carpeta de intercambio de las herramientas de QUEMPIN. Ver LEEME.md. No editar ni mover estos archivos a mano.',
         creado: isoLocal(new Date())
       });
-      return h;
+      return { carpeta: h, biblioteca: null };
     }
     return null;
   }
@@ -127,35 +146,68 @@
   }
   /* ¿Sigue ahí la carpeta recordada? (se mueve o se borra por fuera del navegador) */
   const vigente = async (h) => esManifiesto(await leerJSON(h, MANIFIESTO));
-  /* movida: la carpeta recordada ya no está donde estaba; hay que volver a elegirla. */
+  /* Con permiso sobre la biblioteca, la carpeta de intercambio que se abre desde ella lo hereda:
+     así basta pedirlo una vez por sesión, para la biblioteca. Solo si es la misma carpeta recordada. */
+  async function desdeBiblioteca() {
+    if (!biblioteca || !carpeta || (await permiso(biblioteca)) !== 'granted') return null;
+    const d = await bajar(biblioteca, DESDE_BIBLIOTECA);
+    let misma = false;
+    try { misma = !!d && await d.isSameEntry(carpeta); } catch (e) { misma = false; }
+    if (!misma) return null;
+    carpeta = d;
+    return d;
+  }
+  async function permisoCarpeta(h) {
+    const p = await permiso(h);
+    return p !== 'granted' && (await desdeBiblioteca()) ? 'granted' : p;
+  }
+  /* movida: la carpeta recordada ya no está donde estaba; hay que volver a elegirla.
+     biblioteca: true si se recuerda la biblioteca completa (Excel en la carpeta de cada oferta). */
   async function estado() {
     if (!disponible()) return { disponible: false, conectada: false };
-    const h = await cargar();
-    if (!h) return { disponible: true, conectada: false };
-    const p = await permiso(h);
+    if (!(await cargar())) return { disponible: true, conectada: false };
+    const p = await permisoCarpeta(carpeta);
+    const h = carpeta;
     if (p === 'granted' && !(await vigente(h))) return { disponible: true, conectada: false, movida: true, nombre: h.name };
-    return { disponible: true, conectada: true, nombre: h.name, permiso: p };
+    return { disponible: true, conectada: true, nombre: h.name, permiso: p, biblioteca: !!biblioteca };
   }
   /* Abre el selector de carpetas: debe llamarse desde un clic. */
   async function conectar() {
     const h = await root.showDirectoryPicker({ id: 'quempin-intercambio', mode: 'readwrite' });
-    const c = await resolverCarpeta(h);
-    if (!c) throw new Error(`Ahí no está la carpeta de intercambio. Elige la biblioteca «${BIBLIOTECA}» de tu OneDrive.`);
-    await recordar(c);
+    const r = await resolverCarpeta(h);
+    if (!r) throw new Error(`Ahí no está la carpeta de intercambio. Elige la biblioteca «${BIBLIOTECA}» de tu OneDrive.`);
+    await recordar(r.carpeta, r.biblioteca);
     return estado();
   }
-  /* Pide de nuevo el permiso de la carpeta recordada: debe llamarse desde un clic. */
+  /* Pide de nuevo el permiso de la carpeta recordada: debe llamarse desde un clic. Con la
+     biblioteca recordada se pide para ella, que alcanza también para la carpeta de intercambio. */
   async function permitir() {
     const h = await cargar();
     if (!h) return false;
-    if (await permiso(h) === 'granted') return true;
-    try { return (await h.requestPermission({ mode: 'readwrite' })) === 'granted'; } catch (e) { return false; }
+    if (await permisoCarpeta(h) === 'granted' && (!biblioteca || (await permiso(biblioteca)) === 'granted')) return true;
+    const pedir = async (x) => { try { return (await x.requestPermission({ mode: 'readwrite' })) === 'granted'; } catch (e) { return false; } };
+    if (biblioteca && (await permiso(biblioteca)) !== 'granted') await pedir(biblioteca);
+    if (await permisoCarpeta(carpeta) === 'granted') return true;
+    return pedir(carpeta);
   }
   async function desconectar() { await recordar(null); }
   /* La carpeta recordada, solo si ya hay permiso para usarla y sigue ahí (no pide nada). */
   async function carpetaConPermiso() {
     const h = disponible() ? await cargar() : null;
-    return h && (await permiso(h)) === 'granted' && (await vigente(h)) ? h : null;
+    return h && (await permisoCarpeta(h)) === 'granted' && (await vigente(carpeta)) ? carpeta : null;
+  }
+  /* La biblioteca completa, solo si se recuerda y ya hay permiso (no pide nada). */
+  async function bibliotecaConPermiso() {
+    if (!disponible() || !(await cargar()) || !biblioteca) return null;
+    return (await permiso(biblioteca)) === 'granted' ? biblioteca : null;
+  }
+  /* recordada: false si se conectó la carpeta de herramientas o la de intercambio en vez de la
+     biblioteca (hay que volver a elegirla para llegar a las carpetas de las ofertas). */
+  async function estadoBiblioteca() {
+    if (!disponible()) return { disponible: false, recordada: false };
+    if (!(await cargar())) return { disponible: true, conectada: false, recordada: false };
+    if (!biblioteca) return { disponible: true, conectada: true, recordada: false };
+    return { disponible: true, conectada: true, recordada: true, nombre: biblioteca.name, permiso: await permiso(biblioteca) };
   }
 
   // ---- Leer lo publicado y enviar mensajes ---------------------------------------------------
@@ -247,6 +299,7 @@
 
   root.QIntercambio = {
     ESQUEMA, CATEGORIAS_AF, BIBLIOTECA, CARPETA_HERRAMIENTAS, disponible, estado, conectar, permitir, desconectar, onCambio,
-    carpeta: carpetaConPermiso, leerCatalogoAF, leerPublicacion, leerRaiz, enviar, enBuzon, descargar, mensajePresupuesto, costosAF, nombreArchivo, nuevoId, isoLocal
+    carpeta: carpetaConPermiso, biblioteca: bibliotecaConPermiso, estadoBiblioteca,
+    leerCatalogoAF, leerPublicacion, leerRaiz, enviar, enBuzon, descargar, mensajePresupuesto, costosAF, nombreArchivo, nuevoId, isoLocal
   };
 })(window);

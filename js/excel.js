@@ -115,14 +115,17 @@
   // =====================================================================
   //  EXPORTAR PROYECTO
   // =====================================================================
-  /* Genera el Excel del proyecto y lo descarga; con opts.soloDatos devuelve el archivo (ArrayBuffer) sin descargarlo. */
+  /* Genera el Excel del proyecto y lo descarga; con opts.soloDatos devuelve el archivo (ArrayBuffer) sin descargarlo.
+     opts.copiaOferta: es la copia que se mantiene al día en la carpeta de la oferta (js/oferta.js). */
   async function exportProject(p, opts) {
     const ExcelJS = await ensureExcelJS();
     const r = root.QCalc.computeProject(p);
     const par = p.parametros;
     const num = root.QCalc.num;
+    const copia = !!(opts && opts.copiaOferta);
     const wb = new ExcelJS.Workbook();
     wb.creator = 'QUEMPIN · Formulación de proyectos';
+    wb.lastModifiedBy = 'QUEMPIN · Formulación de proyectos';
     wb.title = `${p.codigo} ${p.titulo}`;
     wb.subject = 'Formulación de proyecto';
     wb.keywords = p.codigo;
@@ -320,6 +323,8 @@
       ['B4', p.titulo || 'Sin título', { size: 11, bold: true, color: { argb: C.dark } }],
       ['B5', [p.cliente, p.ubicacion, p.responsable, p.fecha, p.estado].filter(Boolean).join(' · '), { size: 9, color: { argb: C.gray } }]
     ];
+    // La copia de la carpeta de la oferta se reescribe con cada cambio: avisarlo antes de que alguien la edite
+    if (copia) head.push(['B6', 'Copia automática del Formulador: se actualiza sola al guardar el presupuesto. Lo que se cambie en este archivo se reemplaza; para cambiar el presupuesto, usa el Formulador.', { size: 9, italic: true, color: { argb: C.gray } }]);
     head.forEach(([addr, val, font]) => {
       const r0 = addr.slice(1);
       wsF.mergeCells(`B${r0}:E${r0}`);
@@ -343,7 +348,7 @@
       ['Código', p.codigo], ['Versión', p.version], ['Título', p.titulo], ['Cliente / mandante', p.cliente],
       ['Ubicación', p.ubicacion], ['Responsable', p.responsable], ['Fecha de formulación', p.fecha],
       ['Estado', p.estado], ['Descripción', p.descripcion],
-      ['Exportado el', new Date().toLocaleString('es-CL')], ['ID interno', p.uid]
+      [copia ? 'Actualizado el' : 'Exportado el', new Date().toLocaleString('es-CL')], ['ID interno', p.uid]
     ];
     idRows.forEach(([k, v]) => {
       wsF.getCell(`A${fr}`).value = k;
@@ -538,6 +543,19 @@
     throw new Error('El Excel no tiene el formato de la herramienta ni el del Excel QUEMPIN original (hojas Costos y Resumen).');
   }
 
+  /* Identificador del proyecto de un Excel exportado por la herramienta (hoja oculta _datos), o
+     null si el archivo no es de la herramienta. Así se sabe de quién es un Excel antes de reemplazarlo. */
+  async function uidDeExcel(buf) {
+    const ExcelJS = await ensureExcelJS();
+    const wb = new ExcelJS.Workbook();
+    try { await wb.xlsx.load(buf); } catch (e) { return null; }
+    const datos = wb.getWorksheet('_datos');
+    if (!datos) return null;
+    let json = '';
+    for (let rr = 2; rr <= datos.rowCount; rr++) json += str(cellValue(datos.getCell(`A${rr}`).value));
+    try { const p = JSON.parse(json); return p && typeof p.uid === 'string' ? p.uid : null; } catch (e) { return null; }
+  }
+
   function importLegacy(wb, fileName) {
     const S = root.QStore;
     const cs = wb.getWorksheet('Costos');
@@ -653,6 +671,6 @@
     return { proyectos: [p], informe };
   }
 
-  const api = { ensureExcelJS, exportProject, exportPortfolio, importFile, downloadJSON, fileBase, slug };
+  const api = { ensureExcelJS, exportProject, exportPortfolio, importFile, uidDeExcel, downloadJSON, fileBase, slug };
   root.QExcel = api;
 })(typeof window !== 'undefined' ? window : globalThis);

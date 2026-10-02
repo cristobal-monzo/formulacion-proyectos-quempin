@@ -4,7 +4,7 @@ Herramienta web para formular y evaluar los costos de proyectos. Reemplaza las h
 
 **Herramienta publicada:** https://cristobal-monzo.github.io/formulacion-proyectos-quempin/
 
-Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages**. Los proyectos se guardan en **SharePoint**, en la carpeta de cada oferta de la biblioteca *Formulación de proyectos*, o, si la conexión no está configurada, en el navegador (ver [Dónde quedan los datos](#dónde-quedan-los-datos)).
+Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages**. Mientras la conexión con SharePoint no esté configurada (hoy), cada presupuesto se guarda en el navegador y en el **repositorio del equipo**, una carpeta de la biblioteca *Formulación de proyectos* sincronizada por OneDrive. Además queda una **copia en Excel en la carpeta de su oferta**. Con SharePoint configurado, se guardan en la carpeta de cada oferta (ver [Dónde quedan los datos](#dónde-quedan-los-datos)).
 
 ## Qué hace
 
@@ -27,6 +27,7 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
   - **Sesgo real** (paso 5, simulador de sobrecostos): «Simular con el sesgo real» usa cuánto se desvió el gasto real del presupuesto en los proyectos terminados (Análisis Financiero).
   - **Otras herramientas QUEMPIN** (paso 5): prepara la cotización en **Sistema QUEMPIN** (llega a «Borradores del Formulador», donde se revisa y se emite), envía la **venta** al Análisis Financiero, avisa a la **Planilla de Ingreso** el estado y el valor, y **registra la evaluación de costos** (tipo 81) en el Control de Documentos; el Excel exportado lleva ese número.
 - **Comparte los proyectos con el equipo por esa misma carpeta** mientras no se use SharePoint: cada proyecto queda como un archivo en OneDrive y aparece en la lista de los demás equipos que la tengan conectada.
+- **Deja una copia en Excel en la carpeta de cada oferta** (desde el 2026-10-02): `Formulación <código> v<versión>.xlsx`, junto a los antecedentes de la oferta, y la mantiene al día sola mientras se trabaja. Es la misma exportación de *Exportar Excel*, con una nota de que es una copia automática. La carpeta se elige una vez por presupuesto: al crearlo («¿de qué oferta?») o desde el aviso del editor, que la sugiere por el N° de requerimiento.
 
 ## Publicación y actualización
 
@@ -58,6 +59,12 @@ La herramienta tiene dos modos. Cuál se usa depende de `js/m365-config.js`.
 - Los proyectos se guardan en el **navegador de cada usuario** (`localStorage`, unos 5 MB compartidos con las demás herramientas de `cristobal-monzo.github.io`). Eso equivale a unos 450 proyectos medianos. Cada versión cuenta como un proyecto.
 - **Todo presupuesto se guarda también en la carpeta del equipo (obligatorio).** Crear uno nuevo, importarlo, duplicarlo o hacer una nueva versión exige conectar la carpeta. Donde no se puede (Firefox, Safari, celulares, o sin la biblioteca en el computador), el presupuesto se descarga con *Descargar para el equipo* para dejarlo en el buzón, y Claude lo incorpora al repositorio en `/Actualizar_Finanzas`. Lo que queda solo en un navegador lleva la marca «Solo en este navegador».
 - **Para que el equipo vea los mismos proyectos**, cada navegador los comparte por la carpeta de intercambio, oculta en la biblioteca de SharePoint *Formulación de proyectos* (`.Herramientas formulación/Intercambio`), que el equipo ya tiene sincronizada en OneDrive (Chrome o Edge de escritorio). La lista de proyectos pide conectarla eligiendo la biblioteca; en **Configuración** se puede cambiar. Cada proyecto queda como un archivo en `publicado/formulador/` (el repositorio de las formulaciones), OneDrive lo lleva a los demás equipos y su formulador lo trae a la lista. Si dos equipos cambian el mismo proyecto a la vez, se conserva una versión y los otros cambios quedan como copia: nunca se pierde trabajo. Detalle en [docs/INTERCAMBIO.md](docs/INTERCAMBIO.md).
+- **Además, una copia en Excel en la carpeta de la oferta.** El repositorio guarda el presupuesto completo en JSON: es lo que la herramienta vuelve a abrir y lo que leen las demás herramientas y Claude. Para las personas queda también `Formulación <código> v<versión>.xlsx` en la carpeta de su oferta (por ejemplo `301. Mantención calderas hospital`), con la ficha del resultado y los indicadores y las hojas de detalle con fórmulas.
+  - **Cuándo se actualiza:** a los 30 segundos sin editar (o cada 3 minutos si no se para de editar), al salir del presupuesto y al cambiar de pestaña. Lo escribe el navegador donde se hizo el cambio. Si no alcanza, por ejemplo porque se cerró la pestaña, queda pendiente para la próxima vez que se abra la herramienta.
+  - **Carpeta:** se elige una vez por presupuesto y viaja con él (`vinculos.carpetaOferta`). Si la oferta se mueve a Presentadas, Adjudicadas o Cerradas, la copia la sigue. La *Nueva versión* deja su propio archivo (v2, v3…) en la misma carpeta; *Duplicar* pregunta la oferta de la copia.
+  - **Estado:** el encabezado del presupuesto muestra la carpeta con un punto (verde = al día, ámbar = por actualizar, rojo = error) y abre el detalle con *Guardar ahora*, *Cambiar carpeta* y *Dejar de guardarlo aquí*.
+  - **Reglas:** solo escribe su propio archivo `Formulación … .xlsx` dentro de la carpeta de oferta elegida. Nunca la carpeta de herramientas, la carpeta modelo ni la de archivos frecuentes. Un archivo con el mismo nombre que no sea de ese presupuesto no se toca: la copia queda como «… (2).xlsx». No borra, mueve ni renombra nada, y no crea carpetas. Lo que alguien cambie en la copia se reemplaza en la siguiente actualización; OneDrive guarda las versiones anteriores.
+  - **Necesita la biblioteca completa conectada.** Quien conectó solo la carpeta de herramientas ve un aviso para conectarla, y el navegador pide el permiso una vez por sesión.
 - Sin esa carpeta, cada persona ve solo los proyectos de su navegador: se comparten **exportando a Excel o JSON** e **importando**. Borrar los datos del navegador borra los proyectos que no estén en la carpeta.
 - Al pasar a SharePoint, la herramienta ofrece guardar los proyectos del navegador en la carpeta de su oferta.
 
@@ -93,6 +100,7 @@ js/herramientas.js      Lo demás que se intercambia: requerimientos, precios, s
 js/esquemas.js          Validador del catálogo de mensajes (copia textual de Finanzas QUEMPIN/Sistema Intercambio/esquemas.js)
 js/busqueda.js          Buscador de precios (copia textual del de Cotizador Historico/Visualizador Web/busqueda.js)
 js/compartida.js        Proyectos compartidos con el equipo por esa carpeta (modo local)
+js/oferta.js            Copia en Excel de cada presupuesto en la carpeta de su oferta (modo local)
 js/app.js               Interfaz
 js/logo-data.js         Logo oficial embebido para el Excel exportado
 vendor/exceljs.min.js   Librería ExcelJS 4.4.0 (licencia MIT, ver vendor/exceljs.LICENSE)

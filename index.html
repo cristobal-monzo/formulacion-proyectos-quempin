@@ -69,7 +69,8 @@
 <!-- SharePoint: el ingreso con Microsoft usa MSAL 5.23.0 (copia local en vendor/msal, licencia MIT),
      que cloud.js carga solo si la conexión está configurada.
      intercambio.js: intercambio con las demás herramientas de QUEMPIN (Análisis Financiero) por carpeta compartida, sin servidor.
-     compartida.js: en modo local, comparte los proyectos con el equipo por esa misma carpeta de OneDrive. -->
+     compartida.js: en modo local, comparte los proyectos con el equipo por esa misma carpeta de OneDrive.
+     oferta.js: en modo local, mantiene una copia en Excel de cada presupuesto en la carpeta de su oferta. -->
 <script>
 (function () {
   // Gate de contraseña: el mismo de los Tableros Financieros de QUEMPIN (misma clave y misma marca
@@ -77,7 +78,7 @@
   // Es una barrera del lado del cliente, no seguridad real: solo disuade a quien tenga el link.
   var GATE_PASSWORD_NORM = 'combustion';
   var SCRIPTS = ['js/logo-data.js', 'js/kpis.js', 'js/calc.js', 'js/store.js', 'js/m365-config.js',
-    'js/cloud.js', 'js/intercambio.js', 'js/compartida.js', 'js/esquemas.js', 'js/busqueda.js',
+    'js/cloud.js', 'js/intercambio.js', 'js/compartida.js', 'js/oferta.js', 'js/esquemas.js', 'js/busqueda.js',
     'js/herramientas.js', 'js/excel.js', 'js/app.js'];
   function normalizePassword(s) {
     return String(s == null ? '' : s)
