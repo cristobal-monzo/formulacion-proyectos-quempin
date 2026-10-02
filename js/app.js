@@ -36,6 +36,20 @@
     const d = new Date(iso);
     return isNaN(d) ? String(iso) : d.toLocaleDateString('es-CL');
   };
+  /* Mes en que el proyecto se ingresó al Formulador («2026-06»), en hora local. Sale de
+     p.creado (una importación lo conserva; una copia o versión nueva lo renueva). */
+  const mesIngreso = (p) => {
+    const d = new Date(p.creado || '');
+    if (!isNaN(d)) return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const m = /^(\d{4})-(\d{2})/.exec(String(p.fecha || ''));
+    return m ? `${m[1]}-${m[2]}` : '';
+  };
+  /* «2026-06» → «Junio 2026» */
+  const nombreMes = (ym) => {
+    const [a, m] = ym.split('-').map(Number);
+    const s = new Date(a, m - 1, 1).toLocaleDateString('es-CL', { month: 'long' });
+    return `${s.charAt(0).toUpperCase()}${s.slice(1)} ${a}`;
+  };
 
   const svg = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
   const ICON = {
@@ -91,7 +105,7 @@
     /* Utilidad que había antes de "Aplicar" / "Llevar al margen objetivo", para "Deshacer":
        { puid, antes: Map(uid de partida → { utilidadTipo, utilidadValor }), accion } */
     utilUndo: null,
-    list: { q: '', estado: '', resp: '', sort: { k: 'mod', dir: -1 } },
+    list: { q: '', estado: '', resp: '', mes: '', sort: { k: 'mod', dir: -1 } },
     conflicto: false
   };
   /* Modo nube: activa = hay configuración de SharePoint; lista = sesión iniciada y proyectos cargados. */
@@ -364,6 +378,7 @@
         { head: 'Cartera' },
         { icon: ICON.sheet, title: 'Exportar cartera a Excel', desc: 'Todos los proyectos con sus KPI en una planilla', act: 'exportar-cartera', disabled: !n },
         { icon: ICON.archive, title: 'Respaldar todos los proyectos', desc: enSP() ? 'Copia en JSON de toda la cartera, para archivar fuera de SharePoint' : 'Archivo JSON para restaurar o llevar a otro navegador', act: 'respaldar', disabled: !n },
+        { icon: ICON.folder, title: 'Respaldar por mes de ingreso', desc: 'Un JSON por mes en la carpeta que elijas, ordenados por año', act: 'respaldar-meses', disabled: !n },
         { icon: ICON.trash, title: `Papelera (${S.trash().length})`, desc: enSP() || compartiendo() ? 'Proyectos eliminados: restaurar' : 'Proyectos eliminados: restaurar o eliminar definitivamente', act: 'papelera' },
         enSP() ? null : { sep: true },
         enSP() ? null : { icon: ICON.sparkle, title: 'Cargar proyecto de ejemplo', desc: 'Mismos datos del Excel original, para comparar resultados', act: 'ejemplo' }
@@ -722,6 +737,8 @@
     const L = state.list;
     const responsables = Array.from(new Set(all.map((p) => (p.responsable || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es'));
     if (L.resp && !responsables.includes(L.resp)) L.resp = '';
+    const meses = Array.from(new Set(all.map(mesIngreso).filter(Boolean))).sort().reverse();
+    if (L.mes && !meses.includes(L.mes)) L.mes = '';
     app.innerHTML = `<div class="viz-container page">
       <div class="page-head">
         <div>
@@ -740,9 +757,14 @@
         <div class="kpis" id="list-kpis"></div>
         <div class="viz-filterbar">
           <div class="viz-filtergrid">
-            <div class="viz-field span-8"><label for="list-search">Buscar</label>
+            <div class="viz-field span-6"><label for="list-search">Buscar</label>
               <input type="search" id="list-search" class="${L.q ? 'is-set' : ''}" placeholder="${enSP() ? 'N° de oferta, título, cliente, carpeta o responsable' : 'Código, título, cliente, ubicación o responsable'}" value="${esc(L.q)}" autocomplete="off"></div>
-            <div class="viz-field span-4"><label for="list-resp">Responsable</label>
+            <div class="viz-field span-3"><label for="list-mes">Ingresados en</label>
+              <select id="list-mes" class="${L.mes ? 'is-set' : ''}">
+                <option value="">Todos los meses</option>
+                ${meses.map((m) => `<option value="${m}" ${L.mes === m ? 'selected' : ''}>${esc(nombreMes(m))}</option>`).join('')}
+              </select></div>
+            <div class="viz-field span-3"><label for="list-resp">Responsable</label>
               <select id="list-resp" class="${L.resp ? 'is-set' : ''}" ${responsables.length ? '' : 'disabled'}>
                 <option value="">${responsables.length ? 'Todos los responsables' : 'Sin responsables asignados'}</option>
                 ${responsables.map((r) => `<option value="${esc(r)}" ${L.resp === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}
@@ -791,6 +813,7 @@
     return S.all()
       .filter((p) => !L.estado || p.estado === L.estado)
       .filter((p) => !L.resp || (p.responsable || '').trim() === L.resp)
+      .filter((p) => !L.mes || mesIngreso(p) === L.mes)
       .filter((p) => !q || norm([p.codigo, p.titulo, p.cliente, p.responsable, p.ubicacion, enSP() ? (window.QCloud.ubicacion(p.uid) || {}).ruta : ''].join(' ')).includes(q));
   }
 
@@ -855,6 +878,7 @@
     if (L.q) chips.push(['q', 'Búsqueda', L.q]);
     if (L.estado) chips.push(['estado', 'Estado', L.estado]);
     if (L.resp) chips.push(['resp', 'Responsable', L.resp]);
+    if (L.mes) chips.push(['mes', 'Ingresados en', nombreMes(L.mes)]);
     el.innerHTML = `<span class="viz-resultcount"><strong>${n}</strong> de ${plural(total, 'proyecto')}${chips.length ? '' : ' · sin filtros'}</span>
       <span class="viz-chips">${chips.map(([k, l, v]) => `<button type="button" class="viz-chip" data-act="quitar-filtro" data-k="${k}" aria-label="Quitar filtro ${esc(l)}"><span class="k">${esc(l)}:</span><span class="v">${esc(v)}</span><span class="x" aria-hidden="true">×</span></button>`).join('')}</span>
       ${chips.length ? '<button type="button" class="viz-clearbtn" data-act="limpiar-filtros">Limpiar filtros</button>' : ''}`;
@@ -1967,6 +1991,7 @@
       if (el.id === 'list-search') L.q = el.value;
       else if (el.id === 'list-estado') L.estado = el.value;
       else if (el.id === 'list-resp') L.resp = el.value;
+      else if (el.id === 'list-mes') L.mes = el.value;
       else return;
       el.classList.toggle('is-set', !!el.value);
       refreshList();
@@ -2213,6 +2238,7 @@
           toast('Respaldo descargado');
           break;
         }
+        case 'respaldar-meses': await respaldarPorMes(); break;
         case 'duplicar': {
           if (saveTimer) saveNow();
           if (!(await exigirCarpeta())) break;
@@ -2418,7 +2444,7 @@
         }
         case 'quitar-filtro': {
           const L = state.list;
-          const map = { q: ['q', '#list-search'], estado: ['estado', '#list-estado'], resp: ['resp', '#list-resp'] };
+          const map = { q: ['q', '#list-search'], estado: ['estado', '#list-estado'], resp: ['resp', '#list-resp'], mes: ['mes', '#list-mes'] };
           const [k, sel] = map[d.k];
           L[k] = '';
           const el = $(sel);
@@ -2427,8 +2453,8 @@
           break;
         }
         case 'limpiar-filtros': {
-          state.list.q = ''; state.list.estado = ''; state.list.resp = '';
-          ['#list-search', '#list-estado', '#list-resp'].forEach((s) => { const el = $(s); if (el) { el.value = ''; el.classList.remove('is-set'); } });
+          state.list.q = ''; state.list.estado = ''; state.list.resp = ''; state.list.mes = '';
+          ['#list-search', '#list-estado', '#list-resp', '#list-mes'].forEach((s) => { const el = $(s); if (el) { el.value = ''; el.classList.remove('is-set'); } });
           refreshList();
           break;
         }
@@ -2583,6 +2609,48 @@
       console.error(err);
       toast(err.message || 'Ocurrió un error.', true);
     }
+  }
+
+  // ---- Respaldo por mes de ingreso -------------------------------------------------
+  /* En la carpeta que se elija deja «Respaldos Formulador/<año>/<año>-<mes> Proyectos ingresados -
+     <Mes> <año>.json»: un archivo por mes con los proyectos ingresados ese mes (sin la papelera),
+     que se vuelve a importar como cualquier respaldo. Cada vez reescribe los meses con lo que hay
+     hoy. Si se elige la carpeta «Respaldos Formulador» misma, no se anida otra adentro. */
+  const CARPETA_RESPALDOS = 'Respaldos Formulador';
+  async function respaldarPorMes() {
+    if (typeof window.showDirectoryPicker !== 'function') throw new Error('Para guardar en una carpeta usa Chrome o Edge de escritorio.');
+    const grupos = new Map();
+    S.all().forEach((p) => {
+      const ym = mesIngreso(p);
+      if (!grupos.has(ym)) grupos.set(ym, []);
+      grupos.get(ym).push(p);
+    });
+    let dir;
+    try { dir = await window.showDirectoryPicker({ id: 'quempin-respaldos', mode: 'readwrite' }); } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      throw e;
+    }
+    const mismo = dir.name.normalize('NFC').toLowerCase() === CARPETA_RESPALDOS.toLowerCase();
+    const raiz = mismo ? dir : await dir.getDirectoryHandle(CARPETA_RESPALDOS, { create: true });
+    const exportado = new Date().toISOString();
+    const escritos = [];
+    for (const [ym, ps] of Array.from(grupos).sort((a, b) => a[0].localeCompare(b[0]))) {
+      const destino = ym ? await raiz.getDirectoryHandle(ym.slice(0, 4), { create: true }) : raiz;
+      const nombre = ym ? `${ym} Proyectos ingresados - ${nombreMes(ym)}.json` : 'Proyectos sin fecha de ingreso.json';
+      ps.sort((a, b) => String(a.creado || '').localeCompare(String(b.creado || '')));
+      const datos = { schema: S.SCHEMA, tipo: 'respaldo', periodo: ym || null, criterio: 'mes de ingreso al Formulador', exportado, proyectos: ps };
+      const w = await (await destino.getFileHandle(nombre, { create: true })).createWritable();
+      await w.write(JSON.stringify(datos, null, 2) + '\n');
+      await w.close();
+      escritos.push(`${ym ? ym.slice(0, 4) + ' › ' : ''}${nombre} (${plural(ps.length, 'proyecto')})`);
+    }
+    await ask({
+      title: 'Respaldo por mes listo',
+      body: `<p>Quedó en «${esc(mismo ? dir.name : `${dir.name} › ${CARPETA_RESPALDOS}`)}»:</p>
+        <ul>${escritos.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+        <p class="muted">Para restaurar un mes, usa <b>Importar</b> y elige su archivo.</p>`,
+      buttons: [{ label: 'Cerrar', primary: true }]
+    });
   }
 
   // ---- Importación ----------------------------------------------------------------
