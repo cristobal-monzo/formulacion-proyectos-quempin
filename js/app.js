@@ -278,21 +278,25 @@
   //  búsqueda y manejo con teclado (flechas, Inicio/Fin, Enter, Esc).
   // ---------------------------------------------------------------------------
   const pop = $('#pop');
+  const popCasa = pop.parentNode;   // .viz-root: de ahí hereda la letra y los colores del tema
   let P = null;
 
   function closePop(refocus) {
     if (!P) return;
-    const a = P.anchor;
+    const a = P.anchor, f = P.refocus || a;
     a.setAttribute('aria-expanded', 'false');
     pop.hidden = true;
     pop.innerHTML = '';
     P = null;
-    if (refocus && a && document.contains(a)) a.focus();
+    if (refocus && f && document.contains(f)) f.focus();
   }
   function openPop(anchor, o) {
     closePop();
     P = Object.assign({ anchor, q: '', kind: 'menu' }, o);
     anchor.setAttribute('aria-expanded', 'true');
+    // Dentro de un diálogo modal la lista tiene que vivir en él: lo de afuera queda inerte y debajo
+    const host = anchor.closest('dialog[open]') || popCasa;
+    if (pop.parentNode !== host) host.appendChild(pop);
     pop.innerHTML = `${o.search ? `<div class="pop-search"><input type="search" placeholder="${esc(o.search)}" aria-label="${esc(o.search)}" autocomplete="off"></div>` : ''}
       <div class="pop-list" role="${P.kind === 'menu' ? 'menu' : 'listbox'}" aria-label="${esc(o.label || '')}"></div>
       ${o.foot ? `<div class="pop-foot">${o.foot}</div>` : ''}`;
@@ -301,6 +305,7 @@
     pop.style.minWidth = Math.max(o.minWidth || 220, anchor.getBoundingClientRect().width) + 'px';
     positionPop();
     const s = $('.pop-search input', pop);
+    if (o.noFocus) return;   // lista de un campo de texto mientras se escribe: el foco sigue en el campo
     if (s) s.focus();
     else {
       const first = $('.pop-item[aria-selected="true"]', pop) || $('.pop-item:not([disabled])', pop);
@@ -365,6 +370,38 @@
   }, true);
   window.addEventListener('resize', () => closePop());
   document.addEventListener('scroll', (e) => { if (P && !(e.target.closest && e.target.closest('.pop'))) closePop(); }, true);
+
+  /* Campos de texto con lista propia, en vez de <datalist>: esa lista la dibuja cada navegador
+     a su manera, sin los colores ni la letra del Formulador, y no admite estilos. La lista se
+     abre al escribir (filtrada por lo escrito, sin quitar el foco del campo), con ↓ o con la
+     flecha del campo. combos[id del input] = { label, minWidth, vacio, items(texto, actual) }. */
+  const combos = {};
+  function abrirCombo(input, teclado) {
+    const c = combos[input.id];
+    if (!c) return;
+    const wrap = input.closest('.combo') || input;
+    let items = c.items(teclado ? '' : input.value, input.value.trim());
+    if (!items.length) {
+      if (!teclado) { if (P && P.anchor === wrap) closePop(); return; }
+      items = [{ title: c.vacio || 'Sin opciones', disabled: true }];
+    }
+    openPop(wrap, {
+      kind: 'listbox', align: 'left', label: c.label, items, minWidth: c.minWidth || 280, refocus: input, noFocus: !teclado,
+      onPick: (it) => {
+        input.value = it.value;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    });
+  }
+  document.addEventListener('input', (e) => { if (e.isTrusted && combos[e.target.id]) abrirCombo(e.target, false); });
+  document.addEventListener('keydown', (e) => {
+    const t = e.target;
+    if (e.key !== 'ArrowDown' || !combos[t.id]) return;
+    e.preventDefault();
+    const abierta = P && P.anchor.contains(t) && $('.pop-item:not([disabled])', pop);
+    if (abierta) abierta.focus(); else abrirCombo(t, true);
+  });
 
   /* Menús de acciones */
   function openMenu(btn) {
@@ -464,7 +501,10 @@
   /* Selectores de opciones (partida, unidad, estado) */
   function openPicker(btn) {
     const kind = btn.dataset.picker;
-    if (kind === 'partida') {
+    if (kind === 'combo') {
+      const input = btn.parentElement.querySelector('input');
+      if (input) abrirCombo(input, true);
+    } else if (kind === 'partida') {
       const p = state.project;
       const it = findItem(btn.dataset.list, btn.dataset.uid);
       if (!it) return;
@@ -2000,7 +2040,6 @@
     if (el.type === 'radio' && e.type === 'input') return; // los radios se procesan en 'change'
     if (el.id === 'f-req') {
       if (e.type === 'change') fijarRequerimiento(el.value);
-      else { const dl = $('#dl-req'); if (dl) dl.innerHTML = opcionesRequerimiento(el.value); }
       return;
     }
     let touched = false;
@@ -2174,7 +2213,8 @@
       return;
     }
     if (P && !pop.contains(e.target)) {
-      const same = e.target.closest('[data-menu], [data-picker]') === P.anchor;
+      const t = e.target.closest('[data-menu], [data-picker]');
+      const same = !!t && P.anchor.contains(t);   // el botón mismo, o la flecha de un campo con lista
       closePop();
       if (same) return; // segundo clic en el mismo botón: solo cierra
     }
@@ -3503,34 +3543,39 @@
   let reqLista = [];   // la planilla completa, del N° más alto (el último ingresado) al más bajo
   const enLaPlanilla = (datos) => (datos && datos.origen === 'planilla' ? 'la planilla de ingreso' : 'la planilla de ingreso publicada');
   /* Opciones del N°: los 20 últimos ingresados (el N° es correlativo), del más nuevo al más antiguo.
-     Con texto escrito se suman, detrás, los anteriores que empiezan con ese N° o lo tienen en el
-     título (hasta 20 más); el navegador muestra de todas las que calzan con lo escrito. */
-  function opcionesRequerimiento(texto) {
-    const q = norm(String(texto || '').trim());
-    const anteriores = q ? reqLista.slice(REQ_RECIENTES).filter((r) => String(r.numero).startsWith(q) || norm(r.titulo).includes(q)) : [];
-    return reqLista.slice(0, REQ_RECIENTES).concat(anteriores.slice(0, REQ_RECIENTES))
-      .map((r) => `<option value="${r.numero}">${esc(r.titulo || '')}${r.estado ? ` (${esc(r.estado)})` : ''}</option>`).join('');
-  }
+     Con texto escrito quedan los que empiezan con ese N° o lo tienen en el título, y detrás los
+     anteriores que calzan (hasta 20 más). */
+  combos['f-req'] = {
+    label: 'N° de requerimiento', minWidth: 360,
+    vacio: 'La lista de la planilla de ingreso aún no está disponible',
+    items(texto, actual) {
+      const q = norm(String(texto || '').trim());
+      const calza = (r) => !q || String(r.numero).startsWith(q) || norm(r.titulo).includes(q);
+      const item = (r) => ({ value: String(r.numero), selected: String(r.numero) === actual, lead: `<span class="pcode">${esc(r.numero)}</span>`, title: r.titulo || 'Sin título', right: r.estado || '' });
+      const recientes = reqLista.slice(0, REQ_RECIENTES).filter(calza).map(item);
+      const anteriores = q ? reqLista.slice(REQ_RECIENTES).filter(calza).slice(0, REQ_RECIENTES).map(item) : [];
+      const out = recientes.length ? [{ head: 'Últimos ingresados' }].concat(recientes) : [];
+      if (anteriores.length) out.push(...(out.length ? [{ sep: true }] : []), { head: 'Anteriores' }, ...anteriores);
+      return out;
+    }
+  };
   function campoRequerimiento(p) {
     const v = (p.vinculos && p.vinculos.requerimiento) || null;
     const enCodigo = enSP() && QH() && !v ? QH().reqDe(p) : null;
     const planillaWeb = (window.QPN_M365 || {}).planillaWeb;
     return `<div class="campo ancho"><label for="f-req">N° de requerimiento <span class="opc">(Planilla de Ingreso)</span></label>
-        <div class="req-fila"><input class="input" id="f-req" list="dl-req" inputmode="numeric" autocomplete="off" value="${esc(v && v.numero ? v.numero : '')}" placeholder="${enCodigo ? `${esc(enCodigo)} (el código)` : 'Ej.: 280'}">
+        <div class="req-fila"><div class="combo"><input class="input" id="f-req" inputmode="numeric" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" value="${esc(v && v.numero ? v.numero : '')}" placeholder="${enCodigo ? `${esc(enCodigo)} (el código)` : 'Ej.: 280'}"><button type="button" class="combo-btn" data-picker="combo" tabindex="-1" aria-label="Ver los requerimientos">${ICON.caret}</button></div>
           <button type="button" class="btn btn-sm" data-act="req-completar" data-tip="<b>Completar desde la planilla</b>Trae el título, la ubicación y el presupuesto del requerimiento a los campos que estén vacíos.">Completar desde la planilla</button>
           ${planillaWeb ? `<a class="link-btn req-abrir" href="${esc(planillaWeb)}" target="_blank" rel="noopener" data-tip="<b>Abrir la planilla de ingreso</b>Se abre en Excel para la web, en otra pestaña, para buscar o verificar el N°.">${ICON.open}Abrir la planilla</a>` : ''}</div>
-        <datalist id="dl-req"></datalist>
         <span class="hint" id="req-hint">El N° con que se registró el requerimiento: une este presupuesto con su cotización, el Análisis Financiero y el Flujo de Caja. La lista muestra los ${REQ_RECIENTES} últimos ingresados; para uno anterior, escribe su N° o parte del título.</span></div>`;
   }
   async function pintarRequerimiento() {
-    const dl = $('#dl-req'), hint = $('#req-hint');
+    const hint = $('#req-hint');
     const p = state.project;
-    if (!dl || !p || !(await carpetaLista())) return;
+    if (!$('#f-req') || !p || !(await carpetaLista())) return;
     const datos = await QH().requerimientos();
-    if (state.project !== p || !$('#dl-req')) return;
+    if (state.project !== p || !$('#f-req')) return;
     reqLista = ((datos && datos.requerimientos) || []).slice().sort((a, b) => b.numero - a.numero);
-    const input = $('#f-req');
-    dl.innerHTML = opcionesRequerimiento(input ? input.value : '');
     const req = QH().reqDe(p);
     const r = req && reqLista.find((x) => String(x.numero) === req);
     if (hint && r) {
@@ -3795,8 +3840,7 @@
       body: `<p>Llega a <b>Borradores del Formulador</b> en Sistema QUEMPIN. Ahí alguien la revisa, completa los términos y la emite con su número; este proyecto verá el número.</p>
         ${nErr ? `<p class="af-linea af-aviso">Hay ${plural(nErr, 'error')} en los costos: revísalos antes de cotizar.</p>` : ''}
         <div class="fila-campos">
-          <div class="campo ancho"><label for="cq-cli">Cliente (razón social)</label><input class="input" id="cq-cli" list="dl-cli" autocomplete="off" value="${esc(p.cliente || '')}">
-            <datalist id="dl-cli">${clientes.map((c) => `<option value="${esc(c.razon_social)}">${esc(c.rut || '')}</option>`).join('')}</datalist>
+          <div class="campo ancho"><label for="cq-cli">Cliente (razón social)</label><div class="combo"><input class="input" id="cq-cli" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" value="${esc(p.cliente || '')}">${clientes.length ? `<button type="button" class="combo-btn" data-picker="combo" tabindex="-1" aria-label="Ver los clientes">${ICON.caret}</button>` : ''}</div>
             <span class="hint">Si el cliente ya cotizó antes, Sistema QUEMPIN usa su ficha completa.</span></div>
           <div class="campo"><label for="cq-rut">RUT <span class="opc">(opcional)</span></label><input class="input" id="cq-rut" autocomplete="off"></div>
           <div class="campo"><label for="cq-pais">País</label><select class="input" id="cq-pais"><option value="Chile">Chile</option><option value="Peru">Perú</option></select></div>
@@ -3808,6 +3852,14 @@
           <tfoot><tr><td colspan="3">Total neto (en pesos)</td><td class="num">${clp(cot.neto)}</td></tr></tfoot></table></div>`,
       buttons: [{ label: 'Cancelar' }, { label: 'Enviar a Sistema QUEMPIN', value: 'enviar', primary: true }]
     });
+    combos['cq-cli'] = {
+      label: 'Cliente', minWidth: 320,
+      items: (texto, actual) => {
+        const q = norm(String(texto || '').trim());
+        return clientes.filter((c) => !q || norm(c.razon_social).includes(q) || String(c.rut || '').includes(q)).slice(0, 50)
+          .map((c) => ({ value: c.razon_social, title: c.razon_social, right: c.rut || '', selected: c.razon_social === actual }));
+      }
+    };
     const cli = $('#cq-cli'), rut = $('#cq-rut');
     const llenarRut = () => { const c = clientes.find((x) => x.razon_social === cli.value); if (c && c.rut && !rut.value) rut.value = c.rut; };
     cli.addEventListener('change', llenarRut);
