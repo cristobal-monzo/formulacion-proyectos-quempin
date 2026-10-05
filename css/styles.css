@@ -921,6 +921,7 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
 .guia-paso { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 14px; padding: 14px 18px; background: var(--surface-card); border: 1px solid var(--border-hairline); border-radius: 12px; }
 .gp-n { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--brand-orange); color: #000; font-weight: 900; }
 .guia-paso h4 { font-size: 15px; font-weight: 900; margin: 3px 0 4px; }
+.guia-paso h4 .tn { font-weight: 400; color: var(--text-muted); }
 .guia-paso p { font-size: 13px; color: var(--text-secondary); margin: 0; }
 .guia-paso .gp-tip { margin-top: 4px; font-size: 12.5px; }
 .guia-lectura { margin: 0; padding-left: 18px; color: var(--text-secondary); display: grid; gap: 6px; font-size: 13px; }
@@ -1275,7 +1276,80 @@ button.meta-carpeta .dot { margin: 0 0 0 2px; flex: 0 0 auto; }
 .sens-nota { margin: 0 0 8px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; }
 .herr-panel { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px 20px; }
 .herr-bloque { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.herr-bloque .panel-t { margin: 0; }
+.herr-bloque .panel-t { margin: 0; display: flex; align-items: center; gap: 8px; }
 .herr-bloque .actions { margin-top: auto; padding-top: 6px; }
 .herr-pulso { grid-column: 1 / -1; margin: 0; }
+/* N° de la etapa del recorrido a la que pertenece cada bloque */
+.herr-etapa {
+  display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; flex: 0 0 auto;
+  border: 1.5px solid var(--brand-gray-7); color: var(--text-secondary); font-size: 11px; font-weight: 900; line-height: 1;
+}
+/* Costos y venta del Análisis Financiero en un solo bloque */
+.herr-af .af-panel { flex-direction: column; align-items: stretch; gap: 6px; }
+.herr-af .af-panel .af-texto { flex: 0 0 auto; }
+.herr-af .af-panel .actions { margin-top: 0; padding-top: 0; }
+.herr-af .herr-venta { margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--border-hairline); }
+.af-extra { border: 1px solid var(--border-hairline); border-radius: 10px; padding: 10px 14px 4px; margin: 14px 0 0; }
+.af-extra legend { padding: 0 6px; font-size: 12px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .04em; }
+.af-extra .check-l { align-items: flex-start; line-height: 1.45; }
+.af-extra .check-l input { margin-top: 3px; flex: 0 0 auto; }
+
+/* ---- Qué sigue: el recorrido de la oferta (js/flujo.js) --------------------------------------- */
+.recorrido { margin: 0 0 16px; }
+.rc-etapas { list-style: none; margin: 0 0 12px; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.rc-etapa {
+  display: flex; align-items: flex-start; gap: 8px; min-width: 0; padding: 10px 10px 10px 9px;
+  background: var(--surface-card); border: 1px solid var(--border-hairline); border-top: 3px solid var(--gridline); border-radius: 10px;
+  font-size: 12px; color: var(--text-secondary); cursor: default;
+}
+.rc-marca {
+  display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; flex: 0 0 auto;
+  font-size: 11.5px; font-weight: 900; line-height: 1; border: 1.5px solid var(--brand-gray-7); color: var(--text-secondary); background: var(--surface-card);
+}
+.rc-txt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.rc-txt b { font-size: 12.5px; color: var(--text-primary); line-height: 1.25; }
+.rc-donde { font-size: 11px; color: var(--text-muted); }
+.rc-det { font-size: 11.5px; font-weight: 700; color: var(--text-secondary); overflow-wrap: anywhere; }
+.rc-hecha { border-top-color: var(--text-primary); }
+.rc-hecha .rc-marca { background: var(--text-primary); border-color: var(--text-primary); color: var(--page-plane); }
+.rc-actual { border-top-color: var(--brand-orange); background-image: linear-gradient(var(--orange-soft), var(--orange-soft)); }
+.rc-actual .rc-marca { background: var(--brand-orange); border-color: var(--brand-orange); color: #000000; }
+.rc-actual .rc-det { color: var(--brand-orange-ink); }
+.rc-espera { border-top-color: var(--brand-gray-7); border-top-style: dashed; }
+.rc-espera .rc-marca { border-style: dashed; }
+.rc-omitida, .rc-no-aplica { opacity: .62; }
+.rc-no-aplica .rc-txt b { text-decoration: line-through; text-decoration-thickness: 1px; }
+.rc-sigue {
+  background: var(--surface-card); border: 1px solid var(--border-hairline); border-left: 3px solid var(--brand-orange);
+  border-radius: 8px; padding: 12px 16px;
+}
+.rc-sigue.espera { border-left-color: var(--brand-gray-7); }
+.rc-sigue.fin { border-left-color: var(--text-primary); }
+.rc-sigue-t { margin: 0 0 4px; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; color: var(--brand-orange-ink); }
+.rc-sigue.espera .rc-sigue-t, .rc-sigue.fin .rc-sigue-t { color: var(--text-secondary); }
+.rc-sigue-t span { font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--text-secondary); }
+.rc-sigue-x { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--text-primary); }
+.rc-sigue .actions { margin-top: 10px; }
+.rc-ayuda { margin-top: 10px; font-size: 12.5px; color: var(--text-secondary); }
+.rc-ayuda summary { cursor: pointer; font-weight: 700; color: var(--brand-orange-ink); width: fit-content; }
+.rc-ayuda dl { display: grid; grid-template-columns: minmax(170px, auto) 1fr; gap: 6px 16px; margin: 10px 0 0; }
+.rc-ayuda dt { font-weight: 700; color: var(--text-primary); }
+.rc-ayuda dt span { font-weight: 400; color: var(--text-muted); }
+.rc-ayuda dd { margin: 0; line-height: 1.45; }
+@media (max-width: 1060px) { .rc-etapas { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 600px) {
+  .rc-etapas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rc-ayuda dl { grid-template-columns: 1fr; gap: 2px; }
+  .rc-ayuda dd { margin-bottom: 8px; }
+}
+/* Aviso del editor (pasos 1 a 4) y pie del paso 5 */
+#ed-sigue .nota { margin: 0 0 12px; align-items: center; }
+.sigue-nota.espera { border-left-color: var(--brand-gray-7); }
+.sigue-nota .sigue-donde { color: var(--text-muted); }
+.sigue-nota > .actions { gap: 6px 10px; }
+.paso-pie-fin { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+@media (max-width: 640px) { .paso-pie-fin { display: flex; width: 100%; } .paso-pie-fin .btn { flex: 1 1 auto; } }
+/* Lista: qué sigue con cada oferta, bajo su estado */
+.sigue-corto { display: block; margin-top: 5px; font-size: 11.5px; font-weight: 700; color: var(--brand-orange-ink); white-space: normal; max-width: 150px; line-height: 1.3; }
+.sigue-corto.espera, .sigue-corto.fin { color: var(--text-muted); font-weight: 600; }
 

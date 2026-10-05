@@ -10,6 +10,9 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
 
 - **Formula proyectos con la misma lógica del Excel.** Tiene partidas y detalle de materiales, equipos, mano de obra (3 niveles de tarifa) y otros costos, todo por unidad de partida. Con los datos del Excel entrega exactamente los mismos resultados.
 - **Guía la formulación en 5 pasos** (Datos → Partidas → Costos → Utilidad y precio → Evaluación). Cada paso dice para qué sirve, tiene su ayuda «¿Cómo se calcula?», marca si está completo (✓) o tiene errores (!) y termina con el botón al paso siguiente.
+- **Dice qué sigue con cada oferta** (desde el 2026-10-05, `js/flujo.js`). Después de formular, la oferta recorre las mismas seis etapas de la guía del equipo: requerimiento → formulación → cotización → oferta y adjudicación → ejecución → cierre. El paso 5 muestra en qué etapa va, qué herramienta hace cada una y **un solo botón con lo que sigue** (preparar la cotización, marcarla Enviada, pasar a ejecución…); el mismo aviso aparece arriba en los pasos 1 a 4 cuando ya no se trata de seguir formulando, y la lista de proyectos lo resume bajo el estado. Al cambiar el estado, un aviso dice qué sigue.
+  - **«Marcar como Enviada»**, **«Perdida»** y **«Descartada»** avisan a la Planilla de Ingreso en el mismo clic (Ofertado, No adjudicado o Descartado).
+  - **«Pasar a ejecución»** (oferta Adjudicada): un solo envío lleva los costos y la venta al Análisis Financiero y el aviso «Adjudicado» a la planilla. Antes eran tres acciones separadas. El proyecto del Análisis Financiero se propone por el N° de requerimiento.
 - **Define la utilidad junto al margen.** En *Utilidad y precio* se ingresa la utilidad de cada partida (% de recargo o monto fijo) y el margen y el precio cambian al escribir. Incluye *Recargo para todas* y *Llevar al margen objetivo*, que calcula el recargo que deja el margen exactamente en la meta, y los valores por partida listos para copiar a la cotización.
 - **Identifica cada proyecto** con código correlativo (`QPN-2026-001`), versión, cliente, ubicación, responsable, fecha y estado (Borrador, En revisión, Enviada, Adjudicada, Perdida, Descartada).
 - **Evalúa la oferta con un veredicto en cuatro preguntas** (¿es rentable?, ¿resiste sobrecostos?, ¿cabe en el presupuesto del mandante?, ¿los números están completos?) y los indicadores que las respaldan, con semáforos y metas: margen, utilidad por día-hombre, competitividad, holgura e incidencia de la mano de obra, y un simulador de sobrecostos por categoría. La *Guía de uso* explica cada paso y cada indicador.
@@ -26,7 +29,7 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
   - **N° de requerimiento** (paso 1): une el presupuesto con su requerimiento de la *Planilla de Ingreso*. La lista muestra los 20 últimos ingresados, del más nuevo al más antiguo; al escribir un N° o parte del título se suman los anteriores que calzan. Con la biblioteca conectada, la planilla se lee ahí mismo, al día (si no, la copia que publica el procesador cada 2 horas). «Completar desde la planilla» trae título, ubicación y presupuesto, y «Abrir la planilla» la abre en Excel para la web.
   - **Precios de referencia** (paso 3, botón **$** en materiales y equipos): lo que QUEMPIN pagó por productos parecidos, sin IVA y reajustado por UF (Cotizador Histórico).
   - **Sesgo real** (paso 5, simulador de sobrecostos): «Simular con el sesgo real» usa cuánto se desvió el gasto real del presupuesto en los proyectos terminados (Análisis Financiero).
-  - **Otras herramientas QUEMPIN** (paso 5): prepara la cotización en **Sistema QUEMPIN** (llega a «Borradores del Formulador», donde se revisa y se emite), envía la **venta** al Análisis Financiero, avisa a la **Planilla de Ingreso** el estado y el valor, y **registra la evaluación de costos** (tipo 81) en el Control de Documentos; el Excel exportado lleva ese número.
+  - **Otras herramientas QUEMPIN** (paso 5): prepara la cotización en **Sistema QUEMPIN** (llega a «Borradores del Formulador», donde se revisa y se emite), envía la **venta** al Análisis Financiero, avisa a la **Planilla de Ingreso** el estado y el valor, y **registra la evaluación de costos** (tipo 81) en el Control de Documentos: toma su número sola al elegir la carpeta de la oferta (una por versión, también la versión nueva que hereda la carpeta), y el Excel exportado lleva ese número.
 - **Comparte los proyectos con el equipo por esa misma carpeta** mientras no se use SharePoint: cada proyecto queda como un archivo en OneDrive y aparece en la lista de los demás equipos que la tengan conectada.
 - **Deja una copia en Excel en la carpeta de cada oferta** (desde el 2026-10-02): `Formulación <código> v<versión>.xlsx`, junto a los antecedentes de la oferta, y la mantiene al día sola mientras se trabaja. Es la misma exportación de *Exportar Excel*, con una nota de que es una copia automática. La carpeta se elige una vez por presupuesto: al crearlo («¿de qué oferta?») o desde el aviso del editor, que la sugiere por el N° de requerimiento.
 
@@ -40,7 +43,7 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
   git push
   ```
 - El sitio es público, igual que las demás herramientas QUEMPIN publicadas con GitHub Pages. **No contiene datos de proyectos**: esos viven en SharePoint, donde cada persona entra con su cuenta de QUEMPIN, o en el navegador de cada usuario y la carpeta compartida de OneDrive. Nunca se suben al repositorio archivos de la biblioteca.
-- Al abrirla pide **la misma contraseña que los Tableros Financieros** (ver `GATE_PASSWORD_NORM` en `index.html`). Los scripts de la herramienta se cargan recién después de pasarla. Es una barrera del lado del cliente, no seguridad real: solo disuade a quien reciba el link. El navegador la recuerda (`quempin_viz_unlocked` en `localStorage`), la misma marca que usan los tableros, así que quien ya entró a uno no la vuelve a escribir.
+- Al abrirla pide una contraseña (ver `GATE_PASSWORD_NORM` en `index.html`). Los scripts de la herramienta se cargan recién después de pasarla. Es una barrera del lado del cliente, no seguridad real: solo disuade a quien reciba el link (la página no lleva datos). El navegador la recuerda (`quempin_viz_unlocked` en `localStorage`). Hasta el 2026-10-05 era la misma de los Tableros Financieros; desde ese día los tableros usan otra, con sus datos cifrados (`quempin_viz_clave`), así que hoy son dos contraseñas distintas.
 
 También funciona abriendo `index.html` directamente desde el computador (doble clic). Para exportar e importar Excel se usa la copia local de la librería en `vendor/`, así que no necesita internet. Sin conexión solo cambian las tipografías.
 
@@ -77,7 +80,7 @@ En ambos modos, eliminar un proyecto lo envía a la **papelera** (*Más → Pape
 2. **Partidas** → agrega cada partida con su cantidad y unidad.
 3. **Costos** → en *Materiales*, *Equipos*, *Mano de obra* y *Otros* agrega los ítems, elige su partida e ingresa las cantidades **por unidad de partida**. En *Otros* puedes usar **Agregar desde catálogo**.
 4. **Utilidad y precio** → define la **utilidad** de cada partida (% o $) y copia los valores netos para la cotización.
-5. **Evaluación** → revisa el veredicto y corrige las alertas; luego **Exportar Excel**. Para una revisión de la oferta usa **⋯ → Crear nueva versión** (mismo código, v2, v3…). Si la oferta se adjudica, **Enviar costos…** los lleva al Análisis Financiero.
+5. **Evaluación** → revisa el veredicto y corrige las alertas. Abajo, **Qué sigue con esta oferta** dice la etapa y el botón siguiente: preparar la cotización en Sistema QUEMPIN, marcarla Enviada cuando sale al cliente y, si se adjudica, **Pasar a ejecución**. Para una revisión de la oferta usa **⋯ → Crear nueva versión** (mismo código, v2, v3…). **Exportar Excel** sigue arriba y al pie.
 
 Los valores con que parten los proyectos nuevos (IVA, tarifas y metas, y en modo local el prefijo del código) se cambian en **Configuración**, arriba a la derecha.
 
@@ -98,6 +101,7 @@ redirect.html           Página de retorno del ingreso con Microsoft
 js/excel.js             Exportación e importación (Excel y JSON)
 js/intercambio.js       Carpeta de intercambio con las demás herramientas QUEMPIN (Análisis Financiero)
 js/herramientas.js      Lo demás que se intercambia: requerimientos, precios, sesgo, cotización, venta, planilla, Control de Documentos
+js/flujo.js             Recorrido de la oferta (seis etapas) y qué sigue: solo calcula, app.js lo pinta
 js/esquemas.js          Validador del catálogo de mensajes (copia textual de Finanzas QUEMPIN/Sistema Intercambio/esquemas.js)
 js/busqueda.js          Buscador de precios (copia textual del de Cotizador Historico/Visualizador Web/busqueda.js)
 js/compartida.js        Proyectos compartidos con el equipo por esa carpeta (modo local)
