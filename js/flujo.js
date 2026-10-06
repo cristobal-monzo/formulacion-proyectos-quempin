@@ -48,6 +48,7 @@
     const pasos = ctx.pasos || [];
     const conError = pasos.find((x) => x.est === 'err');
     const sinHacer = pasos.find((x) => x.est === 'pend');
+    const conAviso = pasos.find((x) => x.est === 'warn');
     const borr = (v.sistemaQuempin || {}).ultimoBorrador || null;
     const estBorr = ctx.estadoBorrador || (borr && borr.estado) || (borr ? 'pendiente' : null);
     const emitidas = (ctx.cotizaciones || []).filter((c) => c && c.folio);
@@ -61,7 +62,7 @@
     return {
       p, estado, req: ctx.req || null,
       enFormulacion: EN_FORMULACION.includes(estado),
-      conError, sinHacer,
+      conError, sinHacer, conAviso,
       carpetaFalta: ctx.carpeta === false,
       cotizacion: {
         emitida: !!folio || estBorr === 'aplicado' || estBorr === 'sin-cambios',
@@ -79,7 +80,8 @@
     };
   }
 
-  /* La acción que sigue: { etapa, texto, corto, accion?, boton?, paso?, espera?, fin?, alternativas? }
+  /* La acción que sigue: { etapa, texto, corto, accion?, boton?, paso?, motivo?, espera?, fin?, alternativas? }
+     motivo (con 'ir-paso'): 'error' | 'pendiente' | 'aviso'
      accion: 'ir-req' | 'ir-paso' | 'oferta-elegir' | 'herr-cotizacion' | 'marcar-enviada' |
              'marcar-adjudicada' | 'marcar-perdida' | 'herr-planilla' | 'enviar-af' | 'herr-venta' | 'abrir-af' */
   function siguiente(h) {
@@ -90,12 +92,19 @@
     }
     if (h.enFormulacion) {
       if (h.conError) {
-        return { etapa: 'formulacion', accion: 'ir-paso', paso: h.conError.n, boton: `Corregir el paso ${h.conError.n}`, corto: 'Corregir errores',
+        return { etapa: 'formulacion', accion: 'ir-paso', paso: h.conError.n, motivo: 'error', boton: `Corregir el paso ${h.conError.n}`, corto: 'Corregir errores',
           texto: `La formulación tiene errores en el paso ${h.conError.n} (${h.conError.label}). ${h.conError.falta || ''}`.trim() };
       }
       if (h.sinHacer) {
-        return { etapa: 'formulacion', accion: 'ir-paso', paso: h.sinHacer.n, boton: `Ir al paso ${h.sinHacer.n}: ${h.sinHacer.label}`, corto: 'En formulación',
+        return { etapa: 'formulacion', accion: 'ir-paso', paso: h.sinHacer.n, motivo: 'pendiente', boton: `Ir al paso ${h.sinHacer.n}: ${h.sinHacer.label}`, corto: 'En formulación',
           texto: `Sigue la formulación en el paso ${h.sinHacer.n} (${h.sinHacer.label}). ${h.sinHacer.falta || ''}`.trim() };
+      }
+      // Un aviso (una partida sin utilidad…) no detiene la oferta, pero lo primero es revisarlo: la barra no
+      // puede decir «lista» con un paso marcado (2026-10-06). Se puede cotizar igual.
+      if (h.conAviso) {
+        return { etapa: 'formulacion', accion: 'ir-paso', paso: h.conAviso.n, motivo: 'aviso', boton: `Revisar el paso ${h.conAviso.n}`, corto: 'Revisar avisos',
+          alternativas: [{ accion: 'herr-cotizacion', boton: 'Preparar la cotización igual' }],
+          texto: `El paso ${h.conAviso.n} (${h.conAviso.label}) tiene avisos. ${h.conAviso.falta || ''} Revísalos antes de cotizar.`.replace(/\s+/g, ' ').trim() };
       }
       if (h.carpetaFalta) {
         return { etapa: 'formulacion', accion: 'oferta-elegir', boton: 'Elegir la carpeta de la oferta', corto: 'Elegir la carpeta',
@@ -172,7 +181,7 @@
   function etapas(h, sig) {
     const cerrada = h.estado === 'Perdida' || h.estado === 'Descartada';
     const c = h.cotizacion;
-    const formulada = !h.enFormulacion || (!h.conError && !h.sinHacer && !h.carpetaFalta);
+    const formulada = !h.enFormulacion || (!h.conError && !h.sinHacer && !h.conAviso && !h.carpetaFalta);
     const hecha = {
       requerimiento: !!h.req,
       formulacion: formulada,
@@ -183,7 +192,7 @@
     };
     const detalle = {
       requerimiento: h.req ? `N° ${h.req}` : 'Falta el N°',
-      formulacion: formulada ? 'Lista' : h.conError ? `Errores en el paso ${h.conError.n}` : h.sinHacer ? `Paso ${h.sinHacer.n} pendiente` : 'Falta la carpeta',
+      formulacion: formulada ? 'Lista' : h.conError ? `Errores en el paso ${h.conError.n}` : h.sinHacer ? `Paso ${h.sinHacer.n} pendiente` : h.conAviso ? `Avisos en el paso ${h.conAviso.n}` : 'Falta la carpeta',
       cotizacion: c.folio ? `N° ${c.folio}` : c.emitida ? 'Emitida' : c.enEspera ? 'En Sistema QUEMPIN' : c.descartada ? 'No se emitió' : h.enFormulacion ? 'Por preparar' : 'Sin registrar aquí',
       oferta: h.enFormulacion ? 'Por enviar' : h.estado,
       ejecucion: cerrada ? 'No aplica' : h.estado !== 'Adjudicada' ? 'Al adjudicarse' : h.af.cerrado ? 'Terminada' : h.af.enviado ? 'En curso' : 'Por traspasar',

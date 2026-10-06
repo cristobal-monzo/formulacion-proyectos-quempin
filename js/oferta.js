@@ -15,12 +15,16 @@
  * repositorio. Si la carpeta se mueve (a Presentadas, Adjudicadas o Cerradas), se la busca por su
  * nombre. Necesita la biblioteca completa conectada (js/intercambio.js la recuerda).
  *
- * Reglas que protegen los documentos reales (escribirExcel es la única función que escribe):
+ * Reglas que protegen los documentos reales (escribirExcel y crearCarpeta son las únicas funciones
+ * que escriben):
  *  - Solo se escriben archivos «Formulación … .xlsx», y solo dentro de una carpeta de oferta: las
  *    que cuelgan de la biblioteca o de sus carpetas «0 …», nunca las que empiezan con punto.
  *  - Un archivo que ya existe se reemplaza solo si es el Excel de este mismo presupuesto (su hoja
  *    oculta _datos trae el mismo identificador); si no, se usa «… (2).xlsx».
- *  - Nunca se elimina, mueve ni renombra nada, y no se crean carpetas.
+ *  - Carpetas: solo se crea una carpeta de oferta nueva («N°. Nombre», en la raíz de la biblioteca,
+ *    junto a las demás ofertas en curso) cuando una persona lo pide al crear un proyecto o elegir su
+ *    carpeta (pedido del usuario, 2026-10-06). Nunca se reemplaza ni se toca una que ya exista.
+ *  - Nunca se elimina, mueve ni renombra nada.
  * Con SharePoint configurado no hace nada: ahí cloud.js guarda el Excel junto al proyecto.
  */
 (function (root) {
@@ -150,6 +154,57 @@
     const d2 = await abrirRuta(bib, iguales[0].ruta);
     return d2 ? { dir: d2, ruta: iguales[0].ruta.slice(), movida: true } : null;
   }
+  /* Nombre de una carpeta de oferta nueva, validado contra las que ya hay (sin efectos: se prueba en
+     node). numero: N° de requerimiento de la planilla (opcional); titulo: nombre de la oferta.
+     Devuelve { nombre, numero, titulo, cambiado } o lanza un Error con el mensaje para la persona y,
+     si la carpeta ya existe, err.existente = esa carpeta (para ofrecer usarla). */
+  const RESERVADOS = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
+  const MAX_NOMBRE = 100;   // ruta completa corta: Excel no abre archivos con rutas de más de 218 caracteres
+  function nombreCarpetaNueva(numero, titulo, existentes) {
+    const n = String(numero === null || numero === undefined ? '' : numero).trim();
+    if (n && !/^\d{1,6}$/.test(n)) throw new Error('El N° debe ser un número, como en la Planilla de Ingreso (por ejemplo, 312).');
+    // Un N° que ya tiene carpeta se avisa apenas se escribe, antes que pedir el nombre
+    const lista = existentes || [];
+    const mismoNumero = n ? lista.find((c) => c.numero === n) : null;
+    if (mismoNumero) {
+      const e = new Error(`Ya existe la carpeta «${mismoNumero.nombre}» con el N° ${n}.`);
+      e.existente = mismoNumero;
+      throw e;
+    }
+    const original = nfc(titulo).replace(/\s+/g, ' ').trim();
+    const t = limpiarNombre(original);
+    if (!t) throw new Error('Escribe el nombre de la oferta.');
+    if (!n && (/^0 /.test(t) || /^[1-9] /.test(t))) throw new Error('Sin N°, el nombre no puede empezar con «0 », «1 », «2 »…: así se llaman las carpetas que agrupan ofertas.');
+    if (RESERVADOS.test(t)) throw new Error('Windows no permite ese nombre de carpeta: escribe otro.');
+    const nombre = (n ? `${n}. ${t}` : t).slice(0, MAX_NOMBRE).replace(/[\s.]+$/, '');
+    const k = nombre.toLowerCase();
+    const mismoNombre = lista.find((c) => nfc(c.nombre).toLowerCase() === k);
+    if (mismoNombre) {
+      const e = new Error(`Ya existe la carpeta «${mismoNombre.nombre}».`);
+      e.existente = mismoNombre;
+      throw e;
+    }
+    return { nombre, numero: n, titulo: t, cambiado: t !== original };
+  }
+  /* Crea la carpeta de oferta en la raíz de la biblioteca y la devuelve como las de la lista.
+     Nunca reutiliza ni toca una carpeta que ya exista (con cualquier forma de tildes o mayúsculas). */
+  async function crearCarpeta(numero, titulo) {
+    const bib = X() ? await X().biblioteca() : null;
+    if (!bib) throw new Error('Falta conectar la biblioteca «Formulación de proyectos - Documentos» (o darle permiso).');
+    const c = nombreCarpetaNueva(numero, titulo, await carpetasDe(bib, true));
+    const k = c.nombre.toLowerCase();
+    for await (const [m] of bib.entries()) {
+      if (nfc(m).toLowerCase() === k) throw new Error(`Ya existe «${m}» en la biblioteca.`);
+    }
+    try { await bib.getDirectoryHandle(c.nombre, { create: true }); } catch (err) {
+      const n = err && err.name;
+      if (n === 'NotAllowedError' || n === 'SecurityError') throw new Error('El navegador no tiene permiso para crear carpetas en la biblioteca.');
+      throw new Error(`No se pudo crear la carpeta: ${(err && err.message) || err}`);
+    }
+    lista = null;   // la próxima lectura la incluye
+    return { id: c.nombre, nombre: c.nombre, numero: c.numero, titulo: c.titulo, grupo: 'En curso', ruta: [c.nombre], nueva: true };
+  }
+
   /* Carpetas cuyo N° es el del requerimiento del presupuesto (la sugerencia al elegir). */
   async function sugerencias(p) {
     const H = root.QHerramientas;
@@ -168,7 +223,7 @@
     const bib = X() ? await X().biblioteca() : null;
     if (!bib) throw new Error('Falta conectar la biblioteca «Formulación de proyectos - Documentos» (o darle permiso).');
     const v = vinculo(p);
-    if (!v) throw new Error('El presupuesto no tiene carpeta de oferta.');
+    if (!v) throw new Error('El proyecto no tiene carpeta de oferta.');
     const u = await ubicar(bib, v);
     if (!u) throw new Error(`No se encuentra la carpeta «${v.nombre}» en la biblioteca. Si le cambiaron el nombre, vuelve a elegirla.`);
     const datos = await root.QExcel.exportProject(p, { soloDatos: true, copiaOferta: true });
@@ -313,7 +368,7 @@
      Devuelve lo escrito o lanza el error. */
   async function guardar(uid) {
     const p = S().get(uid);
-    if (!p || !vinculo(p)) throw new Error('El presupuesto no tiene carpeta de oferta.');
+    if (!p || !vinculo(p)) throw new Error('El proyecto no tiene carpeta de oferta.');
     marcar(uid, p.modificado);
     await guardarPendientes({ forzar: true });
     const err = errores.get(uid);
@@ -351,6 +406,7 @@
 
   const api = {
     grupoDe, numeroDe, grupoDeRuta, rutaValida, vinculo, nuevoVinculo, nombreBase, candidatos, listar, ubicar,
+    nombreCarpetaNueva, crearCarpeta,
     activa, carpetas, sugerencias, info, guardar, guardarPendientes, iniciar,
     _tiempos: (o) => Object.assign(T, o || {}), _estado: leerEstado, _escribirExcel: escribirExcel
   };

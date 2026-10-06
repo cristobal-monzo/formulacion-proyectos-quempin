@@ -84,7 +84,9 @@
     login: svg('<path d="M14 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M9 16l4-4-4-4M13 12H3"/>'),
     logout: svg('<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/>'),
     restore: svg('<path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/>'),
-    enviar: svg('<path d="M21 3L3 10.5l7 3 3 7.5z"/><path d="M21 3L10 13.5"/>')
+    enviar: svg('<path d="M21 3L3 10.5l7 3 3 7.5z"/><path d="M21 3L10 13.5"/>'),
+    chart: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+    monitor: svg('<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/>')
   };
 
   // ---------------------------------------------------------------------------
@@ -127,7 +129,9 @@
     { id: 'manoObra', label: 'Mano de obra', list: 'manoObra', paso: 3 },
     { id: 'otros', label: 'Otros', list: 'otros', paso: 3 },
     { id: 'resumen', label: 'Utilidad y precio', paso: 4 },
-    { id: 'evaluacion', label: 'Evaluación', paso: 5 }
+    { id: 'evaluacion', label: 'Evaluación', paso: 5 },
+    // Después de formular: la cotización, la oferta y la ejecución (2026-10-06)
+    { id: 'seguimiento', label: 'Seguimiento', paso: 6 }
   ];
   const COSTOS = ['materiales', 'equipos', 'manoObra', 'otros'];
   const PASOS = [
@@ -150,7 +154,8 @@
     manoObra: 'Personas y días por nivel para ejecutar una unidad de la partida.',
     otros: 'Traslados, viáticos y otros gastos por unidad de partida.',
     resumen: 'Define la utilidad de cada partida y copia los valores para la cotización.',
-    evaluacion: '¿Conviene enviar la oferta? Rentabilidad, riesgo y presupuesto del mandante.'
+    evaluacion: '¿Conviene enviar la oferta? Rentabilidad, riesgo y presupuesto del mandante.',
+    seguimiento: 'Lo que pasa después de formular: la cotización, el envío al cliente, la adjudicación y la ejecución. Cada etapa dice en qué herramienta se hace, en qué va y qué sigue.'
   };
 
   /* Categorías de costo en los gráficos: colores oficiales y, cuando se acaban,
@@ -173,6 +178,7 @@
     'Descartada': { cls: 'eb-descartada', desc: 'No se presentó la oferta' }
   };
   const EN_CURSO = ['Borrador', 'En revisión', 'Enviada'];
+  const EN_FORMULACION = ['Borrador', 'En revisión'];   // los demás estados ya salieron de la formulación
 
   const UNIDAD_NOMBRE = { 'Un.': 'Unidad', kg: 'Kilogramo', m: 'Metro lineal', m2: 'Metro cuadrado', m3: 'Metro cúbico', gl: 'Global', km: 'Kilómetro', 'día': 'Día', hr: 'Hora', lt: 'Litro', noche: 'Noche' };
 
@@ -236,6 +242,7 @@
       };
       dlg.returnValue = '';
       dlg.addEventListener('close', onClose);
+      dlg.dataset.ruta = location.hash;   // route() lo cierra si se navega a otra página
       dlg.showModal();
       const primary = dlg.querySelector('.btn-primario') || dlg.querySelector('.modal-foot .btn');
       const firstInput = dlg.querySelector('.modal-body input, .modal-body select');
@@ -303,6 +310,7 @@
     renderPopList();
     pop.hidden = false;
     pop.style.minWidth = Math.max(o.minWidth || 220, anchor.getBoundingClientRect().width) + 'px';
+    $('.pop-list', pop).style.maxHeight = o.alto ? `min(${o.alto}px, calc(100vh - 120px))` : '';
     positionPop();
     const s = $('.pop-search input', pop);
     if (o.noFocus) return;   // lista de un campo de texto mientras se escribe: el foco sigue en el campo
@@ -323,7 +331,7 @@
     list.innerHTML = vis.length ? vis.map(({ it, i }) => {
       if (it.sep) return '<div class="pop-sep" role="separator"></div>';
       if (it.head) return `<div class="pop-head" role="presentation">${esc(it.head)}</div>`;
-      return `<button type="button" class="pop-item ${it.danger ? 'danger' : ''}" role="${role}" data-pi="${i}" ${it.disabled ? 'disabled' : ''} ${P.kind === 'menu' ? '' : `aria-selected="${!!it.selected}"`}>
+      return `<button type="button" class="pop-item ${it.danger ? 'danger' : ''} ${it.cls || ''}" role="${role}" data-pi="${i}" ${it.disabled ? 'disabled' : ''} ${it.actual ? 'aria-current="page"' : ''} ${P.kind === 'menu' ? '' : `aria-selected="${!!it.selected}"`}>
         ${P.kind === 'menu' ? '' : `<span class="check" aria-hidden="true">${it.selected ? '✓' : ''}</span>`}
         ${it.lead || it.icon || ''}
         <span class="pi-main"><span class="pi-title">${esc(it.title)}</span>${it.desc ? `<span class="pi-desc">${esc(it.desc)}</span>` : ''}</span>
@@ -371,7 +379,18 @@
     else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
   }, true);
   window.addEventListener('resize', () => closePop());
-  document.addEventListener('scroll', (e) => { if (P && !(e.target.closest && e.target.closest('.pop'))) closePop(); }, true);
+  // Al desplazarse lo que contiene la lista (la página, un diálogo, una tabla), la lista sigue a su campo,
+  // y se cierra solo si el campo sale de la vista. Antes se cerraba con cualquier desplazamiento: también
+  // con el ajuste que hace el navegador cuando aparece un aviso más arriba, o con el carrusel de la barra
+  // del recorrido, y la lista se cerraba sola.
+  document.addEventListener('scroll', (e) => {
+    if (!P) return;
+    const t = e.target;
+    if (t.closest && t.closest('.pop')) return;
+    if (!(t === document || t === document.documentElement || !t.contains || t.contains(P.anchor))) return;
+    const r = P.anchor.getBoundingClientRect();
+    if (!document.contains(P.anchor) || r.bottom < 0 || r.top > window.innerHeight) closePop(); else positionPop();
+  }, true);
 
   /* Campos de texto con lista propia, en vez de <datalist>: esa lista la dibuja cada navegador
      a su manera, sin los colores ni la letra del Formulador, y no admite estilos. La lista se
@@ -443,6 +462,26 @@
         { sep: true },
         { icon: ICON.trash, title: enEditor ? 'Eliminar proyecto' : 'Eliminar', act: 'eliminar', id, danger: true }
       ].filter(Boolean);
+    } else if (key === 'herramientas') {
+      // Las herramientas del recorrido, en el orden de sus etapas; dentro de un proyecto, el Análisis
+      // Financiero abre la ficha de ese proyecto (pedido del usuario, 2026-10-06: herramientas conectadas)
+      const p = state.project;
+      const web = (window.QPN_M365 || {}).planillaWeb;
+      const vAF = p ? vinculoAF(p) : null;
+      items = [
+        { head: 'El recorrido de un proyecto' },
+        web ? { icon: ICON.sheet, title: 'Planilla de Ingreso', desc: 'Etapa 1 · el N° de cada requerimiento (Excel para la web)', act: 'abrir-url', url: web } : null,
+        { icon: ICON.layers, title: 'Formulador', desc: p ? `Etapas 2 y 4 · ${p.codigo || 'este proyecto'} v${p.version}` : 'Etapas 2 y 4 · formulación y seguimiento', right: 'Estás aquí', disabled: true, actual: true, cls: 'actual' },
+        { icon: ICON.monitor, title: 'Sistema QUEMPIN', desc: 'Etapa 3 · emite la cotización (programa del computador)', act: 'info-sistema' },
+        { icon: ICON.chart, title: 'Análisis Financiero', desc: vAF ? `Etapas 5 y 6 · abre la ficha de ${vAF.tag}` : 'Etapas 5 y 6 · ejecución y cierre de cada proyecto', act: 'abrir-url', url: p ? enlaceAF(p) : TABLERO_AF },
+        { sep: true },
+        { head: 'Otros tableros' },
+        { icon: ICON.chart, title: 'Centro de Costos', desc: 'Gasto real por proyecto, categoría y proveedor', act: 'abrir-url', url: TABLEROS + 'centro-de-costos/' },
+        { icon: ICON.chart, title: 'Flujo de Caja', desc: 'Lo pagado, lo comprometido y lo por cobrar, mes a mes', act: 'abrir-url', url: TABLEROS + 'flujo-de-caja/' },
+        { icon: ICON.chart, title: 'Cotizador Histórico', desc: 'Lo que QUEMPIN pagó antes por cada material', act: 'abrir-url', url: TABLEROS + 'cotizador-historico/' },
+        { icon: ICON.open, title: 'Todas las herramientas', desc: 'El índice de las herramientas QUEMPIN', act: 'abrir-url', url: TABLEROS }
+      ].filter(Boolean);
+      extra = { minWidth: 340, alto: 600 };
     } else if (key === 'cuenta') {
       const u = S.getUser() || {};
       const c = window.QCloud.info();
@@ -495,7 +534,7 @@
       kind: 'menu', align: btn.dataset.align || 'right', label: btn.getAttribute('aria-label') || btn.textContent.trim(), items,
       onPick: (it) => {
         if (it.catIdx !== undefined) addFromCatalog(it.catIdx);
-        else if (it.act) doAct(it.act, { id: it.id, tab: it.tab, uid: it.uid, list: it.list, dir: it.dir });
+        else if (it.act) doAct(it.act, { id: it.id, tab: it.tab, uid: it.uid, list: it.list, dir: it.dir, url: it.url });
       }
     }, extra));
   }
@@ -729,9 +768,15 @@
     // Al salir de un presupuesto, su Excel de la carpeta de la oferta se pone al día de inmediato
     if (state.project && ofertaActiva()) QO().guardarPendientes();
     closePop();
+    // Un diálogo abierto en otra página se cierra al navegar (Atrás del navegador, un enlace): no queda
+    // «Nuevo proyecto» encima de otro proyecto. El que una acción abre justo después de navegar ya
+    // tiene la ruta nueva y sigue abierto.
+    const dlg = $('#modal');
+    if (dlg.open && dlg.dataset.ruta !== location.hash) dlg.close('');
     const parts = location.hash.replace(/^#\/?/, '').split('/');
     if (nube.activa && !nube.lista && parts[0] !== 'guia') { state.project = null; renderNube(); return; }
     let where = 'lista';
+    if (parts[0] !== 'req' && parts[0] !== 'tag') state.avisoLista = null;
     if (parts[0] === 'p' && parts[1]) {
       const p = S.get(parts[1]);
       if (!p) { toast('No se encontró el proyecto.', true); location.hash = '#/'; return; }
@@ -742,6 +787,17 @@
       where = 'guia';
       state.project = null;
       renderGuide();
+    } else if ((parts[0] === 'req' || parts[0] === 'tag') && parts[1]) {
+      // Enlace desde otra herramienta (Sistema QUEMPIN, tablero de Análisis Financiero): abre el proyecto
+      // de ese N° de requerimiento o TAG donde está lo que sigue; si no está aquí, la lista lo busca
+      const tipo = parts[0], clave = decodeURIComponent(parts[1]);
+      const ps = proyectosPor(tipo, clave);
+      const codigos = new Set(ps.map((x) => x.codigo));
+      if (ps.length && codigos.size === 1) { location.replace(`#/p/${ps[0].uid}/${destinoDe(ps[0])}`); return; }
+      state.project = null;
+      state.list.q = clave;
+      state.avisoLista = { tipo, clave, n: ps.length };
+      renderList();
     } else if (parts[0] === 'papelera') {
       state.project = null;
       renderPapelera();
@@ -767,11 +823,12 @@
       <a class="viz-modnav-tab ${where === 'guia' ? 'is-active' : ''}" href="#/guia" ${where === 'guia' ? 'aria-current="page"' : ''}>Guía de uso</a>`;
     const sub = $('#hdr-sub');
     if (where === 'guia') sub.textContent = 'Cómo formular un proyecto y leer su evaluación';
-    else if (where === 'lista') sub.textContent = 'Costos, precio y evaluación de ofertas por partida';
+    else if (where === 'lista') sub.textContent = SUBTITULO;
     if (p) updateHeader();
   }
 
   function goProject(p, tab) { location.hash = `#/p/${p.uid}/${tab || 'ficha'}`; }
+  const SUBTITULO = 'Formulación y seguimiento de cada oferta, de la planilla a la ejecución';
 
   // ---------------------------------------------------------------------------
   //  LISTADO DE PROYECTOS
@@ -787,8 +844,8 @@
     app.innerHTML = `<div class="viz-container page">
       <div class="page-head">
         <div>
-          <h2>Proyectos formulados</h2>
-          <p>Abre un proyecto para seguir formulándolo o crea uno nuevo.</p>
+          <h2>Proyectos</h2>
+          <p>${all.length ? 'Ábrelo para seguir donde quedó: bajo su estado dice qué sigue.' : 'Aquí se crean los proyectos de QUEMPIN y se siguen de la formulación a la ejecución.'}</p>
           <p class="compartida-linea" id="compartida-linea" hidden></p>
         </div>
         ${all.length ? `<div class="actions">
@@ -797,6 +854,7 @@
           <button class="btn" data-menu="list-more" aria-haspopup="menu" aria-expanded="false" aria-label="Más acciones">${ICON.more}Más${ICON.caret}</button>
         </div>` : ''}
       </div>
+      ${avisoEnlace()}
       <div id="compartida"></div>
       ${all.length ? `
         <div class="kpis" id="list-kpis"></div>
@@ -840,16 +898,11 @@
       ${enSP() ? '' : card(ICON.sparkle, 'Proyecto de ejemplo', 'Tres partidas de medidores de gas natural con los datos del Excel original, para ver cómo funciona.', `<button class="btn" data-act="ejemplo">Cargar ejemplo</button>`)}
       ${card(ICON.upload, 'Importar archivo', enSP() ? 'Un Excel de formulación antiguo (.xlsm) o un proyecto exportado desde aquí (.xlsx o .json). Se guarda en la carpeta de la oferta que elijas.' : 'Un proyecto exportado desde aquí (.xlsx o .json) o un Excel de formulación antiguo (.xlsm).', `<button class="btn" data-act="importar">Importar archivo</button>`)}
     </div>
-    <section class="section">
-      <div class="section-head"><h3 class="seccion-titulo">Cómo se formula un proyecto</h3><a href="#/guia">Guía de uso</a></div>
-      <ol class="pasos-mini">
-        <li><b>Datos</b><span>Título, cliente y parámetros</span></li>
-        <li><b>Partidas</b><span>En qué se divide el trabajo</span></li>
-        <li><b>Costos</b><span>Materiales, equipos, mano de obra y otros</span></li>
-        <li><b>Utilidad y precio</b><span>Valores para la cotización</span></li>
-        <li><b>Evaluación</b><span>¿Conviene enviar la oferta?</span></li>
-      </ol>
-    </section>`;
+    ${QF() ? `<section class="section">
+      <div class="section-head"><h3 class="seccion-titulo">Cómo avanza un proyecto</h3><a href="#/guia">Guía de uso</a></div>
+      <p class="pasos-mini-intro">Seis etapas, cada una en su herramienta. El Formulador te acompaña en todas: al abrir un proyecto, la barra de arriba dice en qué etapa va y qué sigue.</p>
+      <ol class="pasos-mini seis">${QF().ETAPAS.map((e) => `<li class="${e.id === 'formulacion' || e.id === 'oferta' ? 'aqui' : ''}"><b>${esc(e.titulo)}</b><span class="pm-donde">${esc(e.donde)}</span><span>${esc(e.id === 'formulacion' ? 'Costos, precio y evaluación en 5 pasos: datos, partidas, costos, utilidad y precio, y evaluación.' : e.hace)}</span></li>`).join('')}</ol>
+    </section>` : ''}`;
   }
 
   function listFiltered() {
@@ -859,7 +912,25 @@
       .filter((p) => !L.estado || p.estado === L.estado)
       .filter((p) => !L.resp || (p.responsable || '').trim() === L.resp)
       .filter((p) => !L.mes || mesIngreso(p) === L.mes)
-      .filter((p) => !q || norm([p.codigo, p.titulo, p.cliente, p.responsable, p.ubicacion, enSP() ? (window.QCloud.ubicacion(p.uid) || {}).ruta : ''].join(' ')).includes(q));
+      .filter((p) => !q || norm([p.codigo, p.titulo, p.cliente, p.responsable, p.ubicacion, QH() ? QH().reqDe(p) : '', (vinculoAF(p) || {}).tag,
+        enSP() ? (window.QCloud.ubicacion(p.uid) || {}).ruta : ''].join(' ')).includes(q));
+  }
+  /* Proyectos de un N° de requerimiento o de un TAG del Análisis Financiero, del más nuevo al más viejo
+     (versión más alta y, a igual versión, el último modificado). */
+  function proyectosPor(tipo, clave) {
+    const k = String(clave || '').trim();
+    return S.all().filter((p) => (tipo === 'req' ? (QH() && QH().reqDe(p)) === k : ((vinculoAF(p) || {}).tag || '') === k.toUpperCase()))
+      .sort((a, b) => (parseInt(b.version, 10) || 0) - (parseInt(a.version, 10) || 0) || String(b.modificado || '').localeCompare(String(a.modificado || '')));
+  }
+  /* Aviso de la lista cuando se llegó desde otra herramienta: cuántos proyectos hay con esa clave, o
+     cómo crear el de ese requerimiento si no hay ninguno. */
+  function avisoEnlace() {
+    const a = state.avisoLista;
+    if (!a) return '';
+    const que = a.tipo === 'req' ? `el N° de requerimiento <b>${esc(a.clave)}</b>` : `el proyecto <b>${esc(a.clave)}</b> del Análisis Financiero`;
+    if (a.n > 1) return `<div class="nota" role="status"><span>Llegaste desde otra herramienta: hay ${a.n} proyectos con ${que}. Elige cuál abrir.</span><span class="actions"><button type="button" class="btn btn-ghost btn-sm" data-act="limpiar-filtros">Ver todos</button></span></div>`;
+    const crear = a.tipo === 'req' ? `<button type="button" class="btn btn-primario btn-sm" data-act="nuevo" data-buscar="${esc(a.clave)}">${ICON.plus}Crear el proyecto del N° ${esc(a.clave)}</button>` : '';
+    return `<div class="nota" role="status"><span>Llegaste desde otra herramienta, pero en este navegador todavía no hay un proyecto con ${que}.${compartiendo() ? ' Si lo formuló un colega, aparece cuando llegue de la carpeta del equipo.' : ''}</span><span class="actions">${crear}<button type="button" class="btn btn-ghost btn-sm" data-act="limpiar-filtros">Ver todos</button></span></div>`;
   }
 
   function refreshList() {
@@ -970,7 +1041,7 @@
       const nAlert = r.warnings.filter((w) => w.level !== 'info').length;
       const nErr = r.warnings.filter((w) => w.level === 'error').length;
       const s = (recorridoDe(p, r) || {}).siguiente;
-      return `<tr class="clickable" data-open="${p.uid}" tabindex="0" aria-label="Abrir ${esc(p.codigo)} ${esc(p.titulo || 'Sin título')}">
+      return `<tr class="clickable" data-open="${p.uid}" data-destino="${destinoDe(p, r)}" tabindex="0" aria-label="Abrir ${esc(p.codigo)} ${esc(p.titulo || 'Sin título')}${s ? `. ${esc(s.corto)}` : ''}">
         <td class="nowrap code"><span class="code-badge">${esc(p.codigo || '—')}</span><span class="ver">v${esc(p.version)}</span></td>
         <td class="col-titulo" style="min-width:240px"><div class="proj-title">${esc(p.titulo || 'Sin título')}</div><div class="proj-sub">${esc([p.cliente, p.ubicacion].filter(Boolean).join(' · ') || '—')}</div>${carpetaCorta(p)}${aqui.has(p.uid) ? '<span class="chip warn solo-aqui" title="No está en la carpeta del equipo">Solo en este navegador</span>' : ''}</td>
         <td data-label="Responsable">${esc(p.responsable || '—')}</td>
@@ -1017,9 +1088,10 @@
             <span class="en-vivo ${textoGuardado()[1]}" id="save-state">${textoGuardado()[0]}</span>
           </div>
         </div>
+        <div id="ed-recorrido"></div>
+        <div id="ed-estado"></div>
         <div id="ed-compartida"></div>
         <div id="ed-oferta"></div>
-        <div id="ed-sigue"></div>
       </div>
       <div class="barra-pestanas">
         <div class="viz-container barra-pestanas-interior">
@@ -1061,7 +1133,7 @@
       ${p.cliente ? `${sep}<span>${esc(p.cliente)}</span>` : ''}${p.responsable ? `${sep}<span>${esc(p.responsable)}</span>` : ''}${p.fecha ? `${sep}<span>${esc(fechaCorta(p.fecha))}</span>` : ''}${metaCarpeta(p, sep)}`;
     document.title = `${p.codigo || ''} ${p.titulo || 'Proyecto'} — Formulación QUEMPIN`;
     const sub = $('#hdr-sub');
-    if (sub) sub.textContent = 'Costos, precio y evaluación de ofertas por partida';
+    if (sub) sub.textContent = SUBTITULO;
     const mn = $('#modnav-proj');
     if (mn) {
       mn.href = `#/p/${p.uid}/${state.tab}`;
@@ -1133,7 +1205,7 @@
           aria-label="Paso ${ps.n}: ${esc(ps.label)}${ps.n === 2 ? ` (${plural(ps.cant, 'partida')})` : ps.n === 3 ? ` (${plural(ps.cant, 'costo')})` : ''}, ${EST[ps.est]}">
           <span class="paso-marca" aria-hidden="true">${marca}</span><span class="paso-l">${esc(ps.label)}</span>${ps.n === 2 || ps.n === 3 ? `<span class="count" aria-hidden="true">${ps.cant}</span>` : ''}
         </button>`;
-    }).join('<span class="paso-sep" aria-hidden="true"></span>');
+    }).join('<span class="paso-sep" aria-hidden="true"></span>') + pestanaSeguimiento();
     // En pantallas angostas la barra se desplaza: mantener visible el paso activo
     const act = $('.paso-tab.active', el);
     if (act && el.scrollWidth > el.clientWidth) {
@@ -1143,14 +1215,28 @@
     }
   }
 
+  /* Pestaña «Seguimiento», después de los 5 pasos: lo que sigue con la oferta en las demás herramientas.
+     Se marca cuando hay algo que hacer ahí. */
+  function pestanaSeguimiento() {
+    const on = state.tab === 'seguimiento';
+    const rec = recorridoDe(state.project);
+    const s = rec && rec.siguiente;
+    const e = rec && rec.etapas[rec.actual];
+    const atencion = !!s && !!s.accion && s.accion !== 'ir-paso' && s.accion !== 'ir-req';
+    return `<span class="paso-sep paso-sep-seg" aria-hidden="true"></span><button type="button" class="paso-tab paso-seg ${on ? 'active' : ''} ${atencion ? 'atencion' : ''}" data-act="tab" data-tab="seguimiento" ${on ? 'aria-current="page"' : ''}
+        aria-label="Seguimiento después de formular${e ? `: etapa ${e.n} de 6, ${esc(e.titulo)}` : ''}${atencion ? ', con algo que hacer' : ''}">
+        <span class="paso-marca" aria-hidden="true">${ICON.arrow}</span><span class="paso-l">Seguimiento</span>${atencion ? '<span class="paso-aviso" aria-hidden="true"></span>' : ''}
+      </button>`;
+  }
+
   /* Encabezado de cada paso: número, título, para qué sirve (una frase) y ayuda desplegable */
   function pasoHead(tab, ayuda, rotulo) {
     const t = tabInfo(tab);
-    const titulo = t.paso === 3 ? 'Costos' : t.label;
+    const titulo = t.paso === 3 ? 'Costos' : tab === 'seguimiento' ? 'Seguimiento del proyecto' : t.label;
     const k = 'ayuda-' + tab;
     return `<div class="paso-head">
         <div class="paso-head-txt">
-          <h3 class="paso-titulo"><span class="paso-num">Paso ${t.paso} de ${PASOS.length}</span>${esc(titulo)}</h3>
+          <h3 class="paso-titulo"><span class="paso-num">${tab === 'seguimiento' ? 'Después de formular' : `Paso ${t.paso} de ${PASOS.length}`}</span>${esc(titulo)}</h3>
           <p class="paso-proposito">${esc(PROPOSITO[tab])}</p>
         </div>
         ${ayuda ? `<details class="ayuda no-print" data-open-key="${k}" ${state.abiertos.has(k) ? 'open' : ''}>
@@ -1167,10 +1253,10 @@
     // En partidas y costos la acción principal es «Agregar»; en los demás pasos, avanzar
     const principal = !(tab === 'partidas' || COSTOS.includes(tab));
     // Al final del paso 5 la formulación termina: el botón principal es lo que sigue con la oferta
-    // (cotizar, enviarla, pasarla a ejecución…), y el Excel queda al lado (pieSigue).
-    const sig = next
-      ? `<button type="button" class="btn ${principal ? 'btn-primario' : 'btn-sig'}" data-act="tab" data-tab="${next}">Siguiente: ${esc(nombre(next))}${ICON.arrow}</button>`
-      : `<span class="paso-pie-fin" id="pie-sigue">${pieSigue(siguienteAccion())}</span>`;
+    // (cotizar, enviarla, pasarla a ejecución…) o el seguimiento; en el seguimiento, lo que sigue (pieSigue).
+    const sig = tab === 'evaluacion' || tab === 'seguimiento'
+      ? `<span class="paso-pie-fin" id="pie-sigue">${pieSigue(siguienteAccion())}</span>`
+      : `<button type="button" class="btn ${principal ? 'btn-primario' : 'btn-sig'}" data-act="tab" data-tab="${next}">Siguiente: ${esc(nombre(next))}${ICON.arrow}</button>`;
     return `<nav class="paso-pie no-print" aria-label="Pasos">
         ${prev ? `<button type="button" class="btn btn-ghost" data-act="tab" data-tab="${prev}">← ${esc(nombre(prev))}</button>` : '<span></span>'}
         <span class="paso-falta" id="paso-falta" role="status"></span>
@@ -1181,7 +1267,8 @@
     const el = $('#paso-falta');
     if (!el) return;
     const tab = state.tab;
-    let falta = estadoPasos()[tabInfo(tab).paso - 1].falta;
+    const ps = estadoPasos()[tabInfo(tab).paso - 1];
+    let falta = ps ? ps.falta : '';
     if (COSTOS.includes(tab)) {
       const e = state.result.warnings.filter((w) => w.tab === tab && w.level === 'error').length;
       falta = e ? `${plural(e, 'costo')} sin partida: no se ${e === 1 ? 'suma' : 'suman'} al precio.` : '';
@@ -1213,12 +1300,15 @@
     else if (tab === 'manoObra') html = viewManoObra();
     else if (DETALLE[tab]) html = viewDetalle(tab);
     else if (tab === 'resumen') html = viewResumen();
+    else if (tab === 'seguimiento') html = viewSeguimiento();
     else html = viewEvaluacion();
     body.innerHTML = html + (state.imprimir ? '' : pasoNav(tab));
     history.replaceState(null, '', `#/p/${state.project.uid}/${tab}`);
     updateCalc();
     if (tab === 'ficha') { updateCodigoHint(); pintarRequerimiento(); }
-    if (tab === 'evaluacion' && !state.imprimir) { pintarPanelAF(); actualizarEstadoAF(state.project, false); pintarSesgo(); pintarHerramientas(); }
+    pintarAvisoEstado();
+    if (tab === 'evaluacion' && !state.imprimir) pintarSesgo();
+    if (tab === 'seguimiento') { pintarRecorrido(recorridoDe(state.project)); actualizarEstadoAF(state.project, false); pintarHerramientas(); }
     if (focusKey) {
       const el = $(focusKey, body);
       if (el) { el.focus(); if (el.select && el.type !== 'number' && el.tagName === 'INPUT') el.select(); }
@@ -1297,6 +1387,7 @@
         <section class="panel">
           <h4 class="seccion-titulo">Identificación</h4>
           <div class="fila-campos">
+            ${campoRequerimiento(p)}
             ${fInput('titulo', 'Título del proyecto', { cls: 'ancho', placeholder: 'Ej.: Instalación de medidores de gas natural' })}
             ${fInput('cliente', 'Cliente / mandante')}
             ${fInput('ubicacion', 'Ubicación')}
@@ -1304,7 +1395,6 @@
             ${fInput('fecha', 'Fecha de formulación', { type: 'date' })}
             ${fInput('codigo', 'Código', { hint: ' ', hintId: 'codigo-hint' })}
             ${fInput('version', 'Versión', { type: 'num' })}
-            ${campoRequerimiento(p)}
             <div class="campo ancho"><label for="f-descripcion">Descripción / alcance <span class="opc">(opcional)</span></label>
               <textarea class="textarea" id="f-descripcion" data-f="descripcion" rows="3">${esc(p.descripcion)}</textarea></div>
           </div>
@@ -1646,12 +1736,17 @@
           </div>
           <div id="res-partidas" style="margin-top:12px"></div>
         </details>
-      </section>
+      </section>`;
+  }
 
-      <section class="section no-print" id="que-sigue">
-        <div class="section-head"><h4 class="seccion-titulo">Qué sigue con esta oferta</h4><p>En qué etapa va, qué hace cada herramienta y el paso siguiente, sin copiar a mano.</p></div>
+  // ---- Seguimiento: lo que sigue después de formular ------------------------------------------
+  function viewSeguimiento() {
+    const ayuda = `<p>Un proyecto recorre seis etapas, las mismas de la guía del equipo: requerimiento, formulación, cotización, oferta y adjudicación, ejecución y cierre.
+        Cada una se hace en una herramienta; aquí se ve en qué va cada una y el botón con lo que sigue.</p>
+      <p>Las herramientas se pasan los datos por la carpeta del equipo, sin copiar a mano: la cotización llega a Sistema QUEMPIN, el estado a la Planilla de Ingreso y los costos y la venta al Análisis Financiero.</p>`;
+    return `${pasoHead('seguimiento', ayuda, 'Cómo funciona')}
+      <section class="section section-first no-print" id="que-sigue">
         <div class="recorrido" id="recorrido"></div>
-        <div class="panel herr-panel" id="herr-panel"><p class="af-linea">Revisando la carpeta del equipo…</p></div>
       </section>`;
   }
 
@@ -1973,15 +2068,15 @@
       <section>
         <div class="section-head"><h3 class="seccion-titulo">Paso a paso</h3><p>Los mismos pasos que ves arriba al abrir un proyecto.</p></div>
         <ol class="guia-pasos">
-          ${paso(1, 'Datos del proyecto', 'Escribe el título, el cliente y el responsable. Si conoces el presupuesto del mandante, ingrésalo: la evaluación dirá si la oferta cabe.', 'los parámetros (IVA, tarifas, metas) ya vienen con los valores habituales; ábrelos solo si este proyecto es distinto.')}
+          ${paso(1, 'Datos del proyecto', 'Al crear el proyecto eliges la carpeta de su oferta, o la creas ahí mismo con «Crear nueva carpeta»: con el N° de la Planilla de Ingreso, el proyecto trae su título, su ubicación y el presupuesto del mandante. Completa el cliente y el responsable.', 'los parámetros (IVA, tarifas, metas) ya vienen con los valores habituales; ábrelos solo si este proyecto es distinto.')}
           ${paso(2, 'Partidas', 'Divide el trabajo en partidas con su unidad y cantidad, por ejemplo «3 medidores de 2"».', 'una partida por cada ítem que irá en la cotización.')}
           ${paso(3, 'Costos', 'En Materiales, Equipos, Mano de obra y Otros ingresa lo que necesita <b>una</b> unidad de la partida y elige a qué partida pertenece. La herramienta multiplica por la cantidad.', 'un costo sin partida no se suma al precio: la herramienta lo marca en rojo.')}
           ${paso(4, 'Utilidad y precio', 'Define la utilidad de cada partida (% de recargo o monto fijo) y copia los valores netos para la cotización.', '«Llevar al margen objetivo» calcula el recargo que deja el margen justo en la meta.')}
-          ${paso(5, 'Evaluación', 'Responde cuatro preguntas: ¿es rentable?, ¿resiste sobrecostos?, ¿cabe en el presupuesto?, ¿los números están completos?', 'si todo está en verde, sigue «Qué sigue con esta oferta», al pie del paso: prepara la cotización en Sistema QUEMPIN y, cuando salga al cliente, márcala Enviada.')}
+          ${paso(5, 'Evaluación', 'Responde cuatro preguntas: ¿es rentable?, ¿resiste sobrecostos?, ¿cabe en el presupuesto?, ¿los números están completos?', 'si todo está en verde, el botón del pie lleva a lo que sigue: preparar la cotización en Sistema QUEMPIN. Desde ahí, la pestaña «Seguimiento» acompaña la oferta hasta su ejecución.')}
         </ol>
       </section>
       ${QF() ? `<section class="section">
-        <div class="section-head"><h3 class="seccion-titulo">Después de formular: el recorrido de la oferta</h3><p>Las seis etapas que muestra «Qué sigue con esta oferta» (paso 5), las mismas de la guía del equipo.</p></div>
+        <div class="section-head"><h3 class="seccion-titulo">El recorrido del proyecto</h3><p>Las seis etapas de la barra de arriba de cada proyecto y de su pestaña «Seguimiento», las mismas de la guía del equipo. La barra dice siempre en cuál va y qué sigue, con un botón.</p></div>
         <ol class="guia-pasos">${QF().ETAPAS.map((e, i) => paso(i + 1, `${esc(e.titulo)} <span class="tn">· ${esc(e.donde)}</span>`, esc(e.hace))).join('')}</ol>
       </section>` : ''}
       <section class="section">
@@ -2116,7 +2211,7 @@
       if (b) { e.preventDefault(); openPicker(b); return; }
     }
     // Filas del listado: Enter abre el proyecto
-    if (e.key === 'Enter' && el.matches && el.matches('tr[data-open]')) { location.hash = `#/p/${el.dataset.open}/ficha`; return; }
+    if (e.key === 'Enter' && el.matches && el.matches('tr[data-open]')) { location.hash = `#/p/${el.dataset.open}/${el.dataset.destino || 'ficha'}`; return; }
     if ((e.key === 'Enter' || e.key === ' ') && el.matches && el.matches('th[data-sort]')) { e.preventDefault(); sortBy(el.dataset.sort); return; }
     // Enter: baja a la fila siguiente; en la última fila agrega una nueva (excepto en Resumen)
     if (e.key !== 'Enter' || !el.dataset || !el.dataset.list || el.tagName !== 'INPUT' || el.type === 'radio') return;
@@ -2237,7 +2332,7 @@
     const btn = e.target.closest('[data-act]');
     if (btn && !btn.disabled) { doAct(btn.dataset.act, btn.dataset, btn); return; }
     const tr = e.target.closest('tr[data-open]');
-    if (tr && !e.target.closest('a, button, input, select')) location.hash = `#/p/${tr.dataset.open}/ficha`;
+    if (tr && !e.target.closest('a, button, input, select')) location.hash = `#/p/${tr.dataset.open}/${tr.dataset.destino || 'ficha'}`;
   });
 
   async function doAct(act, d, btn) {
@@ -2248,10 +2343,12 @@
         case 'nuevo': {
           if (enSP()) { await nuevoEnSharePoint(); break; }
           if (!(await exigirCarpeta())) break;
-          // Con la biblioteca conectada: ¿de qué oferta? (ahí queda la copia en Excel)
+          // Con la biblioteca conectada: ¿de qué oferta? (ahí queda la copia en Excel); si la carpeta
+          // todavía no existe, se crea en el mismo formulario
           const sel = await elegirOfertaLocal({
-            titulo: 'Nuevo presupuesto: ¿de qué oferta?',
-            texto: 'Elige la carpeta de la oferta en la biblioteca. Busca por el número de la planilla de ingreso o por el nombre.'
+            titulo: 'Nuevo proyecto', buscar: d.buscar || '',
+            texto: 'Elige la carpeta de la oferta, o créala aquí si todavía no existe. Ahí queda el Excel de la formulación, al día con cada cambio, y su N° une el proyecto con la Planilla de Ingreso y las demás herramientas.',
+            confirmar: 'Crear proyecto', completar: true
           });
           if (!sel) break;
           const np = S.newProject();
@@ -2259,7 +2356,8 @@
           S.upsert(np);
           if (sel.carpeta) guardarExcelOferta(np.uid, true);
           goProject(np, 'ficha');
-          if (sel.carpeta) registrarAlElegirCarpeta(np.uid);
+          if (sel.carpeta) registrarAlElegirCarpeta(np.uid, `Proyecto creado en «${sel.carpeta.nombre}».`);
+          else toast('Proyecto creado. Cuando tengas la carpeta de su oferta, elígela desde el aviso de arriba.');
           setTimeout(() => { const t = $('[data-f="titulo"]'); if (t) t.focus(); }, 60);
           break;
         }
@@ -2271,7 +2369,7 @@
           break;
         }
         case 'importar': if (await exigirCarpeta()) $('#file-import').click(); break;
-        case 'abrir': goProject(S.get(id), 'ficha'); break;
+        case 'abrir': { const x = S.get(id); goProject(x, destinoDe(x)); break; }
         case 'exp-xlsx': {
           if (saveTimer) saveNow();
           toast('Generando Excel…');
@@ -2302,7 +2400,7 @@
             const sel = await elegirCarpeta({
               titulo: 'Duplicar en otra oferta',
               texto: `Se crea una copia de <b>${esc(src.codigo)} v${esc(src.version)}</b> en la carpeta de la oferta que elijas.`,
-              crear: true, planilla: true, actual: window.QCloud.carpetaDe(src.uid)
+              crear: crearCarpetaSP, validarNueva: validarCarpetaSP, confirmar: 'Duplicar aquí', planilla: true, actual: window.QCloud.carpetaDe(src.uid)
             });
             if (!sel) break;
             const c = S.cloneProject(src, { estado: 'Borrador', fecha: S.hoy() });
@@ -2318,7 +2416,8 @@
           delete c.vinculos; // otra oferta: el envío al Análisis Financiero era de la original
           const sel = await elegirOfertaLocal({
             titulo: 'Duplicar: ¿de qué oferta es la copia?',
-            texto: `Se crea una copia de <b>${esc(src.codigo)} v${esc(src.version)}</b>. Elige la carpeta de la oferta de la copia.`
+            texto: `Se crea una copia de <b>${esc(src.codigo)} v${esc(src.version)}</b>. Elige la carpeta de la oferta de la copia, o créala aquí.`,
+            confirmar: 'Duplicar aquí'
           });
           if (!sel) break;
           if (sel.carpeta) enOfertaLocal(c, sel, {});
@@ -2416,6 +2515,8 @@
           break;
         }
         case 'config': await openConfig(); break;
+        case 'abrir-url': if (d.url) window.open(d.url, '_blank', 'noopener'); break;
+        case 'info-sistema': await infoSistema(); break;
         case 'enviar-af': await enviarAF(id); break;
         case 'af-estado': await actualizarEstadoAF(p, true); toast('Estado del envío actualizado'); break;
         case 'req-completar': await completarDesdePlanilla(); break;
@@ -2427,10 +2528,8 @@
         case 'herr-planilla': await avisarPlanilla(); break;
         // Qué sigue con la oferta (recorrido del paso 5, aviso del editor y pie del paso 5)
         case 'sigue': await hacerSiguiente(d.accion); break;
-        case 'ver-recorrido':
-          goTab('evaluacion');
-          setTimeout(() => { const s = $('#que-sigue'); if (s) s.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 40);
-          break;
+        case 'ver-recorrido': goTab('seguimiento'); break;
+        case 'etapa': irAEtapa(d.etapa); break;
         case 'herr-registro': {
           const folio = p && await registrarSolo(p.uid, true);
           if (folio) toast(`Evaluación de costos N° ${folio} enviada al Control de Documentos`);
@@ -2494,7 +2593,7 @@
           const pend = QC().sinSubir(S.all());
           // De a uno y separados: el navegador pide una vez permitir varias descargas
           for (const x of pend) { QC().descargar(x); await new Promise((r) => setTimeout(r, 400)); }
-          toast(`${plural(pend.length, 'presupuesto')} descargados: déjalos en ${BUZON_EQUIPO}`);
+          toast(`${plural(pend.length, 'proyecto')} descargados: déjalos en ${BUZON_EQUIPO}`);
           refreshList();
           await pintarCompartida();
           break;
@@ -2521,6 +2620,7 @@
           break;
         }
         case 'limpiar-filtros': {
+          if (state.avisoLista) { state.avisoLista = null; location.hash = '#/'; }
           state.list.q = ''; state.list.estado = ''; state.list.resp = ''; state.list.mes = '';
           ['#list-search', '#list-estado', '#list-resp', '#list-mes'].forEach((s) => { const el = $(s); if (el) { el.value = ''; el.classList.remove('is-set'); } });
           refreshList();
@@ -2735,7 +2835,7 @@
         destino = await elegirCarpeta({
           titulo: 'Importar: ¿de qué oferta?',
           texto: `${n === 1 ? 'El proyecto importado se guarda' : `Los ${n} proyectos importados se guardan`} en la carpeta de la oferta que elijas.`,
-          crear: true
+          crear: crearCarpetaSP, validarNueva: validarCarpetaSP, confirmar: 'Importar aquí'
         });
         if (!destino) return;
       }
@@ -2943,6 +3043,7 @@
       recargarProyecto(cur);
       toast(`Actualizado con cambios de ${quien}`);
     } else if (h.startsWith('#/papelera')) renderPapelera();
+    else if (/^#\/(req|tag)\//.test(h)) route();
     else if (!h.startsWith('#/guia')) {
       if ($('#list-body') && S.all().length) refreshList(); else renderList();
     }
@@ -3001,7 +3102,7 @@
       const sel = p && await elegirCarpeta({
         titulo: `Guardar ${p.codigo} v${p.version} en SharePoint`,
         texto: `«${esc(p.titulo || 'Sin título')}» se guarda en la carpeta de la oferta que elijas.`,
-        crear: true
+        crear: crearCarpetaSP, validarNueva: validarCarpetaSP, confirmar: 'Guardar aquí'
       });
       if (sel) {
         enCarpeta(p, sel);
@@ -3064,9 +3165,9 @@
 
   async function nuevoEnSharePoint() {
     const sel = await elegirCarpeta({
-      titulo: 'Nuevo proyecto: ¿de qué oferta?',
-      texto: 'La formulación se guarda en la carpeta de la oferta, junto a sus antecedentes. Busca por el número de la planilla de ingreso o por el nombre.',
-      crear: true, planilla: true
+      titulo: 'Nuevo proyecto',
+      texto: 'Elige la carpeta de la oferta, o créala aquí si todavía no existe. La formulación se guarda ahí, junto a sus antecedentes.',
+      crear: crearCarpetaSP, validarNueva: validarCarpetaSP, confirmar: 'Crear proyecto', completar: true, planilla: true
     });
     if (!sel) return;
     const todos = S.all().filter((x) => window.QCloud.carpetaDe(x.uid) === sel.carpeta.id)
@@ -3093,6 +3194,13 @@
     S.upsert(np);
     goProject(np, 'ficha');
     setTimeout(() => { const t = $('[data-f="titulo"]'); if (t) t.focus(); }, 60);
+  }
+
+  /* Carpetas de oferta nuevas en SharePoint: llevan siempre el N° de la planilla de ingreso. */
+  const crearCarpetaSP = (n, t) => window.QCloud.crearCarpeta(n, t);
+  function validarCarpetaSP(n, t, lista) {
+    if (!/^\d{1,6}$/.test(String(n || '').trim())) throw new Error('Escribe el N° de la oferta en la planilla de ingreso: en SharePoint cada carpeta lo lleva.');
+    return QO().nombreCarpetaNueva(n, t, lista);
   }
 
   /* Copia de cambios que chocaron con los de otra persona: nueva versión en la misma oferta. */
@@ -3125,112 +3233,336 @@
     if (!state.project && !location.hash.startsWith('#/guia')) route();
   }
 
-  /* Selector de la carpeta de oferta. Devuelve { carpeta, req } (req: fila de la planilla), o null.
-     En modo local se le pasan las carpetas de la biblioteca de OneDrive (opts.lista) y la planilla
-     publicada (opts.leerPlanilla); con opts.sinCarpeta ofrece seguir sin carpeta ({ ninguna: true }). */
+  /* Selector de la carpeta de la oferta: proyecto nuevo, duplicar, importar o cambiar la carpeta. Es un
+     formulario (pedido del usuario, 2026-10-06): se elige una carpeta de la lista, o se crea una nueva
+     ahí mismo sin salir de él, y se confirma con el botón principal. Devuelve
+     { carpeta, req, iniciales } (req: la fila de la planilla, si es la misma oferta), { ninguna: true }
+     (sigue sin carpeta) o null (canceló).
+     opts: titulo, texto, confirmar (el botón principal), lista (carpetas de la biblioteca local; sin
+       ella, las de SharePoint), leerPlanilla, planilla (true = entregar la fila de la planilla),
+       completar (true = el proyecto toma título, ubicación y presupuesto de la planilla), crear
+       (función (numero, nombre) → carpeta nueva; sin ella no se ofrece crear), validarNueva (función
+       (numero, nombre, lista) → { nombre, cambiado } o lanza el error), sinCarpeta (texto del botón
+       para seguir sin carpeta), actual (id de la carpeta actual), buscar (texto inicial), pie,
+       iniciales (true = pedir las iniciales del Control de Documentos si este navegador no las tiene). */
   async function elegirCarpeta(opts) {
     const lista = (opts.lista || window.QCloud.carpetas()).slice();
     const orden = (g) => (g === 'En curso' ? 0 : g === 'Presentada' ? 1 : g === 'Adjudicada' ? 2 : 3);
-    lista.sort((a, b) => orden(a.grupo) - orden(b.grupo) || String(b.grupo).localeCompare(String(a.grupo)) ||
+    const ordenar = () => lista.sort((a, b) => orden(a.grupo) - orden(b.grupo) || String(b.grupo).localeCompare(String(a.grupo)) ||
       (parseInt(b.numero, 10) || 0) - (parseInt(a.numero, 10) || 0) || a.nombre.localeCompare(b.nombre, 'es'));
+    ordenar();
     let pl = null;
     const cargaPlanilla = (opts.leerPlanilla ? opts.leerPlanilla() : window.QCloud.planilla()).catch((err) => { console.warn('Planilla de ingreso no disponible:', err); return null; });
+    let elegida = opts.actual ? lista.find((c) => c.id === opts.actual) || null : null;
+    let creada = null;          // la carpeta que se creó en este formulario
+    let misma = false;          // «es la misma oferta» cuando la planilla dice otro título
+    let iniciales = '';
+    const pedirIniciales = !!opts.iniciales && !leerIniciales();
+    const sugIni = String(S.getConfig().responsable || '').trim().split(/\s+/).filter(Boolean).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
+
     const filas = () => {
       let g = null;
       return lista.map((c) => {
         const r = pl && c.numero ? pl.get(c.numero) : null;
         const aviso = r && !coincidePlanilla(c.titulo, r.titulo);
-        const head = c.grupo !== g ? `<div class="cp-grupo" data-g="${esc(c.grupo)}">${esc(c.grupo)}</div>` : '';
+        const head = c.grupo !== g ? `<div class="cp-grupo" data-g="${esc(c.grupo)}" role="presentation">${esc(c.grupo)}</div>` : '';
         g = c.grupo;
         const sub = r ? (aviso ? `Revisa: en la planilla, el N° ${esc(c.numero)} es «${esc(r.titulo)}»` : `Planilla: ${esc(r.estado || 'sin estado')}`) : '';
-        return `${head}<button type="submit" class="cp-fila${c.id === opts.actual ? ' actual' : ''}" value="c:${esc(c.id)}" data-g="${esc(c.grupo)}"
+        const sel = !!elegida && elegida.id === c.id;
+        return `${head}<button type="button" class="cp-fila${sel ? ' sel' : ''}${c.id === opts.actual ? ' actual' : ''}" role="radio" aria-checked="${sel}" data-id="${esc(c.id)}" data-g="${esc(c.grupo)}"
             data-q="${esc(norm([c.numero, c.titulo, r ? r.titulo : ''].join(' ')))}">
           <span class="code-badge">${esc(c.numero || 's/n')}</span>
           <span class="cp-t"><b>${esc(c.titulo)}</b>${sub ? `<span class="cp-sub ${aviso ? 'cp-aviso' : ''}">${aviso ? '▲ ' : ''}${sub}</span>` : ''}</span>
-          ${c.id === opts.actual ? '<span class="chip">Actual</span>' : ''}
+          ${c.nueva ? '<span class="chip ok">Nueva</span>' : ''}${c.id === opts.actual ? '<span class="chip info">Actual</span>' : ''}
+          <span class="cp-check" aria-hidden="true">${ICON.check}</span>
         </button>`;
       }).join('');
     };
+    const panelNueva = () => `<div class="cp-nueva" id="cp-nueva" role="group" aria-labelledby="cp-nueva-t" hidden>
+        <p class="cp-nueva-t" id="cp-nueva-t">${ICON.folder}Nueva carpeta de oferta</p>
+        <div class="fila-campos">
+          <div class="campo"><label for="cp-num">N° de requerimiento <span class="opc">(opcional)</span></label>
+            <div class="combo"><input class="input" id="cp-num" inputmode="numeric" maxlength="6" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" placeholder="Ej.: 312"><button type="button" class="combo-btn" data-picker="combo" tabindex="-1" aria-label="Ver los requerimientos de la planilla">${ICON.caret}</button></div></div>
+          <div class="campo"><label for="cp-tit">Nombre de la oferta</label>
+            <input class="input" id="cp-tit" maxlength="100" autocomplete="off" placeholder="Ej.: Calefacción gimnasio municipal" aria-describedby="cp-previa"></div>
+        </div>
+        <p class="cp-previa" id="cp-previa" aria-live="polite"></p>
+        <div class="actions"><button type="button" class="btn btn-primario btn-sm" id="cp-crear">${ICON.folder}Crear carpeta</button><button type="button" class="btn btn-ghost btn-sm" id="cp-nueva-cerrar">Cancelar</button></div>
+      </div>`;
+
     const prom = ask({
       title: opts.titulo,
       wide: true,
       body: `<p>${opts.texto}</p>
-        <div class="campo"><label for="cp-buscar">Buscar oferta</label>
-          <input class="input" id="cp-buscar" type="search" placeholder="Número o nombre, p. ej. 298 o calderas" autocomplete="off" value="${esc(opts.buscar || '')}"></div>
-        <div class="cp-lista" id="cp-lista">${filas()}</div>
-        <p class="muted cp-vacio" id="cp-vacio" ${lista.length ? 'hidden' : ''}>${lista.length ? 'Ninguna carpeta coincide con la búsqueda.' : 'No hay carpetas de oferta en la biblioteca.'}</p>
-        ${opts.crear ? `<details class="cp-nueva" id="cp-nueva"><summary>¿La oferta aún no tiene carpeta? Crearla</summary>
-          <div class="fila-campos">
-            <div class="campo"><label for="cp-num">N° en la planilla</label><input class="input" id="cp-num" inputmode="numeric" autocomplete="off"></div>
-            <div class="campo ancho"><label for="cp-tit">Título de la carpeta</label><input class="input" id="cp-tit" autocomplete="off"></div>
-          </div>
-          <p class="hint">Se crea «N°. Título» junto a las demás ofertas en curso. No se modifica nada más.</p>
-          <button type="button" class="btn" id="cp-crear">${ICON.folder}Crear la carpeta y usarla</button>
-          <p class="login-msg" id="cp-msg" role="status" aria-live="polite"></p>
-        </details>` : ''}${opts.pie ? `<p class="hint cp-pie">${opts.pie}</p>` : ''}`,
-      buttons: [opts.sinCarpeta ? { label: opts.sinCarpeta, value: 'ninguna', left: true } : null, { label: 'Cancelar' }].filter(Boolean)
+        <div class="cp-barra">
+          <div class="campo"><label for="cp-buscar">Buscar carpeta</label>
+            <input class="input" id="cp-buscar" type="search" placeholder="N° o nombre, p. ej. 298 o calderas" autocomplete="off" value="${esc(opts.buscar || '')}"></div>
+          ${opts.crear ? `<button type="button" class="btn" id="cp-nueva-btn" aria-expanded="false" aria-controls="cp-nueva">${ICON.plus}Crear nueva carpeta</button>` : ''}
+        </div>
+        ${opts.crear ? panelNueva() : ''}
+        <div class="cp-lista" id="cp-lista" role="radiogroup" aria-label="Carpetas de oferta">${filas()}</div>
+        <p class="cp-vacio" id="cp-vacio" hidden></p>
+        <div class="cp-elegida" id="cp-elegida" role="status" aria-live="polite"></div>
+        ${pedirIniciales ? `<div class="campo cp-ini"><label for="cp-ini">Tus iniciales</label>
+          <input class="input" id="cp-ini" maxlength="4" autocomplete="off" value="${esc(sugIni)}" aria-describedby="cp-ini-hint">
+          <span class="hint" id="cp-ini-hint">Con ellas se registra la evaluación de costos en el Control de Documentos. Se piden una sola vez en este navegador.</span></div>` : ''}
+        ${opts.pie ? `<p class="hint cp-pie">${opts.pie}</p>` : ''}`,
+      buttons: [opts.sinCarpeta ? { label: opts.sinCarpeta, value: 'ninguna', left: true } : null, { label: 'Cancelar' }, { label: opts.confirmar || 'Usar esta carpeta', value: 'ok', primary: true }].filter(Boolean)
     });
     const dlg = $('#modal');
     const inp = $('#cp-buscar');
+    const caja = $('#cp-lista');
+    const boton = $('#modal .modal-foot .btn-primario');
+    const panel = $('#cp-nueva');
+    const panelAbierto = () => !!panel && !panel.hidden;
+    const pintarBoton = () => { boton.disabled = !elegida || panelAbierto(); };
+
+    /* Qué se eligió y qué toma el proyecto de la planilla */
+    const resumen = () => {
+      const el = $('#cp-elegida');
+      if (!elegida) {
+        el.innerHTML = lista.length ? `<span class="muted">Elige una carpeta de la lista${opts.crear ? ' o crea una nueva' : ''}.</span>` : '';
+        pintarBoton();
+        return;
+      }
+      const r = pl && elegida.numero ? pl.get(elegida.numero) : null;
+      const distinta = !!r && opts.planilla && !coincidePlanilla(elegida.titulo, r.titulo);
+      const datos = r ? [r.titulo, r.ubicacion, r.presupuesto ? `presupuesto ${clp(r.presupuesto)} con IVA` : ''].filter(Boolean).join(' · ') : '';
+      const conPlanilla = r && !distinta
+        ? (opts.completar ? `Toma de la Planilla de Ingreso (N° ${esc(r.numero)}): ${esc(datos)}.` : `N° de requerimiento ${esc(r.numero)} en la Planilla de Ingreso: ${esc(r.titulo || 'sin título')}.`)
+        : !r && elegida.numero && pl ? `El N° ${esc(elegida.numero)} no está en la Planilla de Ingreso.` : '';
+      el.innerHTML = `<span class="cp-el-t">${ICON.check}<span>${creada && creada.id === elegida.id ? 'Carpeta creada y elegida' : 'Carpeta elegida'}: <b>${esc(elegida.nombre)}</b></span></span>
+        ${conPlanilla ? `<span class="cp-el-pl">${conPlanilla}</span>` : ''}
+        ${distinta ? `<span class="cp-el-pl cp-aviso">▲ En la planilla, el N° ${esc(r.numero)} es «${esc(r.titulo)}».</span>
+          <label class="check-l"><input type="checkbox" id="cp-misma" ${misma ? 'checked' : ''}> Es la misma oferta: ${opts.completar ? 'usar los datos de la planilla (título, ubicación y presupuesto)' : 'unir el proyecto a ese N° de requerimiento'}</label>` : ''}`;
+      const m = $('#cp-misma');
+      if (m) m.addEventListener('change', () => { misma = m.checked; });
+      pintarBoton();
+    };
+    const elegir = (c, foco) => {
+      elegida = c;
+      dlg.querySelectorAll('.cp-fila').forEach((b) => {
+        const si = b.dataset.id === c.id;
+        b.classList.toggle('sel', si);
+        b.setAttribute('aria-checked', String(si));
+      });
+      resumen();
+      const iniV = $('#cp-ini');
+      if (foco === 'boton') (iniV && !iniV.value.trim() ? iniV : boton).focus();
+    };
     const filtrar = () => {
-      const q = norm(inp.value.trim());
+      const t = inp.value.trim();
+      const q = norm(t);
       const vis = new Set();
+      let n = 0;
       dlg.querySelectorAll('.cp-fila').forEach((b) => {
         b.hidden = !!q && !b.dataset.q.includes(q);
-        if (!b.hidden) vis.add(b.dataset.g);
+        if (!b.hidden) { vis.add(b.dataset.g); n++; }
       });
       dlg.querySelectorAll('.cp-grupo').forEach((h) => { h.hidden = !vis.has(h.dataset.g); });
-      $('#cp-vacio').hidden = vis.size > 0 || !lista.length;
+      const vacio = $('#cp-vacio');
+      if (!lista.length) {
+        vacio.innerHTML = `La biblioteca todavía no tiene carpetas de oferta.${opts.crear ? ' <button type="button" class="link-btn" data-crear="">Crear la primera</button>' : ''}`;
+      } else if (!n) {
+        vacio.innerHTML = `Ninguna carpeta coincide con «${esc(t)}».${opts.crear ? ` <button type="button" class="link-btn" data-crear="${esc(t)}">Crear la carpeta «${esc(t)}»</button>` : ''}`;
+      }
+      vacio.hidden = n > 0;
+      caja.hidden = !n;
+      return n;
     };
+    const visibles = () => Array.from(dlg.querySelectorAll('.cp-fila')).filter((b) => !b.hidden);
+
+    caja.addEventListener('click', (e) => {
+      const b = e.target.closest('.cp-fila');
+      const c = b && lista.find((x) => x.id === b.dataset.id);
+      if (c) elegir(c);
+    });
+    caja.addEventListener('dblclick', (e) => {
+      const b = e.target.closest('.cp-fila');
+      const c = b && lista.find((x) => x.id === b.dataset.id);
+      if (c) { elegir(c); if (!boton.disabled) boton.click(); }
+    });
+    caja.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const vs = visibles();
+      const i = vs.indexOf(document.activeElement);
+      if (i < 0) return;
+      e.preventDefault();
+      const s = vs[e.key === 'ArrowDown' ? Math.min(vs.length - 1, i + 1) : Math.max(0, i - 1)];
+      s.focus({ preventScroll: false });
+    });
     inp.addEventListener('input', filtrar);
     inp.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') { const v = visibles()[0]; if (v) { e.preventDefault(); v.focus(); } return; }
       if (e.key !== 'Enter') return;
       e.preventDefault();
-      const vis = Array.from(dlg.querySelectorAll('.cp-fila')).filter((b) => !b.hidden);
-      if (vis.length === 1) dlg.close(vis[0].value);
+      const vs = visibles();
+      if (vs.length === 1) elegir(lista.find((x) => x.id === vs[0].dataset.id), 'boton');
+      else if (!vs.length && opts.crear) abrirPanel(inp.value.trim());
     });
-    if (inp.value) filtrar();
+
+    // ---- Crear una carpeta nueva sin salir del formulario ----
+    let abrirPanel = () => {};
+    if (opts.crear) {
+      const btnNueva = $('#cp-nueva-btn');
+      const num = $('#cp-num'), tit = $('#cp-tit'), previaEl = $('#cp-previa'), btnCrear = $('#cp-crear');
+      let autoTit = '';
+      let tocado = false;
+      const validar = opts.validarNueva || ((n, t) => ({ nombre: n ? `${n}. ${t.trim()}` : t.trim(), cambiado: false }));
+      const previa = (mostrarError) => {
+        const n = num.value.trim(), t = tit.value;
+        if (!n && !t.trim() && !mostrarError) {
+          previaEl.className = 'cp-previa';
+          previaEl.textContent = 'Con el N°, la carpeta queda «N°. Nombre», como las demás ofertas.';
+          return null;
+        }
+        try {
+          const c = validar(n, t, lista);
+          previaEl.className = 'cp-previa';
+          previaEl.innerHTML = `Se creará <b>«${esc(c.nombre)}»</b> en la biblioteca, junto a las ofertas en curso.${c.cambiado ? ' <span class="muted">Los caracteres \\ / : * ? " &lt; &gt; | # % no van en nombres de carpeta: se cambian por «-».</span>' : ''}`;
+          return c;
+        } catch (err) {
+          const mostrar = mostrarError || tocado || !!err.existente;
+          previaEl.className = mostrar ? 'cp-previa err' : 'cp-previa';
+          previaEl.innerHTML = mostrar ? `${esc(err.message)}${err.existente ? ` <button type="button" class="link-btn" data-usar="${esc(err.existente.id)}">Usar esa carpeta</button>` : ''}` : '';
+          return null;
+        }
+      };
+      const desdePlanilla = () => {
+        const r = pl && pl.get(String(parseInt(num.value, 10)));
+        if (r && r.titulo && (!tit.value.trim() || tit.value === autoTit)) { autoTit = String(r.titulo).slice(0, 100); tit.value = autoTit; }
+      };
+      abrirPanel = (texto) => {
+        const m = /^(\d{1,6})(?:\s*[.\-]\s*|\s+)?(.*)$/.exec(String(texto || '').trim());
+        if (m && m[1]) { num.value = m[1]; tit.value = m[2] || ''; autoTit = ''; desdePlanilla(); }
+        else if (texto) { tit.value = texto; }
+        panel.hidden = false;
+        btnNueva.hidden = true;
+        btnNueva.setAttribute('aria-expanded', 'true');
+        tocado = false;
+        previa(false);
+        pintarBoton();
+        (num.value ? tit : num).focus();
+      };
+      const cerrarPanel = (foco) => {
+        panel.hidden = true;
+        btnNueva.hidden = false;
+        btnNueva.setAttribute('aria-expanded', 'false');
+        closePop();
+        pintarBoton();
+        if (foco) btnNueva.focus();
+      };
+      combos['cp-num'] = {
+        label: 'N° de requerimiento', minWidth: 360, vacio: 'La planilla de ingreso aún no está disponible',
+        items(texto, actual) {
+          if (!pl) return [];
+          const q = norm(String(texto || '').trim());
+          const usados = new Set(lista.map((c) => String(c.numero || '')).filter(Boolean));
+          const todos = Array.from(pl.values()).sort((a, b) => Number(b.numero) - Number(a.numero));
+          const calza = (r) => !q || String(r.numero).startsWith(q) || norm(r.titulo).includes(q);
+          const item = (r) => ({ value: String(r.numero), selected: String(r.numero) === actual, lead: `<span class="pcode">${esc(r.numero)}</span>`, title: r.titulo || 'Sin título', right: usados.has(String(r.numero)) ? 'ya tiene carpeta' : (r.estado || '') });
+          const sin = todos.filter((r) => !usados.has(String(r.numero)) && calza(r)).slice(0, 12).map(item);
+          const out = sin.length ? [{ head: 'Sin carpeta todavía' }].concat(sin) : [];
+          if (q) {
+            const con = todos.filter((r) => usados.has(String(r.numero)) && calza(r)).slice(0, 6).map(item);
+            if (con.length) out.push(...(out.length ? [{ sep: true }] : []), { head: 'Ya tienen carpeta' }, ...con);
+          }
+          return out;
+        }
+      };
+      const crearAhora = async () => {
+        tocado = true;
+        const c = previa(true);
+        if (!c) { (tit.value.trim() ? num : tit).focus(); return; }
+        btnCrear.disabled = true;
+        btnCrear.textContent = 'Creando la carpeta…';
+        panel.setAttribute('aria-busy', 'true');
+        try {
+          const nueva = Object.assign(await opts.crear(num.value.trim(), tit.value), { nueva: true });
+          lista.push(nueva);
+          ordenar();
+          creada = nueva;
+          cerrarPanel(false);
+          inp.value = '';
+          elegida = nueva;
+          caja.innerHTML = filas();
+          filtrar();
+          resumen();
+          const fila = Array.from(dlg.querySelectorAll('.cp-fila')).find((b) => b.dataset.id === nueva.id);
+          if (fila) fila.scrollIntoView({ block: 'nearest' });
+          const iniV = $('#cp-ini');
+          (iniV && !iniV.value.trim() ? iniV : boton).focus();
+        } catch (err) {
+          previaEl.className = 'cp-previa err';
+          previaEl.setAttribute('role', 'alert');
+          previaEl.innerHTML = `No se pudo crear la carpeta: ${esc((err && err.message) || String(err))}`;
+        } finally {
+          btnCrear.disabled = false;
+          btnCrear.innerHTML = `${ICON.folder}Crear carpeta`;
+          panel.removeAttribute('aria-busy');
+        }
+      };
+      btnNueva.addEventListener('click', () => abrirPanel(inp.value.trim() && !visibles().length ? inp.value.trim() : ''));
+      $('#cp-nueva-cerrar').addEventListener('click', () => cerrarPanel(true));
+      btnCrear.addEventListener('click', crearAhora);
+      num.addEventListener('input', () => { num.value = num.value.replace(/\D/g, ''); desdePlanilla(); previa(false); });
+      tit.addEventListener('input', () => { tocado = true; previa(false); });
+      [num, tit].forEach((el) => el.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !(P && pop.contains(document.activeElement))) { e.preventDefault(); crearAhora(); }
+        if (e.key === 'Escape' && !e.defaultPrevented) { e.preventDefault(); cerrarPanel(true); }
+      }));
+    }
+    // Botones dentro de los mensajes: «Crear la carpeta …» (búsqueda sin resultado) y «Usar esa carpeta»
+    dlg.querySelector('.modal-body').addEventListener('click', (e) => {
+      const cr = e.target.closest('[data-crear]');
+      if (cr) { abrirPanel(cr.dataset.crear); return; }
+      const us = e.target.closest('[data-usar]');
+      const c = us && lista.find((x) => x.id === us.dataset.usar);
+      if (c) {
+        if (panelAbierto()) $('#cp-nueva-cerrar').click();
+        inp.value = '';
+        filtrar();
+        elegir(c, 'boton');
+        const fila = Array.from(dlg.querySelectorAll('.cp-fila')).find((b) => b.dataset.id === c.id);
+        if (fila) fila.scrollIntoView({ block: 'nearest' });
+      }
+    });
+    const iniEl = $('#cp-ini');
+    if (iniEl) iniEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); boton.click(); } });
+    boton.addEventListener('click', (e) => {
+      if (!elegida) { e.preventDefault(); return; }
+      if (pedirIniciales) {
+        const v = iniEl.value.trim().toUpperCase();
+        if (!/^\p{L}{1,4}$/u.test(v)) {
+          e.preventDefault();
+          iniEl.setAttribute('aria-invalid', 'true');
+          $('#cp-ini-hint').textContent = 'Escribe tus iniciales (por ejemplo, CM): con ellas se registra la evaluación de costos en el Control de Documentos.';
+          $('#cp-ini-hint').classList.add('err');
+          iniEl.focus();
+          return;
+        }
+        iniciales = v;
+      }
+    });
+
+    filtrar();
+    resumen();
+    if (elegida) {
+      const fila = Array.from(dlg.querySelectorAll('.cp-fila')).find((b) => b.dataset.id === elegida.id);
+      if (fila) fila.scrollIntoView({ block: 'nearest' });
+    }
     cargaPlanilla.then((m) => {
       pl = m;
-      const el = $('#cp-lista');
-      if (m && dlg.open && el) { el.innerHTML = filas(); filtrar(); }
+      if (m && dlg.open && $('#cp-lista')) { caja.innerHTML = filas(); filtrar(); resumen(); }
     });
-    if (opts.crear) {
-      const num = $('#cp-num'), tit = $('#cp-tit'), msg = $('#cp-msg');
-      let autoTit = '';
-      num.addEventListener('input', () => {
-        const r = pl && pl.get(String(parseInt(num.value, 10)));
-        if (r && (!tit.value || tit.value === autoTit)) { autoTit = r.titulo.slice(0, 120); tit.value = autoTit; }
-      });
-      const crear = async () => {
-        msg.textContent = 'Creando la carpeta…'; msg.className = 'login-msg';
-        try {
-          const c = await window.QCloud.crearCarpeta(num.value, tit.value);
-          lista.push(c);
-          dlg.close('c:' + c.id);
-        } catch (err) { msg.textContent = err.message || String(err); msg.className = 'login-msg err'; }
-      };
-      $('#cp-crear').addEventListener('click', crear);
-      [num, tit].forEach((el) => el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); crear(); } }));
-    }
     const v = await prom;
     if (v === 'ninguna') return { ninguna: true };
-    if (typeof v !== 'string' || !v.startsWith('c:')) return null;
-    const carpeta = lista.find((c) => c.id === v.slice(2));
-    if (!carpeta) return null;
+    if (v !== 'ok' || !elegida) return null;
     pl = pl || await cargaPlanilla;
-    let req = pl && carpeta.numero ? pl.get(carpeta.numero) || null : null;
-    if (req && opts.planilla && !coincidePlanilla(carpeta.titulo, req.titulo)) {
-      const usar = await ask({
-        title: '¿Es la misma oferta?',
-        body: `<p>La carpeta es <b>${esc(carpeta.nombre)}</b>, pero en la planilla de ingreso el N° ${esc(carpeta.numero)} es <b>«${esc(req.titulo)}»</b>.</p>
-          <p>Si es la misma oferta, se usan los datos de la planilla (título, ubicación y presupuesto). Si no, solo el nombre de la carpeta.</p>`,
-        buttons: [{ label: 'Cancelar', left: true }, { label: 'No, solo la carpeta', value: 'no' }, { label: 'Sí, usar la planilla', value: 'si', primary: true }]
-      });
-      if (!usar) return null;
-      if (usar === 'no') req = null;
-    }
-    return { carpeta, req: opts.planilla ? req : null };
+    let req = pl && elegida.numero ? pl.get(elegida.numero) || null : null;
+    if (req && opts.planilla && !coincidePlanilla(elegida.titulo, req.titulo) && !misma) req = null;
+    if (iniciales) guardarIniciales(iniciales);
+    return { carpeta: elegida, req: opts.planilla ? req : null, iniciales };
   }
 
   // ---------------------------------------------------------------------------
@@ -3282,11 +3614,13 @@
         <p class="af-linea"><span class="chip ${e.cls}">${e.t}</span> Versión ${esc(u.version)} enviada el ${esc(fechaHora(u.fecha))}. ${esc(detalle)}</p>
         ${costosCambiaron(p, state.result) ? '<p class="af-linea af-aviso">Los costos cambiaron desde ese envío: vuelve a enviarlos para actualizar el Análisis Financiero.</p>' : ''}`;
     }
+    // Antes de adjudicarse no hay nada que enviar desde aquí (sigue en ⋯ → Enviar costos, para casos especiales)
+    const boton = u || p.estado === 'Adjudicada';
     el.innerHTML = `<div class="af-texto" id="af-estado">${texto}</div>
-      <div class="actions">
+      ${boton ? `<div class="actions">
         ${u ? '<button type="button" class="btn" data-act="af-estado">Actualizar estado</button>' : ''}
-        <button type="button" class="btn" data-act="enviar-af">${ICON.enviar}${u ? 'Volver a enviar los costos…' : p.estado === 'Adjudicada' ? 'Pasar a ejecución…' : 'Enviar costos…'}</button>
-      </div>`;
+        <button type="button" class="btn" data-act="enviar-af">${ICON.enviar}${u ? 'Volver a enviar los costos…' : 'Pasar a ejecución…'}</button>
+      </div>` : ''}`;
   }
 
   /* Lee en la carpeta en qué quedó el último envío. Sin permiso vigente solo lo hace si
@@ -3362,11 +3696,11 @@
   async function enviarAF(id) {
     const p = (id && S.get(id)) || state.project;
     const X = QI();
-    if (!p || !X) return;
+    if (!p || !X) return false;
     if (saveTimer && state.project === p) saveNow();
     const r = p === state.project ? state.result : computeProject(p);
-    if (!(r.totals.cd > 0)) { toast('El proyecto todavía no tiene costos que enviar.', true); return; }
-    if (!X.disponible()) { await enviarAFDescarga(p, r); return; }
+    if (!(r.totals.cd > 0)) { toast('El proyecto todavía no tiene costos que enviar.', true); return false; }
+    if (!X.disponible()) { await enviarAFDescarga(p, r); return false; }
 
     let est = await X.estado();
     if (!est.conectada) {
@@ -3467,20 +3801,20 @@
     otroTag.addEventListener('input', pintar);
     otroNombre.addEventListener('input', pintar);
     pintar();
-    if (await promesa !== 'enviar') return;
+    if (await promesa !== 'enviar') return false;
 
     const d = elegido();
-    if (!d) return;
+    if (!d) return false;
     const destino = d.nuevo ? { tag: d.tag, nombre: otroNombre.value.trim(), crear: true } : { tag: d.tag };
     const visto = d.q ? d.q.proyectados : null;
     const u = S.getUser();
     const m = X.mensajePresupuesto(p, r.totals, destino, visto, (u && u.email) || p.responsable || S.getConfig().responsable || '');
     try { await X.enviar(m); } catch (e) {
       toast('No se pudo dejar el envío en la carpeta: ' + ((e && e.message) || e), true);
-      return;
+      return false;
     }
     registrarEnvioAF(p, d.tag, d.q ? d.q.nombre : destino.nombre, m);
-    if (!extra) { toast(`Enviado al Análisis Financiero (${d.tag}): se aplica en su próxima actualización`); return; }
+    if (!extra) { toast(`Enviado al Análisis Financiero (${d.tag}): se aplica en su próxima actualización`); return true; }
 
     const tambien = [], fallas = [];
     if (conVenta && conVenta.checked) {
@@ -3498,6 +3832,7 @@
     pintarSigue();
     if (fallas.length) toast(`Los costos quedaron enviados, pero no se pudo dejar ${fallas.join(' ni ')}.`, true);
     else toast(`Enviado al Análisis Financiero (${d.tag}): costos${tambien.length ? `, ${tambien.join(' y ')}` : ''}. Se aplica en su próxima actualización.`, false, 5000);
+    return true;
   }
 
   function registrarEnvioAF(p, tag, nombre, m) {
@@ -3546,16 +3881,16 @@
     if (!X.disponible()) {
       el.innerHTML = `<p class="af-linea">${nube.activa
         ? 'Este navegador no puede abrir carpetas: los envíos se descargan para dejarlos a mano en la carpeta de intercambio.'
-        : `Este navegador no puede abrir carpetas (usa Chrome o Edge de escritorio). Cada presupuesto se descarga para dejarlo en <b>${esc(BUZON_EQUIPO)}</b>; los envíos al Análisis Financiero, también.`}</p>`;
+        : `Este navegador no puede abrir carpetas (usa Chrome o Edge de escritorio). Cada proyecto se descarga para dejarlo en <b>${esc(BUZON_EQUIPO)}</b>; los envíos al Análisis Financiero, también.`}</p>`;
       return;
     }
     const est = await X.estado();
     // En modo local la carpeta es obligatoria: no se ofrece «Olvidar» (solo cambiarla).
     el.innerHTML = `<p class="af-linea">${est.conectada ? `Carpeta conectada en este navegador: <b>${esc(est.nombre)}</b>.` : est.movida ? 'La carpeta que estaba conectada cambió de lugar.' : 'Sin conectar.'}
-        ${nube.activa ? 'Se usa para enviar costos al Análisis Financiero.' : 'Todos los presupuestos se guardan ahí para el equipo («.Herramientas formulación › Intercambio › publicado › formulador»), y desde ahí se envían costos al Análisis Financiero. Elige la biblioteca <b>Formulación de proyectos - Documentos</b> sincronizada en tu OneDrive.'}</p>
+        ${nube.activa ? 'Se usa para enviar costos al Análisis Financiero.' : 'Todos los proyectos se guardan ahí para el equipo («.Herramientas formulación › Intercambio › publicado › formulador»), y desde ahí se envían costos al Análisis Financiero. Elige la biblioteca <b>Formulación de proyectos - Documentos</b> sincronizada en tu OneDrive.'}</p>
       ${!nube.activa && est.conectada ? `<p class="af-linea">${est.biblioteca
-        ? 'El Excel de cada presupuesto se guarda además en la carpeta de su oferta, que se elige una vez por presupuesto.'
-        : 'Para guardar también el Excel de cada presupuesto en la carpeta de su oferta, conecta la biblioteca <b>Formulación de proyectos - Documentos</b> completa (ahora está conectada solo una carpeta de adentro).'}</p>` : ''}
+        ? 'El Excel de cada proyecto se guarda además en la carpeta de su oferta, que se elige una vez por presupuesto.'
+        : 'Para guardar también el Excel de cada proyecto en la carpeta de su oferta, conecta la biblioteca <b>Formulación de proyectos - Documentos</b> completa (ahora está conectada solo una carpeta de adentro).'}</p>` : ''}
       <div class="actions"><button type="button" class="btn btn-sm" data-act="af-carpeta">${ICON.folder}${est.conectada ? 'Cambiar carpeta' : 'Conectar carpeta'}</button>
       ${est.conectada && nube.activa ? '<button type="button" class="btn btn-sm" data-act="af-olvidar">Olvidar</button>' : ''}</div>
       <p class="af-nota" id="cfg-pulso"></p>`;
@@ -3637,7 +3972,7 @@
         <div class="req-fila"><div class="combo"><input class="input" id="f-req" inputmode="numeric" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" value="${esc(v && v.numero ? v.numero : '')}" placeholder="${enCodigo ? `${esc(enCodigo)} (el código)` : 'Ej.: 280'}"><button type="button" class="combo-btn" data-picker="combo" tabindex="-1" aria-label="Ver los requerimientos">${ICON.caret}</button></div>
           <button type="button" class="btn btn-sm" data-act="req-completar" data-tip="<b>Completar desde la planilla</b>Trae el título, la ubicación y el presupuesto del requerimiento a los campos que estén vacíos.">Completar desde la planilla</button>
           ${planillaWeb ? `<a class="link-btn req-abrir" href="${esc(planillaWeb)}" target="_blank" rel="noopener" data-tip="<b>Abrir la planilla de ingreso</b>Se abre en Excel para la web, en otra pestaña, para buscar o verificar el N°.">${ICON.open}Abrir la planilla</a>` : ''}</div>
-        <span class="hint" id="req-hint">El N° con que se registró el requerimiento: une este presupuesto con su cotización, el Análisis Financiero y el Flujo de Caja. La lista muestra los ${REQ_RECIENTES} últimos ingresados; para uno anterior, escribe su N° o parte del título.</span></div>`;
+        <span class="hint" id="req-hint">El N° con que se registró el requerimiento: une este proyecto con su cotización, el Análisis Financiero y el Flujo de Caja. La lista muestra los ${REQ_RECIENTES} últimos ingresados; para uno anterior, escribe su N° o parte del título.</span></div>`;
   }
   async function pintarRequerimiento() {
     const hint = $('#req-hint');
@@ -3783,7 +4118,25 @@
      usuario, 2026-10-05). La misma lectura se muestra en el paso 5, en el aviso del editor (pasos 1 a 4)
      y en la lista; el paso 5 le suma lo que publican las demás herramientas. */
   const QF = () => window.QFlujo;
-  const TABLERO_AF = 'https://cristobal-monzo.github.io/finanzas-quempin/analisis-financiero/';
+  const TABLEROS = 'https://cristobal-monzo.github.io/finanzas-quempin/';
+  const TABLERO_AF = TABLEROS + 'analisis-financiero/';
+  /* Sistema QUEMPIN es un programa del computador: el navegador no lo puede abrir, pero sí decir cómo
+     llegar y qué hacer ahí con este proyecto. */
+  async function infoSistema() {
+    const p = state.project;
+    const borr = p && ((p.vinculos || {}).sistemaQuempin || {}).ultimoBorrador;
+    await ask({
+      title: 'Sistema QUEMPIN',
+      body: `<p>Es el programa que emite las <b>cotizaciones</b> y las <b>órdenes de compra</b> con su número y su PDF. Se usa en el computador, no en el navegador.</p>
+        <ol class="rcl-pasos">
+          <li>Ábrelo con el acceso directo <b>QUEMPIN</b> del escritorio, o con <b>QUEMPIN.exe</b> en la carpeta compartida del equipo (biblioteca «Cotizaciones y OC - Documentos» de OneDrive).</li>
+          <li>Las cotizaciones que prepara el Formulador llegan a <b>Nueva Cotización → Borradores del Formulador</b>: ahí se revisan y se emiten.</li>
+          <li>Al emitir, el Formulador recibe el número solo: el seguimiento del proyecto dice qué sigue.</li>
+        </ol>
+        ${borr && !borr.folio ? `<p class="af-linea"><span class="chip warn">En espera</span> La cotización de <b>${esc(p.codigo)} v${esc(borr.version)}</b> ya está en «Borradores del Formulador».</p>` : ''}`,
+      buttons: [{ label: 'Entendido', primary: true }]
+    });
+  }
   let publicadoDe = { uid: null, datos: null };   // lo último leído de la carpeta para el proyecto abierto
   let refinadoUid = null;
   function recorridoDe(p, r, publicado) {
@@ -3826,69 +4179,164 @@
   const ETIQ_ETAPA = { hecha: 'hecha', actual: 'es la que sigue', espera: 'en espera', pendiente: 'pendiente', omitida: 'sin registrar aquí', 'no-aplica': 'no aplica' };
   function botonesSigue(s) {
     const b = [];
-    if (s.accion && s.boton) b.push(`<button type="button" class="btn btn-primario" data-act="sigue" data-accion="${esc(s.accion)}">${esc(s.boton)}</button>`);
+    if (s.accion && s.boton) b.push(`<button type="button" class="btn btn-primario" data-act="sigue" data-accion="${esc(s.accion)}">${esc(s.boton.replace(/…$/, ''))}${s.accion === 'abrir-af' ? ICON.open : ICON.arrow}</button>`);
     (s.alternativas || []).forEach((a) => b.push(`<button type="button" class="btn" data-act="sigue" data-accion="${esc(a.accion)}">${esc(a.boton)}</button>`));
     return b.join('');
   }
   const rotuloSigue = (s) => (s.espera ? 'En espera' : s.fin ? 'Al día' : 'Siguiente');
-  /* Paso 5: las seis etapas, la acción que sigue y qué hace cada herramienta. */
-  function pintarRecorrido(rec) {
-    const el = $('#recorrido');
-    if (!el || !rec) return;
-    const s = rec.siguiente;
-    const e = rec.etapas[rec.actual];
-    const botones = botonesSigue(s);
-    el.innerHTML = `<ol class="rc-etapas" aria-label="Etapas de la oferta">${rec.etapas.map((x) => `<li class="rc-etapa rc-${x.estado}" ${x.n === e.n ? 'aria-current="step"' : ''}
-          data-tip="<b>${esc(x.n)}. ${esc(x.titulo)} · ${esc(x.donde)}</b>${esc(x.hace)}">
-          <span class="rc-marca" aria-hidden="true">${x.estado === 'hecha' ? '✓' : x.n}</span>
-          <span class="rc-txt"><b>${esc(x.titulo)}</b><span class="rc-donde">${esc(x.donde)}</span><span class="rc-det">${esc(x.detalle)}<span class="visualmente-oculto">: ${ETIQ_ETAPA[x.estado]}</span></span></span>
-        </li>`).join('')}</ol>
-      <div class="rc-sigue ${s.espera ? 'espera' : s.fin ? 'fin' : ''}" role="status">
-        <p class="rc-sigue-t">${rotuloSigue(s)} <span>· Etapa ${e.n} de ${rec.etapas.length}: ${esc(e.titulo)}, en ${esc(e.donde)}</span></p>
-        <p class="rc-sigue-x">${esc(s.texto)}</p>
-        ${botones ? `<div class="actions">${botones}</div>` : ''}
-      </div>
-      <details class="rc-ayuda" data-open-key="rc-ayuda" ${state.abiertos.has('rc-ayuda') ? 'open' : ''}><summary>Qué hace cada herramienta en este recorrido</summary>
-        <dl>${rec.etapas.map((x) => `<dt>${x.n}. ${esc(x.titulo)} <span>· ${esc(x.donde)}</span></dt><dd>${esc(x.hace)}</dd>`).join('')}</dl></details>`;
-  }
-  /* Aviso del editor (pasos 1 a 4): qué sigue cuando ya no es seguir formulando. En el paso 5 lo
-     dice la sección «Qué sigue», y mientras se formula lo dicen los pasos. */
+  /* Enlace al tablero de Análisis Financiero; con el TAG, abre la ficha de ese proyecto. */
+  const enlaceAF = (p) => { const v = vinculoAF(p); return TABLERO_AF + (v && v.tag ? `#proyecto=${encodeURIComponent(v.tag)}` : ''); };
+
+  /* Barra del recorrido, arriba del editor en todas las pestañas (pedido del usuario, 2026-10-06: que
+     siempre se vea dónde está el proyecto y qué sigue). Cada etapa lleva a donde se trabaja: el N°, los
+     pasos de la formulación o el seguimiento. En el seguimiento no repite el botón: allí está a la vista. */
   function pintarSigue() {
-    const el = $('#ed-sigue');
+    const el = $('#ed-recorrido');
     const p = state.project;
     if (!el || !p) return;
     if (refinadoUid !== p.uid) {
-      // Lo publicado por las demás herramientas afina el aviso (la cotización ya emitida, la planilla…)
+      // Lo publicado por las demás herramientas afina la barra (la cotización ya emitida, la planilla…)
       refinadoUid = p.uid;
       leerPublicado(p).then((pub) => { if (pub && state.project === p) { pintarSigue(); pintarPieSigue(); } }).catch(() => {});
     }
     const rec = recorridoDe(p);
-    const s = rec && rec.siguiente;
-    const e = rec && rec.etapas[rec.actual];
-    // En el paso 1 el campo del N° de requerimiento está a la vista: no hace falta el aviso
-    const html = !s || state.imprimir || state.tab === 'evaluacion' || s.accion === 'ir-paso' || s.fin || (s.accion === 'ir-req' && state.tab === 'ficha') ? ''
-      : `<div class="nota sigue-nota no-print ${s.espera ? 'espera' : ''}" role="region" aria-label="Qué sigue con esta oferta">
-        <span><b>${rotuloSigue(s)} · Etapa ${e.n} de ${rec.etapas.length}: ${esc(e.titulo)}</b> <span class="sigue-donde">(${esc(e.donde)})</span><br>${esc(s.texto)}</span>
-        <div class="actions">${botonesSigue(s).replace(/class="btn( btn-primario)?"/g, 'class="btn btn-sm$1"')}<button type="button" class="link-btn" data-act="ver-recorrido">Ver el recorrido</button></div>
-      </div>`;
+    let html = '';
+    if (rec && !state.imprimir) {
+      const s = rec.siguiente;
+      const actual = rec.etapas[rec.actual];
+      const ps = estadoPasos();
+      const listos = ps.filter((x) => x.est === 'ok').length;
+      const etapas = rec.etapas.map((x) => {
+        const det = x.id === 'formulacion' && x.estado !== 'hecha' && x.estado !== 'no-aplica' ? `${listos} de ${PASOS.length} pasos` : x.detalle;
+        return `<li class="rcb-etapa rc-${x.estado}" ${x.n === actual.n ? 'aria-current="step"' : ''}>
+          <button type="button" class="rcb-btn" data-act="etapa" data-etapa="${x.id}" data-tip="<b>${x.n}. ${esc(x.titulo)} · ${esc(x.donde)}</b>${esc(x.hace)}">
+            <span class="rcb-marca" aria-hidden="true">${x.estado === 'hecha' ? '✓' : x.n}</span>
+            <span class="rcb-txt"><span class="rcb-t">${esc(x.id === 'oferta' ? 'Oferta' : x.titulo)}</span><span class="rcb-det">${esc(det)}<span class="visualmente-oculto">: ${ETIQ_ETAPA[x.estado]}</span></span></span>
+          </button></li>`;
+      }).join('');
+      const enSeg = state.tab === 'seguimiento';
+      let texto, cta = '';
+      if (s.accion === 'ir-paso') {
+        const lbl = (PASOS.find((x) => x.n === s.paso) || {}).label || '';
+        const que = s.motivo === 'error' ? `errores en el paso ${s.paso}` : s.motivo === 'aviso' ? `avisos en el paso ${s.paso}` : `paso ${s.paso} de ${PASOS.length}`;
+        texto = `<b>Formulación</b> ${esc(`${que}: ${lbl}`)}`;
+        if (tabInfo(state.tab).paso !== s.paso) cta = `<button type="button" class="btn btn-sm" data-act="sigue" data-accion="ir-paso">${esc(s.motivo === 'pendiente' ? `Ir al paso ${s.paso}` : s.boton)}${ICON.arrow}</button>`;
+      } else if (s.accion === 'ir-req' && state.tab === 'ficha') {
+        // En los datos el campo está a la vista: no hace falta el botón
+        texto = '<b>Falta</b> el N° de requerimiento, en estos datos';
+      } else if (s.accion && s.boton) {
+        texto = `<b>${rotuloSigue(s)}</b>`;
+        if (!enSeg) cta = `<button type="button" class="btn btn-primario btn-sm" data-act="sigue" data-accion="${esc(s.accion)}">${esc(s.boton.replace(/…$/, ''))}${s.accion === 'abrir-af' ? ICON.open : ICON.arrow}</button>`;
+        else texto = `<b>${rotuloSigue(s)}:</b> ${esc(s.boton.replace(/…$/, ''))}`;
+      } else {
+        texto = `<b>${rotuloSigue(s)}:</b> ${esc(s.corto)}`;
+        if (!enSeg) cta = `<button type="button" class="btn btn-sm" data-act="tab" data-tab="seguimiento">Ver el seguimiento</button>`;
+      }
+      html = `<nav class="rc-barra no-print ${s.espera ? 'espera' : s.fin ? 'fin' : ''}" aria-label="Recorrido del proyecto: etapa ${actual.n} de ${rec.etapas.length}, ${esc(actual.titulo)}">
+          <ol class="rcb-etapas">${etapas}</ol>
+          <div class="rcb-sigue" role="status"><span class="rcb-sigue-t">${texto}</span>${cta}</div>
+        </nav>`;
+    }
     // Se pinta en cada edición (updateCalc): solo se toca el DOM si cambió
-    if (el.dataset.html !== html) { el.dataset.html = html; el.innerHTML = html; }
+    if (el.dataset.html !== html) {
+      el.dataset.html = html;
+      el.innerHTML = html;
+      centrarEtapaActual();
+      marcarSiAvanzo(el, '.rcb-etapa[aria-current]', rec);
+    }
   }
-  /* Pie del paso 5: «Exportar Excel» y, si hay algo que hacer con la oferta, ese paso como botón principal. */
+  /* Cuando el proyecto cambia de etapa (cotizó, se envió, se adjudicó…), la etapa nueva se resalta un
+     instante en la barra y en el seguimiento: el ojo ve qué cambió. No al abrir ni en cada repintado. */
+  const etapaVista = new Map();   // uid → etapa actual ya mostrada
+  function marcarSiAvanzo(el, sel, rec) {
+    const p = state.project;
+    if (!rec || !p) return;
+    const clave = `${p.uid}|${el.id}`;
+    const actual = rec.etapas[rec.actual].id + (rec.siguiente.accion || rec.siguiente.corto || '');
+    const antes = etapaVista.get(clave);
+    etapaVista.set(clave, actual);
+    if (antes === undefined || antes === actual) return;
+    const x = $(sel, el);
+    if (x) { x.classList.remove('rc-cambio'); void x.offsetWidth; x.classList.add('rc-cambio'); }
+  }
+  /* En pantallas angostas la barra se desplaza: la etapa actual queda a la vista (también al
+     cambiar el tamaño de la ventana) */
+  function centrarEtapaActual() {
+    const act = $('#ed-recorrido .rcb-etapa[aria-current]');
+    const ol = $('#ed-recorrido .rcb-etapas');
+    if (!act || !ol) return;
+    const x = ol.scrollWidth > ol.clientWidth ? Math.max(0, act.offsetLeft - ol.offsetLeft - 24) : 0;
+    if (Math.abs(ol.scrollLeft - x) > 1) ol.scrollLeft = x;
+  }
+  window.addEventListener('resize', () => { if (state.project) centrarEtapaActual(); });
+  /* Una oferta que ya salió de la formulación (Enviada, Adjudicada, Perdida o Descartada) se puede seguir
+     editando, pero lo que cambie no cambia la cotización emitida ni lo enviado: en los pasos de la formulación
+     se dice, con el camino para una revisión (2026-10-06). */
+  function pintarAvisoEstado() {
+    const el = $('#ed-estado');
+    const p = state.project;
+    if (!el || !p) return;
+    const fuera = !EN_FORMULACION.includes(p.estado) && state.tab !== 'seguimiento' && !state.imprimir;
+    const html = !fuera ? '' : `<div class="nota no-print" role="note"><span><strong>Esta oferta ya está «${esc(p.estado)}».</strong> Lo que cambies aquí no cambia la cotización emitida ni lo enviado a las demás herramientas. Para una revisión de la oferta, crea una nueva versión (mismo código, v${esc((parseInt(p.version, 10) || 1) + 1)}).</span>
+        <span class="actions"><button type="button" class="btn btn-sm" data-act="version" data-id="${esc(p.uid)}">${ICON.version}Crear nueva versión</button></span></div>`;
+    if (el.innerHTML !== html) el.innerHTML = html;
+  }
+
+  /* Ir a donde se trabaja una etapa: el N° (1), el paso pendiente de la formulación (2) o el seguimiento (3 a 6). */
+  function irAEtapa(id) {
+    if (id === 'requerimiento') { hacerSiguiente('ir-req'); return; }
+    if (id === 'formulacion') {
+      const ps = estadoPasos();
+      const falta = ps.find((x) => x.est === 'err') || ps.find((x) => x.est === 'pend');
+      const tab = falta ? (falta.n === 3 ? state.costoTab : falta.tabs[0]) : (tabInfo(state.tab).paso <= PASOS.length ? state.tab : 'evaluacion');
+      if (tab !== state.tab) goTab(tab);
+      return;
+    }
+    if (state.tab !== 'seguimiento') goTab('seguimiento');
+    setTimeout(() => { const e = $('#etapa-' + id); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
+  }
+  /* Dónde se abre un proyecto: donde está lo que sigue (pedido del usuario, 2026-10-06). Mientras se
+     formula, en el paso pendiente; sin N° de requerimiento, en los datos; después, en el seguimiento. */
+  function destinoDe(p, r) {
+    const s = (recorridoDe(p, r) || {}).siguiente;
+    if (!s || s.accion === 'ir-req') return 'ficha';
+    if (s.accion === 'ir-paso') {
+      const ps = PASOS.find((x) => x.n === s.paso);
+      return ps ? ps.tabs[0] : 'ficha';
+    }
+    return 'seguimiento';
+  }
+  /* Después de una acción del recorrido, el seguimiento muestra en qué quedó y qué sigue. */
+  function irASeguimiento() {
+    if (!state.project) return;
+    if (state.tab !== 'seguimiento') goTab('seguimiento');
+    else { pintarHerramientas(); pintarSigue(); }
+  }
+
+  /* Pie del paso 5 y del seguimiento: lo que sigue como botón principal. Al final de la evaluación,
+     si la oferta ya no se formula más, también lleva al seguimiento; en el seguimiento sin nada que
+     hacer, la salida es volver a la lista. */
   function pieSigue(s) {
-    const exportar = `<button type="button" class="btn ${s ? '' : 'btn-primario'}" data-act="exp-xlsx" data-id="${state.project.uid}">${ICON.download}Exportar Excel</button>`;
-    return s ? `${exportar}<button type="button" class="btn btn-primario" data-act="sigue" data-accion="${esc(s.accion)}">Siguiente: ${esc(s.boton.replace(/…$/, ''))}${ICON.arrow}</button>` : exportar;
+    const tab = state.tab;
+    if (tab === 'seguimiento') {
+      if (s) return `<button type="button" class="btn btn-primario" data-act="sigue" data-accion="${esc(s.accion)}">${esc(s.boton.replace(/…$/, ''))}${s.accion === 'abrir-af' ? ICON.open : ICON.arrow}</button>`;
+      return '<a class="btn" href="#/">Volver a Proyectos</a>';
+    }
+    if (!s) return `<button type="button" class="btn btn-primario" data-act="tab" data-tab="seguimiento">Siguiente: Seguimiento${ICON.arrow}</button>`;
+    const ver = s.accion === 'ir-paso' ? '' : '<button type="button" class="btn" data-act="tab" data-tab="seguimiento">Ver el seguimiento</button>';
+    return `${ver}<button type="button" class="btn btn-primario" data-act="sigue" data-accion="${esc(s.accion)}">Siguiente: ${esc(s.boton.replace(/…$/, ''))}${ICON.arrow}</button>`;
   }
   function pintarPieSigue(rec) {
     const el = $('#pie-sigue');
     if (el && state.project) el.innerHTML = pieSigue(siguienteAccion(rec));
   }
-  /* Al cambiar el estado de la oferta: el aviso, el pie y el paso 5 se ponen al día, y se dice qué sigue. */
+  /* Al cambiar el estado de la oferta: la barra, el pie y el seguimiento se ponen al día, y se dice qué sigue. */
   function alCambiarEstado(avisada) {
     const p = state.project;
     if (!p) return;
     pintarSigue();
-    if (state.tab === 'evaluacion') pintarHerramientas(); else pintarPieSigue();
+    pintarAvisoEstado();
+    if (state.tab === 'seguimiento') pintarHerramientas(); else pintarPieSigue();
     const s = (recorridoDe(p) || {}).siguiente;
     const min = (t) => t.charAt(0).toLowerCase() + t.slice(1);
     const que = !s ? ''
@@ -3901,7 +4349,7 @@
      en el mismo clic (el recorrido lo dice); la adjudicación viaja con «Pasar a ejecución». */
   async function marcarEstado(estado) {
     const p = state.project;
-    if (!p) return;
+    if (!p) return false;
     if (p.estado !== estado) {
       p.estado = estado;
       updateHeader();
@@ -3909,15 +4357,18 @@
     }
     const avisada = estado !== 'Adjudicada' && !!(QH() && QH().reqDe(p)) && await avisarPlanilla(true);
     alCambiarEstado(avisada);
+    return true;
   }
-  /* Los botones del recorrido, del aviso del editor y del pie del paso 5. */
+  /* Los botones del recorrido: la barra, el seguimiento y el pie del paso 5. Lo que cambia algo en
+     otra herramienta termina en el seguimiento, que muestra en qué quedó y qué sigue. */
   async function hacerSiguiente(accion) {
     const p = state.project;
     if (!p || !accion) return;
     const s = (recorridoDe(p) || {}).siguiente || {};
+    let hecho = false;
     switch (accion) {
       case 'ir-req':
-        goTab('ficha');
+        if (state.tab !== 'ficha') goTab('ficha');
         setTimeout(() => { const i = $('#f-req'); if (i) { i.scrollIntoView({ block: 'center' }); i.focus(); } }, 40);
         break;
       case 'ir-paso': {
@@ -3926,31 +4377,32 @@
         break;
       }
       case 'oferta-elegir': await elegirOfertaPara(p.uid); break;
-      case 'herr-cotizacion': await prepararCotizacion(); break;
-      case 'herr-planilla': await avisarPlanilla(); break;
-      case 'herr-venta': await enviarVenta(); break;
-      case 'enviar-af': await enviarAF(); break;
-      case 'marcar-enviada': await marcarEstado('Enviada'); break;
-      case 'marcar-adjudicada': await marcarEstado('Adjudicada'); break;
-      case 'marcar-perdida': await marcarEstado('Perdida'); break;
-      case 'abrir-af': window.open(TABLERO_AF, '_blank', 'noopener'); break;
+      case 'herr-cotizacion': hecho = await prepararCotizacion(); break;
+      case 'herr-planilla': hecho = await avisarPlanilla(); break;
+      case 'herr-venta': hecho = await enviarVenta(); break;
+      case 'enviar-af': hecho = await enviarAF(); break;
+      case 'marcar-enviada': hecho = await marcarEstado('Enviada'); break;
+      case 'marcar-adjudicada': hecho = await marcarEstado('Adjudicada'); break;
+      case 'marcar-perdida': hecho = await marcarEstado('Perdida'); break;
+      case 'abrir-af': window.open(enlaceAF(p), '_blank', 'noopener'); break;
       default: break;
     }
+    if (hecho) irASeguimiento();
   }
 
-  // ---- Panel «Otras herramientas QUEMPIN» (paso 5) -------------------------------------
+  // ---- Seguimiento: cada etapa con su herramienta, su estado y sus acciones ----------------------
+  /* Antes eran dos listas separadas al pie del paso 5 (las etapas arriba, los bloques de cada herramienta
+     abajo y en otro orden). Desde el 2026-10-06 es una pestaña propia con una línea de tiempo: cada etapa
+     lleva adentro lo que su herramienta hizo con el proyecto y sus botones. */
   const ESTADO_SISTEMA = {
     pendiente: { cls: 'warn', t: 'En espera' }, aplicado: { cls: 'ok', t: 'Listo' }, 'sin-cambios': { cls: 'ok', t: 'Listo' },
     descartado: { cls: 'na', t: 'Descartado' }, rechazado: { cls: 'bad', t: 'Rechazado' }, reemplazado: { cls: 'na', t: 'Reemplazado' }
   };
-  /* Cada bloque lleva el N° de su etapa en el recorrido; van en ese orden: Control de Documentos (2),
-     cotización (3), planilla (4) y Análisis Financiero (5). */
-  const etq = (n) => `<span class="herr-etapa" title="Etapa ${n} del recorrido">${n}</span>`;
-  const bloque = (titulo, cuerpo, acciones, etapa) => `<div class="herr-bloque"><h5 class="panel-t">${etapa ? etq(etapa) : ''}${titulo}</h5><div class="herr-cuerpo">${cuerpo}</div>${acciones ? `<div class="actions">${acciones}</div>` : ''}</div>`;
-  /* Costos (pintarPanelAF los pinta en #af-panel) y venta, juntos: viajan juntos al pasar a ejecución. */
-  const bloqueAF = (venta) => `<div class="herr-bloque herr-af"><h5 class="panel-t">${etq(5)}Análisis Financiero: costos y venta</h5><div class="af-panel" id="af-panel"></div>${venta || ''}</div>`;
   const linea = (html) => `<p class="af-linea">${html}</p>`;
+  const acciones = (html) => (html ? `<div class="actions">${html}</div>` : '');
   const chipEstado = (e) => { const x = ESTADO_SISTEMA[e] || ESTADO_SISTEMA.pendiente; return `<span class="chip ${x.cls}">${x.t}</span>`; };
+  /* Lo que cada etapa muestra adentro: { etapa: html }, del proyecto abierto. pulso: la línea del procesador. */
+  let herrDe = { uid: null, html: {}, aviso: '', pulso: '' };
 
   function montoVenta(p, cots) {
     const c = cots.find((d) => d.moneda === 'CLP' && ok(d.neto) && d.neto > 0);
@@ -3988,90 +4440,82 @@
     return m;
   }
 
+  /* Seguimiento: el aviso de lo que sigue y la línea de tiempo con las seis etapas. Lo de las demás
+     herramientas (herrDe) llega después de leer la carpeta; mientras tanto cada etapa ya dice qué es. */
+  function pintarRecorrido(rec) {
+    const el = $('#recorrido');
+    const p = state.project;
+    if (!el || !rec || !p) return;
+    const s = rec.siguiente;
+    const e = rec.etapas[rec.actual];
+    const botones = botonesSigue(s);
+    const h = herrDe.uid === p.uid ? herrDe : { html: {}, aviso: '', pulso: '' };
+    el.innerHTML = `${h.aviso}
+      <div class="rc-sigue ${s.espera ? 'espera' : s.fin ? 'fin' : ''}" role="status">
+        <p class="rc-sigue-t">${rotuloSigue(s)} <span>· Etapa ${e.n} de ${rec.etapas.length}: ${esc(e.titulo)}, en ${esc(e.donde)}</span></p>
+        <p class="rc-sigue-x">${esc(s.texto)}</p>
+        ${botones ? `<div class="actions">${botones}</div>` : ''}
+      </div>
+      <ol class="rc-linea" aria-label="Etapas del proyecto">${rec.etapas.map((x) => `<li class="rcl rc-${x.estado}" id="etapa-${x.id}" ${x.n === e.n ? 'aria-current="step"' : ''}>
+          <span class="rcl-marca" aria-hidden="true">${x.estado === 'hecha' ? '✓' : x.n}</span>
+          <div class="rcl-cuerpo">
+            <div class="rcl-head"><h4 class="rcl-t">${esc(x.titulo)}</h4><span class="rcl-donde">${esc(x.donde)}</span><span class="rcl-det">${esc(x.detalle)}<span class="visualmente-oculto">: ${ETIQ_ETAPA[x.estado]}</span></span></div>
+            <p class="rcl-hace">${esc(x.hace)}</p>
+            ${h.html[x.id] ? `<div class="rcl-herr">${h.html[x.id]}</div>` : ''}
+          </div></li>`).join('')}</ol>
+      ${h.pulso}`;
+    if ($('#af-panel', el)) pintarPanelAF();
+    marcarSiAvanzo(el, '.rcl[aria-current]', rec);
+  }
+
   async function pintarHerramientas() {
-    const el = $('#herr-panel');
+    const el = $('#recorrido');
     const p = state.project;
     if (!el || !p) return;
-    pintarRecorrido(recorridoDe(p));
-    // Sin la carpeta, el bloque del Análisis Financiero sigue: sus costos se pueden descargar para el buzón
+    const r = state.result;
+    const v = p.vinculos || {};
+    const html = {};
+    const req = QH() ? QH().reqDe(p) : null;
+    // Lo que se sabe sin leer la carpeta: la formulación y el envío al Análisis Financiero
+    const ps = estadoPasos();
+    const falta = ps.find((x) => x.est === 'err') || ps.find((x) => x.est === 'pend');
+    const vo = ofertaActiva() ? QO().vinculo(p) : null;
+    const resumenFormulacion = linea(`${falta ? `<span class="chip warn">Paso ${falta.n} pendiente</span> ${esc(falta.label)}: ${esc(falta.falta || 'por completar')}` : `<span class="chip ok">5 de 5 pasos</span> Precio neto <b>${clp(r.totals.precioNeto)}</b> · margen ${pct(r.kpis.margen)}`}`)
+      + (vo ? linea(`${ICON.folder}<span class="rcl-carpeta">Carpeta de la oferta: <b>${esc(vo.nombre)}</b> · el Excel de la formulación se mantiene al día ahí.</span>`) : '');
+    const bFormulacion = falta ? `<button type="button" class="btn" data-act="sigue" data-accion="ir-paso">Ir al paso ${falta.n}${ICON.arrow}</button>` : '<button type="button" class="btn" data-act="tab" data-tab="evaluacion">Ver la evaluación</button>';
+    const bloqueAF = (venta) => `<div class="herr-af"><div class="af-panel" id="af-panel"></div>${venta || ''}</div>`;
+    const reqSinCarpeta = req ? linea(`<span class="code-badge">N° ${esc(req)}</span> en la Planilla de Ingreso.`) : '';
+    const sinReq = linea('Escribe el N° de requerimiento en los datos del proyecto: une este proyecto con su cotización, el Análisis Financiero y el Flujo de Caja.') + acciones('<button type="button" class="btn" data-act="sigue" data-accion="ir-req">Escribir el N°</button>');
+
+    const pintarSin = (aviso) => {
+      herrDe = { uid: p.uid, html: { requerimiento: req ? reqSinCarpeta : sinReq, formulacion: resumenFormulacion + acciones(bFormulacion), ejecucion: bloqueAF() }, aviso, pulso: '' };
+      pintarRecorrido(recorridoDe(p));
+    };
+    // Sin la carpeta, lo de las demás herramientas no se puede leer; el envío al Análisis Financiero
+    // sigue disponible (se descarga para el buzón)
     if (!QI() || !QH() || !QI().disponible()) {
-      el.innerHTML = bloque('Carpeta del equipo', linea('Este navegador no puede abrir la carpeta del equipo: usa Chrome o Edge de escritorio para preparar la cotización, avisar a la planilla y registrar la evaluación.')) + bloqueAF();
-      pintarPanelAF();
+      pintarSin(`<div class="nota no-print"><span>Este navegador no puede abrir la carpeta del equipo: usa <strong>Chrome o Edge de escritorio</strong> para ver lo que hicieron las demás herramientas con este proyecto y preparar la cotización.</span></div>`);
       return;
     }
     if (!(await carpetaLista())) {
-      el.innerHTML = bloque('Carpeta del equipo', linea('Conecta la carpeta del equipo (o da el permiso de esta sesión) para preparar la cotización en Sistema QUEMPIN, avisar a la planilla y registrar la evaluación.'),
-        `<button type="button" class="btn" data-act="herr-actualizar">${ICON.folder}Conectar o dar permiso</button>`) + bloqueAF();
-      pintarPanelAF();
+      pintarSin(`<div class="nota no-print"><span><strong>Conecta la carpeta del equipo</strong> (o da el permiso de esta sesión) para ver lo que hicieron las demás herramientas con este proyecto: la cotización, la planilla y el Análisis Financiero.</span><span class="actions"><button type="button" class="btn btn-sm" data-act="herr-actualizar">${ICON.folder}Conectar o dar permiso</button></span></div>`);
       return;
     }
+    // Mientras se lee la carpeta, la línea de tiempo ya está y cada etapa dice qué es
+    if (herrDe.uid !== p.uid) { herrDe = { uid: p.uid, html: { formulacion: resumenFormulacion + acciones(bFormulacion) }, aviso: '', pulso: '<p class="af-nota herr-pulso">Revisando la carpeta del equipo…</p>' }; pintarRecorrido(recorridoDe(p)); }
     const [docs, af, folios, reqs, estado] = await Promise.all(['documentos-comerciales', 'analisis-financiero', 'folios', 'requerimientos', 'estado']
       .map((n) => (n === 'requerimientos' ? QH().requerimientos() : QH().publicacion(n))));
-    if (state.project !== p || !$('#herr-panel')) return;
-    const v = p.vinculos || {};
+    if (state.project !== p || !$('#recorrido')) return;
     const cots = QH().cotizacionesDe(p, docs);
+    const filaReq = req ? ((reqs && reqs.requerimientos) || []).find((x) => String(x.numero) === req) || null : null;
 
-    // 3. Cotización en Sistema QUEMPIN
-    const borr = (v.sistemaQuempin || {}).ultimoBorrador;
-    const eb = borr ? QH().estadoEnSistema(docs, borr.id) : null;
-    if (borr && eb && (eb.estado !== borr.estado || (eb.folio && eb.folio !== borr.folio))) {
-      // Lo que respondió Sistema QUEMPIN queda en el proyecto: la lista y el aviso del editor lo
-      // muestran sin leer la carpeta.
-      borr.estado = eb.estado;
-      if (eb.folio) borr.folio = eb.folio;
-      scheduleSave();
-    }
-    let tCot = linea('Prepara la cotización con los valores por partida del paso 4: llega a <b>Borradores del Formulador</b> en Sistema QUEMPIN, donde se revisa y se emite con su número.');
-    if (borr) {
-      const det = eb && eb.estado === 'aplicado' && eb.folio ? `Emitida como cotización <b>${esc(eb.folio)}</b>.`
-        : eb && eb.estado === 'rechazado' ? esc((eb.detalle || []).join(' '))
-          : eb && eb.estado === 'descartado' ? 'Se descartó en Sistema QUEMPIN.' : 'Espera en Sistema QUEMPIN a que alguien la revise y la emita.';
-      tCot = linea(`${chipEstado(eb ? eb.estado : 'pendiente')} Versión ${esc(borr.version)} enviada el ${esc(fechaHora(borr.fecha))}. ${det}`);
-    }
-    if (cots.length) tCot += linea('Emitidas: ' + cots.slice(0, 4).map((c) => `<span class="code-badge">${esc(c.folio)}</span> ${esc(fechaCorta(c.fecha))} · neto ${c.moneda === 'CLP' ? clp(c.neto) : `${nf(c.neto)} ${esc(c.moneda)}`}`).join(' · '));
-    const blqCot = bloque('Cotización en Sistema QUEMPIN', tCot,
-      `<button type="button" class="btn" data-act="herr-cotizacion" ${state.result.partidas.length ? '' : 'disabled'}>${ICON.enviar}${borr ? 'Preparar de nuevo…' : 'Preparar cotización…'}</button>`, 3);
+    // 1. Requerimiento: lo que dice la planilla
+    html.requerimiento = !req ? sinReq
+      : filaReq ? linea(`<span class="code-badge">N° ${esc(req)}</span> ${esc(filaReq.titulo || 'Sin título')} · la planilla dice: <b>${esc(filaReq.estado || 'sin estado')}</b>${ok(filaReq.valorOfertado) ? ` · ofertado ${clp(filaReq.valorOfertado)}` : ''}${ok(filaReq.valorAdjudicado) ? ` · adjudicado ${clp(filaReq.valorAdjudicado)}` : ''}.`)
+        : linea(`<span class="code-badge">N° ${esc(req)}</span> No está en ${enLaPlanilla(reqs)}: revisa el N°.`) + acciones('<button type="button" class="btn" data-act="sigue" data-accion="ir-req">Revisar el N°</button>');
 
-    // 5. Venta al Análisis Financiero (va en el bloque de los costos: viajan juntos al pasar a ejecución)
-    const vAF = vinculoAF(p);
-    let tVenta = '', bVenta = '';
-    if (p.estado === 'Adjudicada' && vAF) {
-      const mv = montoVenta(p, cots);
-      const q = ((af && af.proyectos) || []).find((x) => x.tag === vAF.tag);
-      const ven = q && q.venta;
-      const ult = (v.ventaAF || {}).ultimoEnvio;
-      const ev = ult && af && af.mensajes ? af.mensajes[ult.id] : null;
-      tVenta = linea(`<span class="code-badge">${esc(vAF.tag)}</span> Se enviaría ${clp(mv.monto)} sin IVA, ${esc(mv.texto)}.`)
-        + (ven ? linea(ven.cargada ? (ven.origen ? 'El Análisis Financiero ya tiene una venta enviada desde aquí.' : '<span class="af-aviso">El Análisis Financiero tiene un monto escrito a mano: el envío quedará esperando que lo confirmen allá.</span>') : 'El Análisis Financiero todavía no tiene el monto de venta.') : '')
-        + (ult ? linea(`${chipEstado(ev ? ev.estado : 'pendiente')} Enviada el ${esc(fechaHora(ult.fecha))} (${clp(ult.monto)}).`) : '');
-      bVenta = `<button type="button" class="btn" data-act="herr-venta">${ICON.enviar}${ult ? 'Volver a enviar la venta' : 'Enviar la venta'}</button>`;
-    }
-    const blqAF = bloqueAF(tVenta ? `<div class="herr-cuerpo herr-venta">${tVenta}</div>${bVenta ? `<div class="actions">${bVenta}</div>` : ''}` : '');
-
-    // 4. Planilla de Ingreso
-    const req = QH().reqDe(p);
-    let tPla, bPla = '';
-    if (!req) tPla = linea('Escribe el N° de requerimiento en <button type="button" class="link-btn" data-act="tab" data-tab="ficha">Datos del proyecto</button> para avisar a la Planilla de Ingreso cuando la oferta se envíe o tenga respuesta.');
-    else {
-      const r = ((reqs && reqs.requerimientos) || []).find((x) => String(x.numero) === req);
-      const vi = valorConIva(p, cots);
-      const cambios = QH().cambiosParaPlanilla(p, vi.valor);
-      const enPlanilla = r ? `La planilla dice: ${esc(r.estado || 'sin estado')}${ok(r.valorOfertado) ? ` · ofertado ${clp(r.valorOfertado)}` : ''}${ok(r.valorAdjudicado) ? ` · adjudicado ${clp(r.valorAdjudicado)}` : ''}.` : `El N° ${esc(req)} no está en ${enLaPlanilla(reqs)}.`;
-      const ult = (v.planilla || {}).ultimaSugerencia;
-      const yaEsta = !!cambios && planillaMuestra(r, cambios);
-      const avisado = !!cambios && !!ult && mismosCambios(ult.cambios, cambios);
-      const valor = cambios ? cambios.valorOfertado || cambios.valorAdjudicado : 0;
-      tPla = linea(`<span class="code-badge">N° ${esc(req)}</span> ${enPlanilla}`)
-        + (!cambios ? linea('Cuando la oferta se envíe o tenga respuesta (Adjudicada, Perdida o Descartada), se avisa el estado a la planilla.')
-          : yaEsta ? linea('<span class="chip ok">Al día</span> La planilla ya muestra el estado de esta oferta.')
-            : (avisado ? '' : linea(`Se avisaría: <b>${esc(cambios.estado)}</b>${valor ? ` con ${clp(valor)} (${esc(vi.texto)})` : ''}.`))
-              + (ult ? linea(`${chipEstado('pendiente')} Aviso${(ult.cambios || {}).estado ? ` «${esc(ult.cambios.estado)}»` : ''} enviado el ${esc(fechaHora(ult.fecha))}: espera que quien lleva la planilla lo pase.`) : ''));
-      if (cambios && !yaEsta && !avisado) bPla = `<button type="button" class="btn" data-act="herr-planilla">${ICON.enviar}Avisar a la Planilla de Ingreso</button>`;
-    }
-    const blqPla = bloque('Planilla de Ingreso de Requerimientos', tPla, bPla, 4);
-
-    // 2. Control de Documentos (evaluación de costos, tipo 81): el número se toma solo al elegir la
-    //    carpeta de la oferta, uno por versión (registrarSolo)
+    // 2. Formulación, con su N° del Control de Documentos (evaluación de costos, tipo 81): el número se
+    //    toma solo al elegir la carpeta de la oferta, uno por versión (registrarSolo)
     const reg = registroDe(p);
     const er = reg ? QH().estadoEnSistema(docs, reg.id) : null;
     if (reg && er && er.estado === 'aplicado' && er.folio && er.folio !== reg.folio) {
@@ -4087,34 +4531,93 @@
     let tReg, bReg = '';
     if (reg) {
       const folio = er && er.folio ? er.folio : reg.folio;
-      tReg = linea(`${chipEstado(er ? er.estado : 'pendiente')} <span class="code-badge">${esc(folio)}</span> ${er && er.estado === 'aplicado'
-        ? (er.reasignado ? `El ${esc(reg.folioPropuesto || reg.folio)} ya estaba usado: quedó como ${esc(folio)}.` : 'Registrada en el Control de Documentos.')
-        : er && er.estado === 'rechazado' ? esc((er.detalle || []).join(' ')) : 'Se registra cuando Sistema QUEMPIN revise la carpeta.'}`)
-        + linea('El Excel exportado lleva ese número en el nombre.');
-    } else if (!(QO() && QO().vinculo(p))) {
-      tReg = linea(`La evaluación de costos toma su número del Control de Documentos al elegir la carpeta de la oferta${elSiguiente}. El Excel exportado lleva ese número en el nombre.`);
+      tReg = linea(`${chipEstado(er ? er.estado : 'pendiente')} Evaluación de costos <span class="code-badge">${esc(folio)}</span> ${er && er.estado === 'aplicado'
+        ? (er.reasignado ? `(el ${esc(reg.folioPropuesto || reg.folio)} ya estaba usado: quedó como ${esc(folio)}).` : 'registrada en el Control de Documentos.')
+        : er && er.estado === 'rechazado' ? esc((er.detalle || []).join(' ')) : 'en el Control de Documentos: se registra cuando Sistema QUEMPIN revise la carpeta.'}`);
+    } else if (!vo) {
+      tReg = linea(`La evaluación de costos toma su N° del Control de Documentos al elegir la carpeta de la oferta${elSiguiente}.`);
       if (ofertaActiva()) bReg = `<button type="button" class="btn" data-act="oferta-elegir">${ICON.folder}Elegir la carpeta de la oferta</button>`;
     } else {
-      tReg = linea(`La versión ${esc(p.version)} todavía no tiene número del Control de Documentos${elSiguiente}.`);
+      tReg = linea(`La versión ${esc(p.version)} todavía no tiene N° del Control de Documentos${elSiguiente}.`);
       bReg = `<button type="button" class="btn" data-act="herr-registro">${ICON.enviar}Registrar ahora</button>`;
     }
-    const blqCD = bloque('Control de Documentos', tReg, bReg, 2);
+    html.formulacion = resumenFormulacion + tReg + acciones(bReg + bFormulacion);
+
+    // 3. Cotización en Sistema QUEMPIN
+    const borr = (v.sistemaQuempin || {}).ultimoBorrador;
+    const eb = borr ? QH().estadoEnSistema(docs, borr.id) : null;
+    if (borr && eb && (eb.estado !== borr.estado || (eb.folio && eb.folio !== borr.folio))) {
+      // Lo que respondió Sistema QUEMPIN queda en el proyecto: la lista y la barra del recorrido lo
+      // muestran sin leer la carpeta.
+      borr.estado = eb.estado;
+      if (eb.folio) borr.folio = eb.folio;
+      scheduleSave();
+    }
+    let tCot = linea('Con los valores por partida del paso 4 se prepara la cotización: llega a <b>Borradores del Formulador</b> en Sistema QUEMPIN, donde se revisa y se emite con su número.');
+    if (borr) {
+      const espera = !(eb && (eb.estado === 'aplicado' || eb.estado === 'rechazado' || eb.estado === 'descartado'));
+      const det = eb && eb.estado === 'aplicado' && eb.folio ? `Emitida como cotización <b>${esc(eb.folio)}</b>.`
+        : eb && eb.estado === 'rechazado' ? esc((eb.detalle || []).join(' '))
+          : eb && eb.estado === 'descartado' ? 'Se descartó en Sistema QUEMPIN.' : 'Espera en Sistema QUEMPIN a que alguien la revise y la emita.';
+      tCot = linea(`${chipEstado(eb ? eb.estado : 'pendiente')} Versión ${esc(borr.version)} enviada el ${esc(fechaHora(borr.fecha))}. ${det}`)
+        + (espera ? `<ol class="rcl-pasos"><li>Abre <b>Sistema QUEMPIN</b> en tu computador.</li><li>En <b>Nueva Cotización</b>, usa el botón <b>Borradores del Formulador</b> y carga esta cotización.</li><li>Revísala y emítela: este proyecto verá su número solo.</li></ol>` : '');
+    }
+    if (cots.length) tCot += linea('Emitidas: ' + cots.slice(0, 4).map((c) => `<span class="code-badge">${esc(c.folio)}</span> ${esc(fechaCorta(c.fecha))} · neto ${c.moneda === 'CLP' ? clp(c.neto) : `${nf(c.neto)} ${esc(c.moneda)}`}`).join(' · '));
+    html.cotizacion = tCot + acciones(`<button type="button" class="btn" data-act="herr-cotizacion" ${r.partidas.length ? '' : 'disabled'}>${ICON.enviar}${borr ? 'Preparar de nuevo…' : 'Preparar la cotización…'}</button>`);
+
+    // 4. Oferta y adjudicación: el estado y el aviso a la Planilla de Ingreso
+    let tPla = linea(`Estado de la oferta: <span class="estado" data-e="${esc(p.estado)}">${esc(p.estado)}</span>`), bPla = '';
+    if (req) {
+      const vi = valorConIva(p, cots);
+      const cambios = QH().cambiosParaPlanilla(p, vi.valor);
+      const ult = (v.planilla || {}).ultimaSugerencia;
+      const yaEsta = !!cambios && planillaMuestra(filaReq, cambios);
+      const avisado = !!cambios && !!ult && mismosCambios(ult.cambios, cambios);
+      const valor = cambios ? cambios.valorOfertado || cambios.valorAdjudicado : 0;
+      tPla += (!cambios ? linea('Cuando la oferta se envíe o tenga respuesta (Adjudicada, Perdida o Descartada), se avisa el estado a la Planilla de Ingreso.')
+        : yaEsta ? linea('<span class="chip ok">Al día</span> La Planilla de Ingreso ya muestra el estado de esta oferta.')
+          : (avisado ? '' : linea(`Se avisaría a la planilla: <b>${esc(cambios.estado)}</b>${valor ? ` con ${clp(valor)} (${esc(vi.texto)})` : ''}.`))
+            + (ult ? linea(`${chipEstado('pendiente')} Aviso${(ult.cambios || {}).estado ? ` «${esc(ult.cambios.estado)}»` : ''} enviado el ${esc(fechaHora(ult.fecha))}: espera que quien lleva la planilla lo pase.`) : ''));
+      if (cambios && !yaEsta && !avisado) bPla = `<button type="button" class="btn" data-act="herr-planilla">${ICON.enviar}Avisar a la Planilla de Ingreso</button>`;
+    } else tPla += linea('Con el N° de requerimiento, el estado y el valor se avisan a la Planilla de Ingreso en el mismo clic.');
+    html.oferta = tPla + acciones(bPla);
+
+    // 5. Ejecución: costos y venta al Análisis Financiero (viajan juntos al pasar a ejecución)
+    const vAF = vinculoAF(p);
+    let tVenta = '', bVenta = '';
+    if (p.estado === 'Adjudicada' && vAF) {
+      const mv = montoVenta(p, cots);
+      const q = ((af && af.proyectos) || []).find((x) => x.tag === vAF.tag);
+      const ven = q && q.venta;
+      const ult = (v.ventaAF || {}).ultimoEnvio;
+      const ev = ult && af && af.mensajes ? af.mensajes[ult.id] : null;
+      tVenta = linea(`Venta: se enviaría ${clp(mv.monto)} sin IVA, ${esc(mv.texto)}.`)
+        + (ven ? linea(ven.cargada ? (ven.origen ? 'El Análisis Financiero ya tiene una venta enviada desde aquí.' : '<span class="af-aviso">El Análisis Financiero tiene un monto escrito a mano: el envío quedará esperando que lo confirmen allá.</span>') : 'El Análisis Financiero todavía no tiene el monto de venta.') : '')
+        + (ult ? linea(`${chipEstado(ev ? ev.estado : 'pendiente')} Venta enviada el ${esc(fechaHora(ult.fecha))} (${clp(ult.monto)}).`) : '');
+      bVenta = `<button type="button" class="btn" data-act="herr-venta">${ICON.enviar}${ult ? 'Volver a enviar la venta' : 'Enviar la venta'}</button>`;
+    }
+    const abrirAF = vAF ? `<a class="btn" href="${esc(enlaceAF(p))}" target="_blank" rel="noopener">${ICON.open}Ver la ficha en Análisis Financiero</a>` : '';
+    html.ejecucion = bloqueAF(tVenta || bVenta || abrirAF ? `<div class="herr-cuerpo herr-venta">${tVenta}${acciones(bVenta + abrirAF)}</div>` : '');
+
+    // 6. Cierre
+    const qAF = vAF ? ((af && af.proyectos) || []).find((x) => x.tag === vAF.tag) : null;
+    if (qAF && ok(Number(qAF.avance))) html.cierre = linea(`Avance en el Análisis Financiero: <b>${pct(Number(qAF.avance))}</b>${Number(qAF.avance) >= 1 ? ': lo gastado frente a lo presupuestado ya cuenta en el sesgo real del simulador (paso 5).' : '. Se registra en su tablero, pestaña «Ingresar datos».'}`);
 
     const l = QH().lecturaEstado(estado);
-    el.innerHTML = [blqCD, blqCot, blqPla, blqAF].join('') + (l ? `<p class="af-nota herr-pulso"><span class="dot ${l.nivel}" aria-hidden="true"></span> ${esc(l.texto)} <button type="button" class="link-btn" data-act="herr-actualizar">Actualizar</button></p>` : '');
-    pintarPanelAF();
-    const rec = recorridoDe(p, state.result, publicadoPara(p, docs, af, reqs));
+    herrDe = { uid: p.uid, html, aviso: '', pulso: l ? `<p class="af-nota herr-pulso"><span class="dot ${l.nivel}" aria-hidden="true"></span> ${esc(l.texto)} <button type="button" class="link-btn" data-act="herr-actualizar">Actualizar</button></p>` : '' };
+    const rec = recorridoDe(p, r, publicadoPara(p, docs, af, reqs));
     pintarRecorrido(rec);
     pintarPieSigue(rec);
+    pintarSigue();
   }
 
   // ---- Acciones del panel -----------------------------------------------------------------
   async function prepararCotizacion() {
     const p = state.project;
-    if (!p || !(await asegurarCarpeta())) return;
+    if (!p || !(await asegurarCarpeta())) return false;
     if (saveTimer) saveNow();
     const cot = cotizacion();
-    if (!cot.lineas.length) { toast('El proyecto no tiene partidas.', true); return; }
+    if (!cot.lineas.length) { toast('El proyecto no tiene partidas.', true); return false; }
     const contrapartes = await QH().publicacion('contrapartes', true);
     const clientes = ((contrapartes && contrapartes.clientes) || []).filter((c) => c.razon_social);
     const nErr = state.result.warnings.filter((w) => w.level === 'error').length;
@@ -4156,24 +4659,25 @@
     const validar = () => { const d = datos(); btn.disabled = !d.cliente.razon_social.trim() || !d.referencia.trim(); };
     ['#cq-cli', '#cq-ref'].forEach((sel) => $(sel).addEventListener('input', validar));
     validar();
-    if (await promesa !== 'enviar') return;
+    if (await promesa !== 'enviar') return false;
     const m = QH().mensajeBorrador(p, cot, datos(), usuarioActual(p));
-    try { await QH().enviar(m); } catch (e) { toast('No se pudo enviar a Sistema QUEMPIN: ' + ((e && e.message) || e), true); return; }
+    try { await QH().enviar(m); } catch (e) { toast('No se pudo enviar a Sistema QUEMPIN: ' + ((e && e.message) || e), true); return false; }
     p.vinculos = Object.assign({}, p.vinculos, { sistemaQuempin: { ultimoBorrador: { id: m.id, fecha: m.origen.enviado, version: p.version, neto: cot.neto } } });
     scheduleSave();
     QH().olvidar();
     pintarHerramientas();
     pintarSigue();
     toast('Cotización enviada a Sistema QUEMPIN: aparece en «Borradores del Formulador», donde se revisa y se emite.', false, 5000);
+    return true;
   }
 
   async function enviarVenta() {
     const p = state.project;
     const vAF = vinculoAF(p);
-    if (!p || !vAF || !(await asegurarCarpeta())) return;
+    if (!p || !vAF || !(await asegurarCarpeta())) return false;
     const [docs, af] = await Promise.all([QH().publicacion('documentos-comerciales', true), QH().publicacion('analisis-financiero', true)]);
     const mv = montoVenta(p, QH().cotizacionesDe(p, docs));
-    if (!(mv.monto > 0)) { toast('No hay un monto de venta que enviar.', true); return; }
+    if (!(mv.monto > 0)) { toast('No hay un monto de venta que enviar.', true); return false; }
     const q = ((af && af.proyectos) || []).find((x) => x.tag === vAF.tag);
     const ven = q && q.venta;
     const manual = ven && ven.cargada && !ven.origen;
@@ -4184,13 +4688,14 @@
         <p class="af-nota">Se aplica en su próxima actualización, con respaldo. Nunca reemplaza un valor escrito a mano sin que lo confirmen.</p>`,
       buttons: [{ label: 'Cancelar' }, { label: 'Enviar', value: 'enviar', primary: true }]
     });
-    if (v !== 'enviar') return;
-    try { await dejarVenta(p, vAF.tag, mv, q, false); } catch (e) { toast('No se pudo dejar el envío: ' + ((e && e.message) || e), true); return; }
+    if (v !== 'enviar') return false;
+    try { await dejarVenta(p, vAF.tag, mv, q, false); } catch (e) { toast('No se pudo dejar el envío: ' + ((e && e.message) || e), true); return false; }
     scheduleSave();
     QH().olvidar();
     pintarHerramientas();
     pintarSigue();
     toast(`Venta enviada al Análisis Financiero (${vAF.tag})`);
+    return true;
   }
 
   /* Avisa a la Planilla de Ingreso el estado de la oferta (y su valor, si se envió o adjudicó).
@@ -4292,14 +4797,15 @@
       r.vinculos = Object.assign({}, r.vinculos, { controlDocumentos: { id: m.id, folio, pais: PAIS_REGISTRO, version: r.version, fecha: m.origen.enviado, nombreArchivo: doc.nombreArchivo } });
       if (r === state.project) scheduleSave(); else { S.upsert(r); if (!state.project) refreshList(); }
       QH().olvidar();
-      if (r === state.project && state.tab === 'evaluacion') pintarHerramientas();
+      if (r === state.project && state.tab === 'seguimiento') pintarHerramientas();
       return folio;
     } finally { registrando.delete(uid); }
   }
   /* Después de elegir la carpeta de la oferta (o heredarla en una versión nueva). */
-  async function registrarAlElegirCarpeta(uid) {
+  async function registrarAlElegirCarpeta(uid, hecho) {
     const folio = await registrarSolo(uid, false).catch((e) => { console.warn('Registro en el Control de Documentos:', e); return ''; });
-    if (folio) toast(`Evaluación de costos N° ${folio} enviada al Control de Documentos: queda registrada cuando Sistema QUEMPIN revise la carpeta.`);
+    if (folio) toast(`${hecho ? `${hecho} ` : ''}Su evaluación de costos tomó el N° ${folio} del Control de Documentos.`, false, 5000);
+    else if (hecho) toast(hecho);
     return folio;
   }
   const X_hoy = () => { const d = new Date(); const z = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`; };
@@ -4339,23 +4845,23 @@
     const caja = $('#compartida'), linea = $('#compartida-linea');
     const pie = $('#footer-datos');
     if (pie) pie.textContent = compartiendo()
-      ? 'Los presupuestos se guardan en este navegador y en la carpeta del equipo, en la biblioteca «Formulación de proyectos» de OneDrive.'
-      : 'Los presupuestos se guardan en este navegador: descárgalos para el equipo o respáldalos con «Exportar Excel».';
+      ? 'Los proyectos se guardan en este navegador y en la carpeta del equipo, en la biblioteca «Formulación de proyectos» de OneDrive.'
+      : 'Los proyectos se guardan en este navegador: descárgalos para el equipo o respáldalos con «Exportar Excel».';
     const prob = problemaCompartida();
     if (prob !== problemaPintado) { problemaPintado = prob; if (!state.project && $('#list-body')) refreshList(); }
     if (!caja || !linea) return;
     const pend = QC().sinSubir(S.all()).length;
-    const cuantos = pend ? ` ${pend === 1 ? 'Un presupuesto está' : `${pend} presupuestos están`} solo en este navegador.` : '';
+    const cuantos = pend ? ` ${pend === 1 ? 'Un proyecto está' : `${pend} proyectos están`} solo en este navegador.` : '';
     let html = '', txt = '';
     if (!e.disponible) {
       html = pend ? notaCompartida(`<strong>Este navegador no puede abrir la carpeta del equipo</strong> (usa Chrome o Edge de escritorio).${cuantos} Descárgalos y déjalos en <strong>${esc(BUZON_EQUIPO)}</strong>.`, BTN_DESCARGAR()) : '';
     } else if (!e.conectada) {
       html = notaCompartida(e.movida
         ? `<strong>La carpeta del equipo cambió de lugar.</strong> Vuelve a conectarla eligiendo la biblioteca <strong>Formulación de proyectos - Documentos</strong> de tu OneDrive.${cuantos}`
-        : `<strong>Los presupuestos se guardan en la carpeta del equipo.</strong> Conecta la biblioteca <strong>Formulación de proyectos - Documentos</strong> de tu OneDrive: ahí quedan los tuyos y aparecen los de tus colegas.${cuantos}`,
-        `<button type="button" class="btn btn-primario btn-sm" data-act="compartir">${ICON.folder}Conectar carpeta</button>${pend ? BTN_DESCARGAR() : ''}`);
+        : `<strong>Los proyectos se guardan en la carpeta del equipo.</strong> Conecta la biblioteca <strong>Formulación de proyectos - Documentos</strong> de tu OneDrive: ahí quedan los tuyos y aparecen los de tus colegas.${cuantos}`,
+        `<button type="button" class="btn btn-sm" data-act="compartir">${ICON.folder}Conectar carpeta</button>${pend ? BTN_DESCARGAR() : ''}`);
     } else if (e.permiso !== 'granted') {
-      html = notaCompartida(`<strong>Presupuestos sin guardar en la carpeta del equipo.</strong> El navegador pide permiso una vez por sesión para usar la carpeta «${esc(e.nombre)}».${cuantos}`,
+      html = notaCompartida(`<strong>Proyectos sin guardar en la carpeta del equipo.</strong> El navegador pide permiso una vez por sesión para usar la carpeta «${esc(e.nombre)}».${cuantos}`,
         `<button type="button" class="btn btn-primario btn-sm" data-act="compartir">${ICON.folder}Dar permiso y sincronizar</button>`);
     } else {
       const i = QC().info();
@@ -4378,13 +4884,13 @@
       if (QC().entregado(p)) {
         html = notaCompartida(`<strong>Descargado para el equipo.</strong> Déjalo en <strong>${esc(BUZON_EQUIPO)}</strong>. Si lo vuelves a cambiar, descárgalo de nuevo.`, '');
       } else if (prob === 'sin-api') {
-        html = notaCompartida(`<strong>Este presupuesto está solo en este navegador.</strong> Este navegador no puede abrir la carpeta del equipo: descárgalo y déjalo en <strong>${esc(BUZON_EQUIPO)}</strong>.`, BTN_DESCARGAR(p.uid));
+        html = notaCompartida(`<strong>Este proyecto está solo en este navegador.</strong> Este navegador no puede abrir la carpeta del equipo: descárgalo y déjalo en <strong>${esc(BUZON_EQUIPO)}</strong>.`, BTN_DESCARGAR(p.uid));
       } else if (prob === 'error') {
         html = notaCompartida(`<strong>No se pudo guardar en la carpeta del equipo:</strong> ${esc(QC().info().error)}`,
           `<button type="button" class="btn btn-sm" data-act="compartir-ya">Reintentar</button>${BTN_DESCARGAR(p.uid)}`);
       } else {
-        html = notaCompartida(`<strong>Este presupuesto está solo en este navegador.</strong> ${prob === 'sin-permiso' ? 'Da permiso a la carpeta del equipo para guardarlo ahí.' : 'Conecta la carpeta del equipo para guardarlo ahí.'}`,
-          `<button type="button" class="btn btn-primario btn-sm" data-act="compartir">${ICON.folder}${prob === 'sin-permiso' ? 'Dar permiso' : 'Conectar carpeta'}</button>${BTN_DESCARGAR(p.uid)}`);
+        html = notaCompartida(`<strong>Este proyecto está solo en este navegador.</strong> ${prob === 'sin-permiso' ? 'Da permiso a la carpeta del equipo para guardarlo ahí.' : 'Conecta la carpeta del equipo para guardarlo ahí.'}`,
+          `<button type="button" class="btn btn-sm" data-act="compartir">${ICON.folder}${prob === 'sin-permiso' ? 'Dar permiso' : 'Conectar carpeta'}</button>${BTN_DESCARGAR(p.uid)}`);
       }
     }
     if (el.innerHTML !== html) el.innerHTML = html;
@@ -4399,9 +4905,9 @@
     if (e.conectada && e.permiso === 'granted') return true;
     if (e.conectada && await QI().permitir()) { QC().sincronizar(); return true; }
     const v = await ask({
-      title: 'Los presupuestos se guardan en la carpeta del equipo',
-      body: `<p>Antes de crear un presupuesto, ${e.movida ? 'vuelve a conectar' : 'conecta'} la biblioteca <b>Formulación de proyectos - Documentos</b> de tu OneDrive. Ahí queda guardado para todo el equipo.</p>
-        <p class="small muted">¿No tienes esa biblioteca en este computador? Puedes trabajar sin ella y descargar el presupuesto para dejarlo en «${esc(BUZON_EQUIPO)}».</p>`,
+      title: e.movida ? 'Vuelve a conectar la biblioteca del equipo' : 'Conecta la biblioteca del equipo',
+      body: `<p>Los proyectos se guardan en la biblioteca <b>Formulación de proyectos - Documentos</b> de tu OneDrive, para que todo el equipo los vea y las demás herramientas los reciban. ${e.movida ? 'Cambió de lugar: elígela de nuevo.' : 'Elígela una vez y este navegador la recordará.'}</p>
+        <p class="small muted">¿No tienes esa biblioteca en este computador? Puedes trabajar sin ella y descargar el proyecto para dejarlo en «${esc(BUZON_EQUIPO)}».</p>`,
       buttons: [{ label: 'Trabajar sin la carpeta', value: 'sin', left: true }, { label: 'Cancelar' }, { label: 'Conectar la biblioteca', value: 'conectar', primary: true }]
     });
     if (v === 'sin') return true;
@@ -4452,10 +4958,12 @@
     if (!ofertaActiva()) return { ninguna: true };
     let lista = null;
     try { lista = await QO().carpetas(true); } catch (err) { console.warn('Carpetas de oferta:', err); lista = null; }
-    if (!lista || !lista.length) return { ninguna: true };
+    // Sin biblioteca (o sin permiso) no hay dónde elegir; una biblioteca sin ofertas sí: se puede crear la primera
+    if (!lista) return { ninguna: true };
     return elegirCarpeta(Object.assign({
       lista, leerPlanilla: planillaPublicada, planilla: true, sinCarpeta: 'Sin carpeta por ahora',
-      pie: 'Ahí queda una copia en Excel del presupuesto, al día con cada cambio. El presupuesto completo queda en el repositorio del equipo.'
+      crear: (n, t) => QO().crearCarpeta(n, t), validarNueva: (n, t, l) => QO().nombreCarpetaNueva(n, t, l),
+      iniciales: true
     }, opts));
   }
 
@@ -4489,7 +4997,7 @@
       case 'guardando': return 'Guardando el Excel en la carpeta de la oferta…';
       case 'pendiente': return 'El Excel de la carpeta de la oferta se actualiza en unos segundos.';
       case 'error': return `No se pudo guardar el Excel: ${i.error}`;
-      default: return 'El Excel de la carpeta de la oferta se actualiza cada vez que se cambia el presupuesto.';
+      default: return 'El Excel de la carpeta de la oferta se actualiza cada vez que se cambia el proyecto.';
     }
   }
 
@@ -4521,7 +5029,7 @@
     pintarEditorOferta();
     // Con la carpeta, la formulación queda completa: el aviso y el recorrido pasan a lo que sigue
     pintarSigue();
-    if (state.project && state.project.uid === uid && state.tab === 'evaluacion') pintarHerramientas();
+    if (state.project && state.project.uid === uid && state.tab === 'seguimiento') pintarHerramientas();
   }
 
   async function elegirOfertaPara(uid) {
@@ -4532,8 +5040,8 @@
     const req = QH() && QH().reqDe(p);
     const sel = await elegirOfertaLocal({
       titulo: 'Carpeta de la oferta',
-      texto: `Elige la carpeta de la oferta de <b>${esc(p.codigo)} v${esc(p.version)}</b> en la biblioteca <b>Formulación de proyectos - Documentos</b>.`,
-      actual: v ? v.ruta.join('/') : '', buscar: v ? '' : req || '', sinCarpeta: ''
+      texto: `Elige la carpeta de la oferta de <b>${esc(p.codigo)} v${esc(p.version)}</b> en la biblioteca <b>Formulación de proyectos - Documentos</b>, o créala aquí.`,
+      actual: v ? v.ruta.join('/') : '', buscar: v ? '' : req || '', sinCarpeta: '', confirmar: 'Usar esta carpeta'
     });
     if (!sel || !sel.carpeta) return;
     await vincularOferta(uid, sel);
@@ -4591,7 +5099,7 @@
           const una = sug.length === 1 ? sug[0] : null;
           html = notaOferta(una
             ? `<strong>¿La carpeta de esta oferta es «${esc(una.nombre)}»?</strong> Ahí queda una copia en Excel del presupuesto, al día con cada cambio.`
-            : '<strong>Guarda el Excel en la carpeta de la oferta.</strong> El presupuesto ya queda en el repositorio del equipo; elige la carpeta de su oferta y ahí quedará una copia en Excel, al día con cada cambio.',
+            : '<strong>Guarda el Excel en la carpeta de la oferta.</strong> El proyecto ya queda en el repositorio del equipo; elige la carpeta de su oferta y ahí quedará una copia en Excel, al día con cada cambio.',
           (una ? `<button type="button" class="btn btn-primario btn-sm" data-act="oferta-usar" data-ruta="${esc(una.id)}">${ICON.folder}Usar esa carpeta</button><button type="button" class="btn btn-sm" data-act="oferta-elegir">Elegir otra</button>`
             : `<button type="button" class="btn btn-primario btn-sm" data-act="oferta-elegir">${ICON.folder}Elegir carpeta</button>`) + omitir);
         }
@@ -4601,7 +5109,7 @@
           html = notaOferta(`<strong>No se pudo guardar el Excel en «${esc(v.nombre)}»:</strong> ${esc(i.error)}`,
             `<button type="button" class="btn btn-sm" data-act="oferta-guardar">Reintentar</button><button type="button" class="btn btn-sm" data-act="oferta-elegir">Cambiar carpeta</button>`);
         } else if (eb.conectada && !eb.recordada) {
-          html = notaOferta(`<strong>El Excel de este presupuesto va en «${esc(v.nombre)}».</strong> Para guardarlo ahí desde este navegador, conecta la biblioteca <strong>Formulación de proyectos - Documentos</strong> completa.`,
+          html = notaOferta(`<strong>El Excel de este proyecto va en «${esc(v.nombre)}».</strong> Para guardarlo ahí desde este navegador, conecta la biblioteca <strong>Formulación de proyectos - Documentos</strong> completa.`,
             `<button type="button" class="btn btn-sm" data-act="oferta-elegir">${ICON.folder}Conectar la biblioteca</button>`);
         }
       }
@@ -4620,13 +5128,13 @@
       : eb.permiso !== 'granted' ? 'Falta el permiso de esta sesión para la biblioteca: se guarda al darlo («Guardar ahora» lo pide).' : '';
     const r = await ask({
       title: 'Excel en la carpeta de la oferta',
-      body: `<p>Una copia en Excel de este presupuesto queda en la carpeta de su oferta, junto a sus antecedentes, y se actualiza sola cada vez que se cambia.</p>
+      body: `<p>Una copia en Excel de este proyecto queda en la carpeta de su oferta, junto a sus antecedentes, y se actualiza sola cada vez que se cambia.</p>
         <dl class="oferta-dl">
           <dt>Carpeta</dt><dd>Formulación de proyectos › ${esc(i.ruta.join(' › '))}</dd>
           <dt>Archivo</dt><dd>${esc(i.archivo)}</dd>
           <dt>Estado</dt><dd>${esc(falta || textoEstadoOferta(i))}</dd>
         </dl>
-        <p class="small muted">El Excel es para consultar o imprimir: lo que se cambie en él se reemplaza en la siguiente actualización. El presupuesto completo, el que se vuelve a abrir aquí, queda en el repositorio del equipo (.Herramientas formulación › Intercambio › publicado › formulador).</p>`,
+        <p class="small muted">El Excel es para consultar o imprimir: lo que se cambie en él se reemplaza en la siguiente actualización. El proyecto completo, el que se vuelve a abrir aquí, queda en el repositorio del equipo (.Herramientas formulación › Intercambio › publicado › formulador).</p>`,
       buttons: [{ label: 'Dejar de guardarlo aquí', value: 'quitar', left: true }, { label: 'Cambiar carpeta', value: 'cambiar' }, { label: 'Guardar ahora', value: 'guardar', primary: true }]
     });
     if (r === 'guardar') { if (await asegurarBiblioteca()) await guardarExcelOferta(uid); }
