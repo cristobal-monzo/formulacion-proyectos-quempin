@@ -75,10 +75,13 @@
      oferta.js: en modo local, mantiene una copia en Excel de cada presupuesto en la carpeta de su oferta. -->
 <script>
 (function () {
-  // Gate de contraseña: el mismo de los Tableros Financieros de QUEMPIN (misma clave y misma marca
-  // en localStorage, así que quien ya entró a uno no la vuelve a escribir en el mismo navegador).
+  // Gate de contraseña: se pide una sola vez por navegador (marca en localStorage).
+  // La marca es propia del Formulador: los Tableros Financieros comparten el mismo sitio y, desde su
+  // candado (2026-10-05), borran la marca antigua 'quempin_viz_unlocked' cada vez que se abren.
   // Es una barrera del lado del cliente, no seguridad real: solo disuade a quien tenga el link.
   var GATE_PASSWORD_NORM = 'combustion';
+  var MARCA = 'quempin_formulador_unlocked';
+  var MARCA_ANTIGUA = 'quempin_viz_unlocked';
   var SCRIPTS = ['js/logo-data.js', 'js/kpis.js', 'js/calc.js', 'js/store.js', 'js/m365-config.js',
     'js/cloud.js', 'js/intercambio.js', 'js/compartida.js', 'js/oferta.js', 'js/esquemas.js', 'js/busqueda.js',
     'js/herramientas.js', 'js/flujo.js', 'js/excel.js', 'js/app.js'];
@@ -99,7 +102,7 @@
     unlocked = true;
     gate.style.display = 'none';
     document.getElementById('root').style.display = '';
-    try { localStorage.setItem('quempin_viz_unlocked', '1'); } catch (e) {}
+    try { localStorage.setItem(MARCA, '1'); } catch (e) {}
     SCRIPTS.forEach(function (src) {
       var el = document.createElement('script');
       el.src = src;
@@ -120,7 +123,8 @@
   });
 
   var alreadyUnlocked = false;
-  try { alreadyUnlocked = localStorage.getItem('quempin_viz_unlocked') === '1'; } catch (e) {}
+  // La marca antigua también vale (quien entró antes del cambio no vuelve a escribirla); unlock() la pasa a la nueva.
+  try { alreadyUnlocked = localStorage.getItem(MARCA) === '1' || localStorage.getItem(MARCA_ANTIGUA) === '1'; } catch (e) {}
   if (alreadyUnlocked) unlock(); else gateInput.focus();
 })();
 </script>
