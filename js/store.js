@@ -22,6 +22,7 @@
   const UNIDADES = ['Un.', 'kg', 'm', 'm2', 'm3', 'gl', 'km', 'día', 'hr', 'lt', 'noche'];
 
   const DEFAULT_PARAMETROS = {
+    moneda: 'CLP',
     iva: 19,
     gastosGenerales: 0,
     imprevistos: 0,

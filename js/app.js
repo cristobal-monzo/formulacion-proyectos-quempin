@@ -8,7 +8,7 @@
 (function () {
   'use strict';
 
-  const { computeProject, num } = window.QCalc;
+  const { computeProject, num, MONEDAS, monedaDe, redondear } = window.QCalc;
   const S = window.QStore;
   const X = window.QExcel;
   const KP = window.QKPIs;
@@ -22,10 +22,33 @@
   const fCLP = new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0, minimumFractionDigits: 0 });
   const fNum = new Intl.NumberFormat('es-CL', { maximumFractionDigits: 2 });
   const ok = (v) => v !== null && v !== undefined && Number.isFinite(v);
-  const clp = (v) => (ok(v) ? fCLP.format(Math.round(v)) : '—');
+  const fMon = {};
+  /* Monto en la moneda indicada o, si no se indica, en la del proyecto abierto (en el listado,
+     sin proyecto abierto, en pesos). Pesos chilenos con el formato de siempre: $1.234.567 */
+  const dinero = (v, moneda) => {
+    if (!ok(v)) return '—';
+    const m = MONEDAS[moneda] ? moneda : monedaDe(state.project);
+    if (m === 'CLP') return fCLP.format(Math.round(v));
+    const d = MONEDAS[m].decimales;
+    const f = fMon[m] || (fMon[m] = new Intl.NumberFormat('es-CL', { minimumFractionDigits: d, maximumFractionDigits: d }));
+    const x = redondear(v, m);
+    return `${x < 0 ? '-' : ''}${MONEDAS[m].simbolo} ${f.format(Math.abs(x))}`;
+  };
+  /* Símbolo de la moneda del proyecto abierto, para los campos de monto ($, S/, US$, €) */
+  const simbolo = () => MONEDAS[monedaDe(state.project)].simbolo;
+  /* Suma de montos de varios proyectos, separada por moneda: «$12.000.000 + US$ 3.500,00».
+     enLineas: para una tarjeta, cada moneda en su línea (HTML) */
+  const sumaPorMoneda = (ps, valor, enLineas) => {
+    const t = {};
+    ps.forEach((p) => { const m = monedaDe(p); t[m] = (t[m] || 0) + valor(p); });
+    const ms = Object.keys(MONEDAS).filter((m) => m in t);
+    if (!ms.length) return dinero(0, 'CLP');
+    const xs = ms.map((m) => dinero(t[m], m));
+    return enLineas && xs.length > 1 ? xs.map((x) => `<span class="kpi-linea">${x}</span>`).join('') : xs.join(' + ');
+  };
   const pct = (v) => (ok(v) ? (v * 100).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' %' : '—');
   const nf = (v) => (ok(v) ? fNum.format(v) : '—');
-  const fmt = (v, f) => (f === 'clp' ? clp(v) : f === 'pct' ? pct(v) : nf(v));
+  const fmt = (v, f) => (f === 'clp' ? dinero(v) : f === 'pct' ? pct(v) : nf(v));
   const esc = (s) => String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const plural = (n, s, p) => `${n} ${n === 1 ? s : (p || s + 's')}`;
@@ -526,7 +549,7 @@
       extra = { minWidth: 340, foot: '<button type="button" class="link-btn" data-act="tab" data-tab="evaluacion" data-focus="veredicto">Ver la evaluación completa</button>' };
     } else if (key === 'catalogo') {
       const cat = state.project.catalogoOtros || [];
-      items = cat.length ? cat.map((c, i) => ({ icon: ICON.plus, title: c.descripcion || 'Sin descripción', right: `${clp(num(c.costoUnitario))} / ${c.unidad || 'un'}`, catIdx: i }))
+      items = cat.length ? cat.map((c, i) => ({ icon: ICON.plus, title: c.descripcion || 'Sin descripción', right: `${dinero(num(c.costoUnitario))} / ${c.unidad || 'un'}`, catIdx: i }))
         : [{ title: 'El catálogo está vacío', desc: 'Agrega referencias en Datos del proyecto', disabled: true }];
       extra = { foot: '<button type="button" class="link-btn" data-act="tab" data-tab="ficha" data-focus="catalogo">Editar el catálogo en Datos del proyecto</button>', minWidth: 320, search: cat.length > 8 ? 'Buscar en el catálogo' : '' };
     }
@@ -956,7 +979,10 @@
     const enCurso = list.filter((p) => EN_CURSO.includes(p.estado));
     const adj = list.filter((p) => p.estado === 'Adjudicada');
     const perd = list.filter((p) => p.estado === 'Perdida');
-    const vivos = list.filter((p) => p.estado !== 'Perdida' && p.estado !== 'Descartada');
+    // El margen ponderado suma montos: con proyectos en varias monedas se calcula con los en pesos
+    const todosVivos = list.filter((p) => p.estado !== 'Perdida' && p.estado !== 'Descartada');
+    const variasMonedas = new Set(todosVivos.map(monedaDe)).size > 1;
+    const vivos = variasMonedas ? todosVivos.filter((p) => monedaDe(p) === 'CLP') : todosVivos;
     const pn = vivos.reduce((a, p) => a + precio(p), 0);
     const ut = vivos.reduce((a, p) => a + rs.get(p.uid).totals.utilidad, 0);
     const margen = pn > 0 ? ut / pn : null;
@@ -964,9 +990,9 @@
     const conErr = list.filter((p) => rs.get(p.uid).warnings.some((w) => w.level === 'error')).length;
     const cerradas = adj.length + perd.length;
     el.innerHTML = [
-      kpiTop('Ofertas en curso', clp(enCurso.reduce((a, p) => a + precio(p), 0)), `${plural(enCurso.length, 'oferta')} sin cerrar · precio neto`, 'accent', 'Suma del precio de venta neto (sin IVA) de los proyectos en estado Borrador, En revisión o Enviada.'),
-      kpiTop('Adjudicado', clp(adj.reduce((a, p) => a + precio(p), 0)), cerradas ? `Tasa de adjudicación ${pct(adj.length / cerradas)} (${adj.length} de ${cerradas} cerradas)` : 'Sin ofertas cerradas aún', '', 'Precio neto de los proyectos adjudicados. La tasa compara adjudicadas contra adjudicadas + perdidas.'),
-      kpiTop('Margen ponderado', pct(margen), `Objetivo ${pct(mObj)} · mínimo ${pct(mMin)}`, semM, 'Utilidad total ÷ precio neto total, sin contar proyectos perdidos ni descartados. Las metas son las predeterminadas de Configuración.'),
+      kpiTop('Ofertas en curso', sumaPorMoneda(enCurso, precio, true), `${plural(enCurso.length, 'oferta')} sin cerrar · precio neto`, 'accent', 'Suma del precio de venta neto (sin IVA) de los proyectos en estado Borrador, En revisión o Enviada.'),
+      kpiTop('Adjudicado', sumaPorMoneda(adj, precio, true), cerradas ? `Tasa de adjudicación ${pct(adj.length / cerradas)} (${adj.length} de ${cerradas} cerradas)` : 'Sin ofertas cerradas aún', '', 'Precio neto de los proyectos adjudicados. La tasa compara adjudicadas contra adjudicadas + perdidas.'),
+      kpiTop('Margen ponderado', pct(margen), `Objetivo ${pct(mObj)} · mínimo ${pct(mMin)}`, semM, `Utilidad total ÷ precio neto total, sin contar proyectos perdidos ni descartados${variasMonedas ? '; como hay proyectos en otras monedas, solo cuentan los en pesos chilenos' : ''}. Las metas son las predeterminadas de Configuración.`),
       kpiTop('Con errores', String(conErr), conErr ? 'Revísalos antes de exportar' : 'Todos pasan la validación', conErr ? 'sem-bad' : 'sem-ok')
     ].join('');
   }
@@ -978,10 +1004,10 @@
     const L = state.list;
     el.innerHTML = `<span class="fe-l">Estado</span>` + S.ESTADOS.map((e) => {
       const ps = list.filter((p) => p.estado === e);
-      const v = ps.reduce((a, p) => a + Math.max(0, rs.get(p.uid).totals.precioNeto), 0);
+      const v = ps.some((p) => rs.get(p.uid).totals.precioNeto > 0) ? sumaPorMoneda(ps, (p) => Math.max(0, rs.get(p.uid).totals.precioNeto)) : '';
       const on = L.estado === e;
       return `<button type="button" class="viz-chip chip-estado ${on ? 'on' : ''}" data-act="filtro-estado" data-e="${esc(e)}" aria-pressed="${on}" ${ps.length || on ? '' : 'disabled'} title="${esc(ESTADO_INFO[e].desc)}">
-          <span class="swatch ${ESTADO_INFO[e].cls}" aria-hidden="true"></span><span class="v">${esc(e)}</span><span class="k">${ps.length}${v ? ` · ${esc(clp(v))}` : ''}</span></button>`;
+          <span class="swatch ${ESTADO_INFO[e].cls}" aria-hidden="true"></span><span class="v">${esc(e)}</span><span class="k">${ps.length}${v ? ` · ${esc(v)}` : ''}</span></button>`;
     }).join('');
   }
 
@@ -1047,9 +1073,9 @@
         <td data-label="Responsable">${esc(p.responsable || '—')}</td>
         <td class="nowrap" data-label="Fecha">${esc(fechaCorta(p.fecha))}</td>
         <td data-label="Estado"><span class="estado" data-e="${esc(p.estado)}">${esc(p.estado)}</span>${s ? `<span class="sigue-corto ${s.espera ? 'espera' : s.fin ? 'fin' : ''}" title="${esc(s.texto)}">${s.espera || s.fin ? '' : '→ '}${esc(s.corto)}</span>` : ''}</td>
-        <td class="num" data-label="Precio neto"><b>${clp(r.totals.precioNeto)}</b></td>
+        <td class="num" data-label="Precio neto"><b>${dinero(r.totals.precioNeto, monedaDe(p))}</b></td>
         <td class="num" data-label="Margen"><span class="dot ${r.status.margen}" aria-hidden="true"></span>${pct(r.kpis.margen)}</td>
-        <td class="num" data-label="Utilidad por día-hombre">${clp(r.kpis.rentDH)}</td>
+        <td class="num" data-label="Utilidad por día-hombre">${dinero(r.kpis.rentDH, monedaDe(p))}</td>
         <td class="num" data-label="Alertas">${nAlert ? `<span class="chip ${nErr ? 'bad' : 'warn'}">${nErr ? '✖' : '▲'} ${nAlert}</span>` : '<span class="muted">0</span>'}</td>
         <td class="cell-actions"><button type="button" class="icon-btn" data-menu="proj" data-id="${p.uid}" aria-haspopup="menu" aria-expanded="false" aria-label="Acciones de ${esc(p.codigo)}">${ICON.more}</button></td>
       </tr>`;
@@ -1151,7 +1177,7 @@
     const nWarn = r.warnings.filter((w) => w.level === 'warn').length;
     const txt = nErr || nWarn ? [nErr ? plural(nErr, 'error', 'errores') : '', nWarn ? plural(nWarn, 'aviso') : ''].filter(Boolean).join(' y ') : 'sin alertas';
     el.innerHTML = `
-      <div class="lectura-item"><span class="l">Precio neto</span><span class="v">${clp(r.totals.precioNeto)}</span></div>
+      <div class="lectura-item"><span class="l">Precio neto</span><span class="v">${dinero(r.totals.precioNeto)}</span></div>
       <div class="lectura-item"><span class="l">Margen</span><span class="v"><span class="dot ${r.status.margen}" aria-hidden="true" style="margin:0"></span>${pct(r.kpis.margen)}</span></div>
       <div class="lectura-item"><span class="l">Alertas</span><button type="button" class="v" data-menu="alertas" aria-haspopup="menu" aria-expanded="false" aria-label="Alertas: ${txt}. Ver y corregir">${nErr ? `<span class="chip bad">✖ ${nErr}</span>` : ''}${nWarn ? `<span class="chip warn">▲ ${nWarn}</span>` : ''}${!nErr && !nWarn ? '<span class="chip ok">✔ 0</span>' : ''}</button></div>`;
   }
@@ -1339,8 +1365,8 @@
       <div class="pl-cuerpo">${cuerpo}</div></details>`;
 
   // ---- Paso 1: datos del proyecto ------------------------------------------------
-  const resumenPrecio = (par) => `IVA ${nf(num(par.iva))} % · gastos generales ${nf(num(par.gastosGenerales))} % · imprevistos ${nf(num(par.imprevistos))} % · día-hombre ${clp(num(par.tarifaN1))} / ${clp(num(par.tarifaN2))} / ${clp(num(par.tarifaN3))}`;
-  const resumenMetas = (par) => `Margen objetivo ${nf(num(par.margenObjetivo))} % · mínimo ${nf(num(par.margenMinimo))} % · ${num(par.metaUtilidadDH) > 0 ? `meta ${clp(num(par.metaUtilidadDH))} por día-hombre` : 'sin meta por día-hombre'}`;
+  const resumenPrecio = (par) => `IVA ${nf(num(par.iva))} % · gastos generales ${nf(num(par.gastosGenerales))} % · imprevistos ${nf(num(par.imprevistos))} % · día-hombre ${dinero(num(par.tarifaN1))} / ${dinero(num(par.tarifaN2))} / ${dinero(num(par.tarifaN3))}`;
+  const resumenMetas = (par) => `Margen objetivo ${nf(num(par.margenObjetivo))} % · mínimo ${nf(num(par.margenMinimo))} % · ${num(par.metaUtilidadDH) > 0 ? `meta ${dinero(num(par.metaUtilidadDH))} por día-hombre` : 'sin meta por día-hombre'}`;
   const resumenCatalogo = (p) => `${plural((p.catalogoOtros || []).length, 'referencia')} para agregar rápido en Costos · Otros`;
 
   function viewFicha() {
@@ -1354,16 +1380,16 @@
         <div class="bloque" id="tarifas">
           <h4 class="sub-t">Tarifa por día-hombre <span class="tn">(costo de una persona por un día de trabajo)</span></h4>
           <div class="fila-campos tres">
-            ${fInput('parametros.tarifaN1', 'Nivel 1', { type: 'num', prefix: '$' })}
-            ${fInput('parametros.tarifaN2', 'Nivel 2', { type: 'num', prefix: '$' })}
-            ${fInput('parametros.tarifaN3', 'Nivel 3', { type: 'num', prefix: '$' })}
+            ${fInput('parametros.tarifaN1', 'Nivel 1', { type: 'num', prefix: simbolo() })}
+            ${fInput('parametros.tarifaN2', 'Nivel 2', { type: 'num', prefix: simbolo() })}
+            ${fInput('parametros.tarifaN3', 'Nivel 3', { type: 'num', prefix: simbolo() })}
           </div>
         </div>`;
     const cuerpoMetas = `<p class="panel-sub">Definen los semáforos de la evaluación (paso 5).</p>
         <div class="fila-campos">
           ${fInput('parametros.margenObjetivo', 'Margen objetivo', { type: 'num', suffix: '%' })}
           ${fInput('parametros.margenMinimo', 'Margen mínimo aceptable', { type: 'num', suffix: '%' })}
-          ${fInput('parametros.metaUtilidadDH', 'Meta de utilidad por día-hombre', { type: 'num', prefix: '$', hint: '0 = sin meta' })}
+          ${fInput('parametros.metaUtilidadDH', 'Meta de utilidad por día-hombre', { type: 'num', prefix: simbolo(), hint: '0 = sin meta' })}
           ${fInput('parametros.umbralAjustado', 'Oferta «ajustada» desde', { type: 'num', suffix: '%', hint: '% del presupuesto del mandante' })}
         </div>`;
     const cuerpoCatalogo = `<div class="tabla-contenedor">
@@ -1393,6 +1419,9 @@
             ${fInput('ubicacion', 'Ubicación')}
             ${fInput('responsable', 'Responsable')}
             ${fInput('fecha', 'Fecha de formulación', { type: 'date' })}
+            <div class="campo"><label for="f-parametros.moneda">Moneda</label>
+              <select class="input" id="f-parametros.moneda" data-f="parametros.moneda" aria-describedby="moneda-hint">${Object.keys(MONEDAS).map((m) => `<option value="${m}" ${monedaDe(p) === m ? 'selected' : ''}>${esc(MONEDAS[m].nombre)}</option>`).join('')}</select>
+              <span class="hint" id="moneda-hint">Todos los montos van en ella. Cambiarla no los convierte.</span></div>
             ${fInput('codigo', 'Código', { hint: ' ', hintId: 'codigo-hint' })}
             ${fInput('version', 'Versión', { type: 'num' })}
             <div class="campo ancho"><label for="f-descripcion">Descripción / alcance <span class="opc">(opcional)</span></label>
@@ -1405,7 +1434,7 @@
           <h4 class="seccion-titulo">Presupuesto del mandante <span class="tn">(opcional)</span></h4>
           <p class="panel-sub">Si lo conoces, la evaluación indica si la oferta cabe en él.</p>
           <div class="fila-campos">
-            ${fInput('parametros.presupuestoMaximo', 'Presupuesto máximo', { type: 'num', prefix: '$', placeholder: 'Sin informar' })}
+            ${fInput('parametros.presupuestoMaximo', 'Presupuesto máximo', { type: 'num', prefix: simbolo(), placeholder: 'Sin informar' })}
             <div class="campo"><span class="label" id="lbl-iva-ppto">Se informa</span>
               ${seg('f-ppto-iva', [{ v: '0', l: 'Neto', checked: !par.presupuestoIncluyeIva }, { v: '1', l: 'Con IVA', checked: !!par.presupuestoIncluyeIva }], { label: 'El presupuesto se informa', data: 'data-f="parametros.presupuestoIncluyeIva" data-t="bool01"' })}</div>
           </div>
@@ -1533,10 +1562,10 @@
     if (list === 'manoObra') {
       const par = state.project.parametros;
       const niv = [1, 2, 3].filter((n) => num(it[`n${n}p`]) * num(it[`n${n}d`]) > 0)
-        .map((n) => `${nf(num(it[`n${n}p`]))} × ${nf(num(it[`n${n}d`]))} × ${clp(num(par['tarifaN' + n]))}`);
-      return `<b>${esc(l.code)} · ${clp(l.subtotal)}</b>(${niv.join(' + ') || '0'}) × ${nf(l.qtyPartida)} unidades de la partida`;
+        .map((n) => `${nf(num(it[`n${n}p`]))} × ${nf(num(it[`n${n}d`]))} × ${dinero(num(par['tarifaN' + n]))}`);
+      return `<b>${esc(l.code)} · ${dinero(l.subtotal)}</b>(${niv.join(' + ') || '0'}) × ${nf(l.qtyPartida)} unidades de la partida`;
     }
-    return `<b>${esc(l.code)} · ${clp(l.subtotal)}</b>${nf(num(it.cantidad))} ${esc(it.unidad || '')} × ${clp(num(it.costoUnitario))} × ${nf(l.qtyPartida)} unidades de la partida`;
+    return `<b>${esc(l.code)} · ${dinero(l.subtotal)}</b>${nf(num(it.cantidad))} ${esc(it.unidad || '')} × ${dinero(num(it.costoUnitario))} × ${nf(l.qtyPartida)} unidades de la partida`;
   }
 
   function viewDetalle(key) {
@@ -1591,10 +1620,10 @@
         <td class="cell-actions">${btnFila(key, it.uid, code)}</td>
       </tr>`;
     }).join('');
-    const nivel = (n, t) => `<th class="lvl-th">Nivel ${n}<span class="th-sub">${clp(num(t))} por día</span><span class="th-sub">personas × días</span></th>`;
+    const nivel = (n, t) => `<th class="lvl-th">Nivel ${n}<span class="th-sub">${dinero(num(t))} por día</span><span class="th-sub">personas × días</span></th>`;
     const ayuda = `<p><b>Días-hombre</b> = personas × días de cada nivel, sumados, × cantidad de la partida. Es el esfuerzo total, no el plazo.</p>
       <p><b>Subtotal</b> = personas × días × tarifa del nivel, sumando los tres niveles, × cantidad de la partida.</p>
-      <p>Tarifas por día-hombre: nivel 1 ${clp(num(par.tarifaN1))} · nivel 2 ${clp(num(par.tarifaN2))} · nivel 3 ${clp(num(par.tarifaN3))}.
+      <p>Tarifas por día-hombre: nivel 1 ${dinero(num(par.tarifaN1))} · nivel 2 ${dinero(num(par.tarifaN2))} · nivel 3 ${dinero(num(par.tarifaN3))}.
         <button type="button" class="link-btn" data-act="tab" data-tab="ficha" data-focus="tarifas">Cambiar las tarifas</button></p>`;
     return `${pasoHead(key, ayuda)}${costosSubnav()}${sinPartidasNote()}
       ${filtroBar(key)}
@@ -1645,17 +1674,17 @@
         <td><div class="pnom"><span class="pcode">${code}</span><div style="min-width:0"><div class="t">${esc(it.descripcion || 'Partida sin descripción')}</div>
           <div class="s">${esc(nf(num(it.cantidad)))} ${esc(it.unidad || '')} · costo directo <span data-c="P:${it.uid}:cd" data-fmt="clp"></span></div></div></div></td>
         <td data-label="Utilidad"><div class="util-edit">
-          ${seg(`ut-${it.uid}`, [{ v: 'pct', l: '%', checked: isPct }, { v: 'monto', l: '$', checked: !isPct }], { label: `Tipo de utilidad de ${code}`, data: `data-list="partidas" data-uid="${it.uid}" data-k="utilidadTipo" data-rerender` }, 'sm')}
-          ${rowInput('partidas', it, 'utilidadValor', `Utilidad de ${code} ${isPct ? 'en % de recargo' : 'en pesos'}`, 'num', true, `placeholder="${isPct ? '%' : '$'}"`)}
+          ${seg(`ut-${it.uid}`, [{ v: 'pct', l: '%', checked: isPct }, { v: 'monto', l: simbolo(), checked: !isPct }], { label: `Tipo de utilidad de ${code}`, data: `data-list="partidas" data-uid="${it.uid}" data-k="utilidadTipo" data-rerender` }, 'sm')}
+          ${rowInput('partidas', it, 'utilidadValor', `Utilidad de ${code} ${isPct ? 'en % de recargo' : `en ${MONEDAS[monedaDe(p)].corto}`}`, 'num', true, `placeholder="${isPct ? '%' : simbolo()}"`)}
         </div></td>
-        <td class="num calc" data-label="Utilidad en $" data-c="P:${it.uid}:utilidad" data-fmt="clp"></td>
+        <td class="num calc" data-label="Utilidad en ${simbolo()}" data-c="P:${it.uid}:utilidad" data-fmt="clp"></td>
         <td class="num calc" data-label="Margen"><span class="dot na" data-sem-p="${it.uid}" aria-hidden="true"></span><span data-c="P:${it.uid}:margen" data-fmt="pct"></span></td>
       </tr>`;
     }).join('');
-    const ayuda = `<p>La utilidad de cada partida es un <b>% de recargo sobre su costo</b> o un <b>monto fijo en $</b>. Un recargo de 100 % equivale a un margen de 50 % sobre la venta.
-        Al cambiar entre % y $ se conserva el monto.</p>
+    const ayuda = `<p>La utilidad de cada partida es un <b>% de recargo sobre su costo</b> o un <b>monto fijo en ${simbolo()}</b>. Un recargo de 100 % equivale a un margen de 50 % sobre la venta.
+        Al cambiar entre % y ${simbolo()} se conserva el monto.</p>
       <p><b>Llevar al margen objetivo</b> calcula el recargo que deja el margen justo en la meta del proyecto; <b>Deshacer</b> vuelve a los valores que ingresaste a mano.</p>
-      <p>Los valores por partida se redondean al peso (precio unitario × cantidad) para que la cotización cuadre.</p>`;
+      <p>Los valores por partida se redondean ${MONEDAS[monedaDe(p)].decimales ? 'al centavo' : 'al peso'} (precio unitario × cantidad) para que la cotización cuadre.</p>`;
     return `
       <div class="print-only print-head">
         <img src="assets/logo-quempin.png" alt="QUEMPIN Soluciones Energéticas">
@@ -1679,10 +1708,10 @@
                 </span>
               </div>
               <table class="tbl util-tbl tbl-apilable">
-                <thead><tr><th>Partida</th><th>Utilidad<span class="th-sub">% de recargo sobre su costo o $ fijo</span></th><th class="num">Utilidad en $</th><th class="num">Margen</th></tr></thead>
+                <thead><tr><th>Partida</th><th>Utilidad<span class="th-sub">% de recargo sobre su costo o ${simbolo()} fijo</span></th><th class="num">Utilidad en ${simbolo()}</th><th class="num">Margen</th></tr></thead>
                 <tbody>${utilRows || '<tr class="empty-row"><td colspan="4">Aún no hay partidas. <button type="button" class="link-btn" data-act="tab" data-tab="partidas">Crear la primera partida</button></td></tr>'}</tbody>
                 <tfoot><tr><td>Total</td><td class="small muted" style="font-weight:400">Recargo promedio <span data-c="K:markup" data-fmt="pct"></span></td>
-                  <td class="num" data-label="Utilidad en $" data-c="T:utilidad" data-fmt="clp"></td>
+                  <td class="num" data-label="Utilidad en ${simbolo()}" data-c="T:utilidad" data-fmt="clp"></td>
                   <td class="num" data-label="Margen"><span class="dot na" data-sem-total aria-hidden="true"></span><span data-c="K:margen" data-fmt="pct"></span><div class="meta-margen" id="meta-margen"></div></td></tr></tfoot>
               </table>
             </div>
@@ -1750,20 +1779,23 @@
       </section>`;
   }
 
-  /* Valores para la cotización: precio unitario redondeado a pesos y total de la
-     línea = cantidad × precio unitario, para que la cotización cuadre al peso.
+  /* Valores para la cotización: precio unitario redondeado al peso (o al centavo en soles,
+     dólares y euros) y total de la línea = cantidad × precio unitario, para que la
+     cotización cuadre.
      El IVA se calcula sobre la suma de las líneas, como en una factura. */
   function cotizacion() {
     const r = state.result;
     const ivaPct = num(state.project.parametros.iva) / 100;
+    const m = monedaDe(state.project);
+    const rd = (v) => redondear(v, m);
     const lineas = r.partidas.map((pt) => {
-      const pu = pt.cantidad > 0 && ok(pt.pu) ? Math.round(pt.pu) : null;
-      const total = pu !== null ? Math.round(pu * pt.cantidad) : Math.round(pt.precio);
+      const pu = pt.cantidad > 0 && ok(pt.pu) ? rd(pt.pu) : null;
+      const total = pu !== null ? rd(pu * pt.cantidad) : rd(pt.precio);
       return { pt, pu, total };
     });
-    const neto = lineas.reduce((a, l) => a + l.total, 0);
-    const iva = Math.round(neto * ivaPct);
-    return { lineas, neto, iva, bruto: neto + iva, dif: neto - Math.round(r.totals.precioNeto) };
+    const neto = rd(lineas.reduce((a, l) => a + l.total, 0));
+    const iva = rd(neto * ivaPct);
+    return { lineas, neto, iva, bruto: rd(neto + iva), dif: rd(neto - r.totals.precioNeto) };
   }
 
   /* Tabla separada por tabulaciones: al pegarla en Excel o Word queda en columnas */
@@ -1771,17 +1803,21 @@
     const c = cotizacion();
     const limpio = (x) => String(x || '').replace(/[\t\r\n]+/g, ' ').trim();
     const filas = [['Ítem', 'Partida', 'Cantidad', 'Unidad', 'Precio unitario neto', 'Total neto']];
-    c.lineas.forEach(({ pt, pu, total }) => filas.push([pt.code, limpio(pt.descripcion), String(pt.cantidad).replace('.', ','), limpio(pt.unidad), pu === null ? '' : String(pu), String(total)]));
-    filas.push(['', '', '', '', 'Total neto', String(c.neto)]);
-    filas.push(['', '', '', '', `IVA ${nf(num(state.project.parametros.iva))} %`, String(c.iva)]);
-    filas.push(['', '', '', '', 'Total con IVA', String(c.bruto)]);
+    const n = (v) => String(v).replace('.', ',');
+    c.lineas.forEach(({ pt, pu, total }) => filas.push([pt.code, limpio(pt.descripcion), n(pt.cantidad), limpio(pt.unidad), pu === null ? '' : n(pu), n(total)]));
+    filas.push(['', '', '', '', 'Total neto', n(c.neto)]);
+    filas.push(['', '', '', '', `IVA ${nf(num(state.project.parametros.iva))} %`, n(c.iva)]);
+    filas.push(['', '', '', '', 'Total con IVA', n(c.bruto)]);
     return filas.map((f) => f.join('\t')).join('\r\n');
   }
 
-  const btnCopiar = (v, lbl) => `<button type="button" class="icon-btn copiar no-print" data-act="copiar" data-v="${Math.round(v || 0)}" data-lbl="${esc(lbl)}" aria-label="Copiar ${esc(lbl)}" data-tip="<b>Copiar ${esc(lbl)}</b>Se copia como número sin formato: ${Math.round(v || 0)}">${ICON.copy}</button>`;
+  const btnCopiar = (v, lbl) => {
+    const x = String(redondear(v || 0, monedaDe(state.project))).replace('.', ',');
+    return `<button type="button" class="icon-btn copiar no-print" data-act="copiar" data-v="${x}" data-lbl="${esc(lbl)}" aria-label="Copiar ${esc(lbl)}" data-tip="<b>Copiar ${esc(lbl)}</b>Se copia como número sin formato: ${x}">${ICON.copy}</button>`;
+  };
 
   // ---- Deshacer la utilidad aplicada a todas las partidas ------------------------
-  const fmtUtil = (x) => (x.utilidadTipo === 'monto' ? clp(num(x.utilidadValor)) : `${nf(num(x.utilidadValor))} %`);
+  const fmtUtil = (x) => (x.utilidadTipo === 'monto' ? dinero(num(x.utilidadValor)) : `${nf(num(x.utilidadValor))} %`);
   function undoVigente() {
     const u = state.utilUndo;
     return u && state.project && u.puid === state.project.uid && u.antes.size ? u : null;
@@ -1842,10 +1878,10 @@
         <div class="l">${label}${tipText ? info(tipText) : ''}</div><div class="v">${value}</div>${sub ? `<div class="s">${sub}</div>` : ''}</div>`;
     const op = (c) => `<span class="eq-op" aria-hidden="true">${c}</span>`;
     put('res-top', [
-      eqCard('', 'Costo directo', clp(t.cd), 'Materiales, equipos, mano de obra y otros', KP.byKey.cd.queMide),
-      hasGG ? op('+') + eqCard('', 'Gastos generales e imprevistos', clp(t.gg + t.imp), `${nf(num(par.gastosGenerales))} % + ${nf(num(par.imprevistos))} % del costo directo`, KP.byKey.costoTotal.queMide) : '',
-      op('+'), eqCard('util', 'Utilidad', clp(t.utilidad), `Recargo de ${pct(k.markup)} sobre el costo${hasGG ? ' total' : ''}`, KP.byKey.utilidad.queMide),
-      op('='), eqCard('hero', 'Precio de venta neto', clp(t.precioNeto), 'Sin IVA: el monto a ofertar', KP.byKey.precioNeto.queMide)
+      eqCard('', 'Costo directo', dinero(t.cd), 'Materiales, equipos, mano de obra y otros', KP.byKey.cd.queMide),
+      hasGG ? op('+') + eqCard('', 'Gastos generales e imprevistos', dinero(t.gg + t.imp), `${nf(num(par.gastosGenerales))} % + ${nf(num(par.imprevistos))} % del costo directo`, KP.byKey.costoTotal.queMide) : '',
+      op('+'), eqCard('util', 'Utilidad', dinero(t.utilidad), `Recargo de ${pct(k.markup)} sobre el costo${hasGG ? ' total' : ''}`, KP.byKey.utilidad.queMide),
+      op('='), eqCard('hero', 'Precio de venta neto', dinero(t.precioNeto), 'Sin IVA: el monto a ofertar', KP.byKey.precioNeto.queMide)
     ].join(''));
 
     // Semáforo de margen por partida (contra las metas del proyecto)
@@ -1861,7 +1897,7 @@
     put('res-eval', k.competitividad === null
       ? `<p class="hint-linea">Sin presupuesto del mandante: ${linkDatos('agrégalo en Datos del proyecto')} para saber si la oferta cabe.</p>`
       : `<div class="eval-item s-${st.competitividad}"><div class="eval-top"><span class="eval-n">Frente al presupuesto del mandante</span>${chip(st.competitividad, 'competitividad')}</div>
-          <div class="eval-v">${pct(k.competitividad)}<span class="eval-sub">de ${clp(k.presupuesto)}${par.presupuestoIncluyeIva ? ' (con IVA)' : ''}</span></div>${medComp()}</div>`);
+          <div class="eval-v">${pct(k.competitividad)}<span class="eval-sub">de ${dinero(k.presupuesto)}${par.presupuestoIncluyeIva ? ' (con IVA)' : ''}</span></div>${medComp()}</div>`);
 
     // Valores por partida, antes de IVA, con botón para copiar cada monto
     if ($('#res-precio')) {
@@ -1870,8 +1906,8 @@
           <span class="pcode">${pt.code}</span>
           <div class="cotiz-nom"><div class="t ${pt.descripcion ? '' : 'muted'}">${esc(pt.descripcion || 'Partida sin descripción')}</div>
             <div class="s">${esc(nf(pt.cantidad))} ${esc(pt.unidad)}${pu !== null && pt.cantidad !== 1
-              ? ` × <button type="button" class="copiar-txt" data-act="copiar" data-v="${pu}" data-lbl="${pt.code} · precio unitario" aria-label="Copiar precio unitario de ${pt.code}" data-tip="<b>Copiar precio unitario de ${pt.code}</b>Se copia como número sin formato: ${pu}">${clp(pu)}</button> cada una` : ''}</div></div>
-          <div class="cotiz-v">${clp(total)}</div>
+              ? ` × <button type="button" class="copiar-txt" data-act="copiar" data-v="${pu}" data-lbl="${pt.code} · precio unitario" aria-label="Copiar precio unitario de ${pt.code}" data-tip="<b>Copiar precio unitario de ${pt.code}</b>Se copia como número sin formato: ${pu}">${dinero(pu)}</button> cada una` : ''}</div></div>
+          <div class="cotiz-v">${dinero(total)}</div>
           ${btnCopiar(total, `${pt.code} · total neto`)}
         </li>`).join('');
       put('res-precio', `<div class="panel cotiz">
@@ -1881,11 +1917,11 @@
           </div>
           ${cot.lineas.length ? `<ul class="cotiz-list">${filasCot}</ul>` : '<p class="small muted" style="margin:10px 0">Aún no hay partidas.</p>'}
           <div class="cotiz-tot">
-            <div class="fila principal"><span>Total neto</span><span class="v">${clp(cot.neto)}</span>${btnCopiar(cot.neto, 'total neto')}</div>
-            <div class="fila"><span>IVA ${nf(num(par.iva))} %</span><span class="v">${clp(cot.iva)}</span>${btnCopiar(cot.iva, 'IVA')}</div>
-            <div class="fila"><span>Total con IVA <span class="tn">(lo que paga el cliente)</span></span><span class="v">${clp(cot.bruto)}</span>${btnCopiar(cot.bruto, 'total con IVA')}</div>
+            <div class="fila principal"><span>Total neto</span><span class="v">${dinero(cot.neto)}</span>${btnCopiar(cot.neto, 'total neto')}</div>
+            <div class="fila"><span>IVA ${nf(num(par.iva))} %</span><span class="v">${dinero(cot.iva)}</span>${btnCopiar(cot.iva, 'IVA')}</div>
+            <div class="fila"><span>Total con IVA <span class="tn">(lo que paga el cliente)</span></span><span class="v">${dinero(cot.bruto)}</span>${btnCopiar(cot.bruto, 'total con IVA')}</div>
           </div>
-          ${cot.dif ? `<p class="cotiz-nota">Montos redondeados a pesos por partida (cantidad × precio unitario), por eso difieren en ${clp(Math.abs(cot.dif))} del precio calculado.</p>` : ''}
+          ${cot.dif ? `<p class="cotiz-nota">Montos redondeados a pesos por partida (cantidad × precio unitario), por eso difieren en ${dinero(Math.abs(cot.dif))} del precio calculado.</p>` : ''}
         </div>`);
     }
 
@@ -1934,15 +1970,15 @@
     };
     const compRead = k.competitividad === null
       ? `Ingresa el presupuesto máximo del mandante en ${linkDatos('Datos del proyecto')} para evaluar la oferta.`
-      : `La oferta ${par.presupuestoIncluyeIva ? 'con IVA' : 'neta'} (${clp(k.precioComparable)}) equivale al ${pct(k.competitividad)} del presupuesto de ${clp(k.presupuesto)}.`;
+      : `La oferta ${par.presupuestoIncluyeIva ? 'con IVA' : 'neta'} (${dinero(k.precioComparable)}) equivale al ${pct(k.competitividad)} del presupuesto de ${dinero(k.presupuesto)}.`;
     put('res-kpis', [
       kpiCard('margen', pct(k.margen), '', 'margen',
         ok(k.margen) ? `De cada $100 vendidos quedan $${fNum.format(Math.round(k.margen * 1000) / 10)} de utilidad: un recargo de ${pct(k.markup)} sobre el costo.` : 'Sin ventas aún.',
         ok(k.margen) ? medMargen() : ''),
-      kpiCard('rentDH', clp(k.rentDH), 'por día-hombre', 'rentDH',
-        ok(k.rentDH) ? `${nf(k.dh)} días-hombre en total; venta por día-hombre ${clp(k.ventaDH)}.${meta > 0 ? ` Meta: ${clp(meta)}.` : ` Define una meta en ${linkDatos('Datos del proyecto')} para activar el semáforo.`}` : 'No hay días-hombre registrados.',
-        ok(k.rentDH) && meta > 0 ? medidor({ v: k.rentDH, max: Math.max(meta * 1.5, k.rentDH * 1.1), fill: st.rentDH, fmt: (x) => clp(x), label: 'Utilidad por día-hombre frente a la meta',
-          ticks: [{ at: meta * 0.8, dash: true, tip: `80 % de la meta: ${clp(meta * 0.8)}` }, { at: meta, show: true, tip: `Meta ${clp(meta)}` }] }) : ''),
+      kpiCard('rentDH', dinero(k.rentDH), 'por día-hombre', 'rentDH',
+        ok(k.rentDH) ? `${nf(k.dh)} días-hombre en total; venta por día-hombre ${dinero(k.ventaDH)}.${meta > 0 ? ` Meta: ${dinero(meta)}.` : ` Define una meta en ${linkDatos('Datos del proyecto')} para activar el semáforo.`}` : 'No hay días-hombre registrados.',
+        ok(k.rentDH) && meta > 0 ? medidor({ v: k.rentDH, max: Math.max(meta * 1.5, k.rentDH * 1.1), fill: st.rentDH, fmt: (x) => dinero(x), label: 'Utilidad por día-hombre frente a la meta',
+          ticks: [{ at: meta * 0.8, dash: true, tip: `80 % de la meta: ${dinero(meta * 0.8)}` }, { at: meta, show: true, tip: `Meta ${dinero(meta)}` }] }) : ''),
       kpiCard('competitividad', k.competitividad === null ? '—' : pct(k.competitividad), k.competitividad === null ? '' : 'del presupuesto', 'competitividad', compRead,
         k.competitividad === null ? '' : medComp())
     ].join(''));
@@ -1962,8 +1998,8 @@
         <table class="comp-tbl">
           <thead><tr><th></th><th class="num">Oferta actual</th><th class="num">Con el escenario</th><th class="num">Diferencia</th></tr></thead>
           <tbody>
-            <tr><td>Costo total</td><td class="num">${clp(t.costoTotal)}</td><td class="num">${clp(t.costoTotal + k.sensDeltaCosto)}</td><td class="num">${signo(k.sensDeltaCosto, clp)}</td></tr>
-            <tr><td>Utilidad</td><td class="num">${clp(t.utilidad)}</td><td class="num">${clp(k.sensUtilidad)}</td><td class="num">${signo(k.sensVarUtilidad, pct)}</td></tr>
+            <tr><td>Costo total</td><td class="num">${dinero(t.costoTotal)}</td><td class="num">${dinero(t.costoTotal + k.sensDeltaCosto)}</td><td class="num">${signo(k.sensDeltaCosto, dinero)}</td></tr>
+            <tr><td>Utilidad</td><td class="num">${dinero(t.utilidad)}</td><td class="num">${dinero(k.sensUtilidad)}</td><td class="num">${signo(k.sensVarUtilidad, pct)}</td></tr>
             <tr class="clave"><td>Margen sobre venta</td><td class="num">${pct(k.margen)}</td><td class="num tone-${st.sensibilidad}">${pct(k.sensMargen)}</td><td class="num">${dMargen === null ? '—' : signo(dMargen, (x) => `${nf(x)} puntos`)}</td></tr>
           </tbody>
         </table>
@@ -1978,9 +2014,9 @@
     ].filter((sg) => sg.k !== 'gg' || hasGG);
     const base = segs.reduce((a, sg) => a + Math.max(0, sg.v), 0);
     const bar = base > 0 ? `<div class="stack lg" role="img" aria-label="Composición del precio neto">${segs.filter((sg) => sg.v > 0).map((sg) =>
-      `<div class="seg ${sg.cls}" style="flex:${sg.v} 1 0" data-tip="<b>${esc(sg.n)}</b>${esc(clp(sg.v))} · ${esc(pct(t.precioNeto ? sg.v / t.precioNeto : null))} del precio neto"></div>`).join('')}</div>` : '';
+      `<div class="seg ${sg.cls}" style="flex:${sg.v} 1 0" data-tip="<b>${esc(sg.n)}</b>${esc(dinero(sg.v))} · ${esc(pct(t.precioNeto ? sg.v / t.precioNeto : null))} del precio neto"></div>`).join('')}</div>` : '';
     put('res-comp', base > 0 ? `${bar}
-      <ul class="leyenda-comp">${segs.filter((sg) => sg.v).map((sg) => `<li><span class="swatch ${sg.cls}" aria-hidden="true"></span><span class="n">${sg.n}</span><span class="v">${clp(sg.v)}</span><span class="p">${pct(t.precioNeto ? sg.v / t.precioNeto : null)}</span></li>`).join('')}</ul>
+      <ul class="leyenda-comp">${segs.filter((sg) => sg.v).map((sg) => `<li><span class="swatch ${sg.cls}" aria-hidden="true"></span><span class="n">${sg.n}</span><span class="v">${dinero(sg.v)}</span><span class="p">${pct(t.precioNeto ? sg.v / t.precioNeto : null)}</span></li>`).join('')}</ul>
       ${t.utilidad < 0 ? '<p class="small tone-bad" style="margin:8px 0 0;font-weight:700">La utilidad es negativa: el precio no cubre los costos.</p>' : ''}`
       : '<p class="small muted" style="margin:0">Agrega partidas y costos para ver la composición del precio.</p>');
 
@@ -1995,8 +2031,8 @@
       return `<div class="pbar">
         <div class="nom" title="${esc(pt.descripcion)}"><span class="pcode">${pt.code}</span><span>${esc(pt.descripcion || 'Sin descripción')}</span></div>
         <div class="pista"><div class="stack" style="width:${tot > 0 ? Math.max(2, (tot / maxP) * 100) : 0}%">${vals.map((x) =>
-          `<div class="seg ${x.cls}" style="flex:${x.v} 1 0" data-tip="<b>${esc(pt.code)} · ${esc(x.n)}</b>${esc(clp(x.v))} · ${esc(pct(pt.precio ? x.v / pt.precio : null))} de la partida"></div>`).join('')}</div></div>
-        <div class="val">${clp(pt.precio)}</div>
+          `<div class="seg ${x.cls}" style="flex:${x.v} 1 0" data-tip="<b>${esc(pt.code)} · ${esc(x.n)}</b>${esc(dinero(x.v))} · ${esc(pct(pt.precio ? x.v / pt.precio : null))} de la partida"></div>`).join('')}</div></div>
+        <div class="val">${dinero(pt.precio)}</div>
       </div>`;
     }).join('') : '<p class="small muted" style="margin:0">Agrega partidas con costos para comparar su precio.</p>');
 
@@ -2007,9 +2043,9 @@
       return `<tr>
         <td><button type="button" class="apu-toggle" data-act="apu" data-uid="${pt.uid}" aria-expanded="${open}" aria-label="Ver el análisis de precio unitario de ${pt.code}">${ICON.chevR}</button></td>
         <td class="code">${pt.code}</td><td>${esc(pt.descripcion || '—')}</td><td class="num">${nf(pt.cantidad)} ${esc(pt.unidad)}</td>
-        <td class="num">${clp(pt.mat)}</td><td class="num">${clp(pt.eq)}</td><td class="num">${clp(pt.mo)}</td><td class="num">${clp(pt.otros)}</td>
-        <td class="num"><b>${clp(pt.cd)}</b></td><td class="num">${clp(pt.utilidad)}</td><td class="num"><b>${clp(pt.precio)}</b></td>
-        <td class="num">${clp(pt.pu)}</td><td class="num">${pct(pt.pctPrecio)}</td>
+        <td class="num">${dinero(pt.mat)}</td><td class="num">${dinero(pt.eq)}</td><td class="num">${dinero(pt.mo)}</td><td class="num">${dinero(pt.otros)}</td>
+        <td class="num"><b>${dinero(pt.cd)}</b></td><td class="num">${dinero(pt.utilidad)}</td><td class="num"><b>${dinero(pt.precio)}</b></td>
+        <td class="num">${dinero(pt.pu)}</td><td class="num">${pct(pt.pctPrecio)}</td>
       </tr>${apu}`;
     }).join('');
     const th = (c, l) => `<th class="num"><span class="swatch ${c}" style="width:9px;height:9px;margin-right:5px;vertical-align:0"></span>${l}</th>`;
@@ -2017,8 +2053,8 @@
       <thead><tr><th><span class="visualmente-oculto">Desplegar</span></th><th>ID</th><th>Partida</th><th class="num">Cantidad</th>${th('cat-mat', 'Materiales')}${th('cat-eq', 'Equipos')}${th('cat-mo', 'Mano de obra')}${th('cat-otros', 'Otros')}
         <th class="num">Costo directo</th>${th('cat-util', 'Utilidad')}<th class="num">Precio neto</th><th class="num">Precio unitario</th><th class="num">% del precio</th></tr></thead>
       <tbody>${rowsP || '<tr class="empty-row"><td colspan="13">Sin partidas.</td></tr>'}</tbody>
-      <tfoot><tr><td></td><td></td><td colspan="2">Total</td><td class="num">${clp(t.mat)}</td><td class="num">${clp(t.eq)}</td><td class="num">${clp(t.mo)}</td><td class="num">${clp(t.otros)}</td>
-        <td class="num">${clp(t.cd)}</td><td class="num">${clp(t.utilidad)}</td><td class="num">${clp(t.precioNeto)}</td><td></td><td class="num">${t.precioNeto ? '100,0 %' : '—'}</td></tr></tfoot>
+      <tfoot><tr><td></td><td></td><td colspan="2">Total</td><td class="num">${dinero(t.mat)}</td><td class="num">${dinero(t.eq)}</td><td class="num">${dinero(t.mo)}</td><td class="num">${dinero(t.otros)}</td>
+        <td class="num">${dinero(t.cd)}</td><td class="num">${dinero(t.utilidad)}</td><td class="num">${dinero(t.precioNeto)}</td><td></td><td class="num">${t.precioNeto ? '100,0 %' : '—'}</td></tr></tfoot>
     </table></div>`);
 
   }
@@ -2031,12 +2067,12 @@
     const body = cats.map(([k, label, cls]) => {
       const lines = pt.items[k];
       if (!lines.length) return '';
-      return `<tr class="apu-cat"><td colspan="4"><span class="nombre"><span class="swatch ${cls}"></span>${label}</span></td><td class="num">${clp(lines.reduce((a, l) => a + l.subtotal, 0))}</td></tr>` + lines.map((l) => {
+      return `<tr class="apu-cat"><td colspan="4"><span class="nombre"><span class="swatch ${cls}"></span>${label}</span></td><td class="num">${dinero(lines.reduce((a, l) => a + l.subtotal, 0))}</td></tr>` + lines.map((l) => {
         const it = byUid.get(l.uid) || {};
         const det = k === 'manoObra'
           ? `${nf(l.dhPorUnidadPartida)} días-hombre por unidad`
-          : `${nf(num(it.cantidad))} ${esc(it.unidad || '')} × ${clp(num(it.costoUnitario))}`;
-        return `<tr><td class="code">${l.code}</td><td>${esc(l.descripcion || '—')}</td><td>${det}</td><td class="num">${clp(l.costoPorUnidadPartida)} por unidad</td><td class="num">${clp(l.subtotal)}</td></tr>`;
+          : `${nf(num(it.cantidad))} ${esc(it.unidad || '')} × ${dinero(num(it.costoUnitario))}`;
+        return `<tr><td class="code">${l.code}</td><td>${esc(l.descripcion || '—')}</td><td>${det}</td><td class="num">${dinero(l.costoPorUnidadPartida)} por unidad</td><td class="num">${dinero(l.subtotal)}</td></tr>`;
       }).join('');
     }).join('');
     return body ? `<table class="apu-table"><thead><tr><th>ID</th><th>Ítem</th><th>Cantidad por unidad de partida</th><th class="num">Costo por unidad</th><th class="num">Subtotal</th></tr></thead><tbody>${body}</tbody></table>`
@@ -2155,6 +2191,7 @@
       touched = true;
       if (el.dataset.sync) $$(`[data-sync="${el.dataset.sync}"]`).forEach((o) => { if (o !== el) o.value = el.value; });
       if (el.dataset.f === 'codigo' || el.dataset.f === 'version') updateCodigoHint();
+      if (el.dataset.f === 'parametros.moneda') { recalc(); renderEditor(); scheduleSave(); return; }
     } else if (el.dataset.list && el.dataset.uid && el.dataset.k) {
       const it = findItem(el.dataset.list, el.dataset.uid);
       if (!it) return;
@@ -2163,7 +2200,7 @@
         // Al cambiar entre % y $ se conserva el monto de utilidad de la partida
         const pt = state.partIdx.get(it.uid);
         if (pt) {
-          if (v === 'monto') it.utilidadValor = Math.round(pt.utilidad);
+          if (v === 'monto') it.utilidadValor = redondear(pt.utilidad, monedaDe(state.project));
           else it.utilidadValor = pt.cd ? Math.round((pt.utilidad / pt.cd) * 1e6) / 1e4 : 0;
         }
       }
@@ -2878,7 +2915,8 @@
     const puede = true; // en SharePoint, los permisos de la carpeta deciden quién puede cambiarlos
     const dis = puede ? '' : 'disabled';
     const campo = (id, label, v, pre, suf) => `<div class="campo"><label for="cfg-${id}">${label}</label>
-      <div class="input-affix ${pre ? 'pre' : ''}"><input class="input" id="cfg-${id}" type="number" step="any" inputmode="decimal" value="${esc(num(v))}" ${dis}><span class="affix">${pre || suf}</span></div></div>`;
+      <div class="input-affix ${pre ? 'pre' : ''}"><input class="input" id="cfg-${id}" type="number" step="any" inputmode="decimal" value="${esc(num(v))}" ${dis}><span class="affix ${pre ? 'cfg-simbolo' : ''}">${pre || suf}</span></div></div>`;
+    const monCfg = MONEDAS[par.moneda] ? par.moneda : 'CLP', simb = MONEDAS[monCfg].simbolo;
     const promesaCfg = ask({
       title: 'Configuración',
       wide: true,
@@ -2889,18 +2927,20 @@
         </div>
         <h3 class="sub-t">Precio y tarifas</h3>
         <div class="fila-campos cfg-grid">
+          <div class="campo"><label for="cfg-moneda">Moneda</label><select class="input" id="cfg-moneda" ${dis}>${Object.keys(MONEDAS).map((m) => `<option value="${m}" ${monCfg === m ? 'selected' : ''}>${esc(MONEDAS[m].nombre)}</option>`).join('')}</select></div>
           ${campo('iva', 'IVA', par.iva, '', '%')}${campo('gg', 'Gastos generales', par.gastosGenerales, '', '%')}${campo('imp', 'Imprevistos', par.imprevistos, '', '%')}
-          ${campo('n1', 'Día-hombre nivel 1', par.tarifaN1, '$')}${campo('n2', 'Día-hombre nivel 2', par.tarifaN2, '$')}${campo('n3', 'Día-hombre nivel 3', par.tarifaN3, '$')}
+          ${campo('n1', 'Día-hombre nivel 1', par.tarifaN1, simb)}${campo('n2', 'Día-hombre nivel 2', par.tarifaN2, simb)}${campo('n3', 'Día-hombre nivel 3', par.tarifaN3, simb)}
         </div>
         <h3 class="sub-t">Metas de evaluación</h3>
         <div class="fila-campos cfg-grid">
-          ${campo('mobj', 'Margen objetivo', par.margenObjetivo, '', '%')}${campo('mmin', 'Margen mínimo', par.margenMinimo, '', '%')}${campo('meta', 'Meta por día-hombre', par.metaUtilidadDH, '$')}
+          ${campo('mobj', 'Margen objetivo', par.margenObjetivo, '', '%')}${campo('mmin', 'Margen mínimo', par.margenMinimo, '', '%')}${campo('meta', 'Meta por día-hombre', par.metaUtilidadDH, simb)}
         </div>
         <h3 class="sub-t">Carpeta compartida (OneDrive)</h3>
         <div id="cfg-af"></div>`,
       buttons: [puede ? { label: 'Restablecer valores de fábrica', value: 'reset', danger: true, left: true } : null, { label: 'Cancelar' }, { label: 'Guardar', value: 'save', primary: true }]
     });
     pintarCfgAF();
+    $('#cfg-moneda').addEventListener('change', (e) => { $$('#modal .cfg-simbolo').forEach((a) => { a.textContent = MONEDAS[e.target.value].simbolo; }); });
     const v = await promesaCfg;
     if (v === 'save') {
       if ($('#cfg-prefijo')) cfg.prefijo = ($('#cfg-prefijo').value || 'QPN').trim().toUpperCase();
@@ -2908,7 +2948,7 @@
       if (puede) {
         const leer = (id) => { const n = parseFloat($('#cfg-' + id).value); return Number.isFinite(n) ? n : 0; };
         Object.assign(cfg.parametros, {
-          iva: leer('iva'), gastosGenerales: leer('gg'), imprevistos: leer('imp'),
+          moneda: $('#cfg-moneda').value, iva: leer('iva'), gastosGenerales: leer('gg'), imprevistos: leer('imp'),
           tarifaN1: leer('n1'), tarifaN2: leer('n2'), tarifaN3: leer('n3'),
           margenObjetivo: leer('mobj'), margenMinimo: leer('mmin'), metaUtilidadDH: leer('meta')
         });
@@ -3327,7 +3367,7 @@
       }
       const r = pl && elegida.numero ? pl.get(elegida.numero) : null;
       const distinta = !!r && opts.planilla && !coincidePlanilla(elegida.titulo, r.titulo);
-      const datos = r ? [r.titulo, r.ubicacion, r.presupuesto ? `presupuesto ${clp(r.presupuesto)} con IVA` : ''].filter(Boolean).join(' · ') : '';
+      const datos = r ? [r.titulo, r.ubicacion, r.presupuesto ? `presupuesto ${dinero(r.presupuesto, 'CLP')} con IVA` : ''].filter(Boolean).join(' · ') : '';
       const conPlanilla = r && !distinta
         ? (opts.completar ? `Toma de la Planilla de Ingreso (N° ${esc(r.numero)}): ${esc(datos)}.` : `N° de requerimiento ${esc(r.numero)} en la Planilla de Ingreso: ${esc(r.titulo || 'sin título')}.`)
         : !r && elegida.numero && pl ? `El N° ${esc(elegida.numero)} no está en la Planilla de Ingreso.` : '';
@@ -3676,8 +3716,8 @@
         : origen[c] ? `<span class="af-origen">del formulador: ${esc(String(origen[c].fuente || '').split(' · ')[0].replace(/^Formulación /, ''))}</span>` : '<span class="af-origen">escrito a mano</span>';
       return `<tr class="${cambia ? 'cambia' : ''} ${manual && cambia ? 'pisa' : ''}">
           <td>${esc(c)}</td>
-          ${q ? `<td class="num hoy">${tiene ? clp(Number(a)) : '—'}${nota}</td>` : ''}
-          <td class="num nuevo">${clp(n)}</td></tr>`;
+          ${q ? `<td class="num hoy">${tiene ? dinero(Number(a)) : '—'}${nota}</td>` : ''}
+          <td class="num nuevo">${dinero(n)}</td></tr>`;
     }).join('');
     const suma = (o) => cats.reduce((s, c) => s + (Number(o[c]) || 0), 0);
     const reales = q && q.reales ? suma(q.reales) : null;
@@ -3685,11 +3725,11 @@
     return `<div class="tabla-contenedor"><table class="tbl af-tabla">
         <thead><tr><th>Categoría</th>${q ? '<th class="num">Hoy en el Análisis Financiero</th>' : ''}<th class="num">Se enviará</th></tr></thead>
         <tbody>${filas}</tbody>
-        <tfoot><tr><td>Costo directo</td>${q ? `<td class="num">${clp(suma(hoy))}</td>` : ''}<td class="num">${clp(suma(costos))}</td></tr></tfoot>
+        <tfoot><tr><td>Costo directo</td>${q ? `<td class="num">${dinero(suma(hoy))}</td>` : ''}<td class="num">${dinero(suma(costos))}</td></tr></tfoot>
       </table></div>
       ${pisa.length ? `<p class="af-linea af-aviso">Reemplazará valores escritos a mano en el Análisis Financiero: ${esc(pisa.join(', '))}.</p>` : ''}
-      ${q && reales !== null ? `<p class="af-nota">Costo real a la fecha según Centro de Costos: ${clp(reales)}${ok(Number(q.avance)) ? ` · avance ${pct(Number(q.avance))}` : ''}.</p>` : ''}
-      ${(t.gg || 0) + (t.imp || 0) > 0 ? `<p class="af-nota">Gastos generales (${clp(t.gg)}) e imprevistos (${clp(t.imp)}) no se envían: el Análisis Financiero compara costos directos.</p>` : ''}`;
+      ${q && reales !== null ? `<p class="af-nota">Costo real a la fecha según Centro de Costos: ${dinero(reales)}${ok(Number(q.avance)) ? ` · avance ${pct(Number(q.avance))}` : ''}.</p>` : ''}
+      ${(t.gg || 0) + (t.imp || 0) > 0 ? `<p class="af-nota">Gastos generales (${dinero(t.gg)}) e imprevistos (${dinero(t.imp)}) no se envían: el Análisis Financiero compara costos directos.</p>` : ''}`;
   }
 
   /* Envía los costos del proyecto (abierto o elegido en la lista) al Análisis Financiero */
@@ -3700,6 +3740,7 @@
     if (saveTimer && state.project === p) saveNow();
     const r = p === state.project ? state.result : computeProject(p);
     if (!(r.totals.cd > 0)) { toast('El proyecto todavía no tiene costos que enviar.', true); return false; }
+    if (monedaDe(p) !== 'CLP') { toast(`El Análisis Financiero lleva pesos chilenos y este proyecto está en ${MONEDAS[monedaDe(p)].corto}: sus costos no se pueden enviar.`, true); return false; }
     if (!X.disponible()) { await enviarAFDescarga(p, r); return false; }
 
     let est = await X.estado();
@@ -3770,9 +3811,9 @@
         <div id="af-comparacion"></div>
         ${extra ? `<fieldset class="af-extra"><legend>En el mismo envío</legend>
           <label class="check-l"><input type="checkbox" id="af-con-venta" ${extra.yaVenta || !(extra.mv.monto > 0) ? '' : 'checked'} ${extra.mv.monto > 0 ? '' : 'disabled'}>
-            <span>La venta al Análisis Financiero: <b>${clp(extra.mv.monto)}</b> sin IVA, ${esc(extra.mv.texto)}.${extra.yaVenta ? ' Ya se envió una: márcala para enviarla otra vez.' : ''}</span></label>
+            <span>La venta al Análisis Financiero: <b>${dinero(extra.mv.monto, 'CLP')}</b> sin IVA, ${esc(extra.mv.texto)}.${extra.yaVenta ? ' Ya se envió una: márcala para enviarla otra vez.' : ''}</span></label>
           ${extra.cambios ? `<label class="check-l"><input type="checkbox" id="af-con-planilla" ${extra.yaPlanilla ? '' : 'checked'}>
-            <span>El aviso a la Planilla de Ingreso (N° ${esc(req)}): <b>${esc(extra.cambios.estado)}</b>${extra.cambios.valorAdjudicado ? ` con ${clp(extra.cambios.valorAdjudicado)} (${esc(extra.vi.texto)})` : ''}.${extra.yaPlanilla ? ' La planilla ya lo tiene o ya se avisó.' : ''}</span></label>`
+            <span>El aviso a la Planilla de Ingreso (N° ${esc(req)}): <b>${esc(extra.cambios.estado)}</b>${extra.cambios.valorAdjudicado ? ` con ${dinero(extra.cambios.valorAdjudicado, 'CLP')} (${esc(extra.vi.texto)})` : ''}.${extra.yaPlanilla ? ' La planilla ya lo tiene o ya se avisó.' : ''}</span></label>`
             : `<p class="af-nota">Sin N° de requerimiento no se puede avisar a la Planilla de Ingreso: escríbelo en el paso 1.</p>`}
         </fieldset>` : ''}`,
       buttons: [{ label: 'Cancelar' }, { label: 'Enviar al Análisis Financiero', value: 'enviar', primary: true }]
@@ -3984,7 +4025,7 @@
     const req = QH().reqDe(p);
     const r = req && reqLista.find((x) => String(x.numero) === req);
     if (hint && r) {
-      hint.textContent = `${r.titulo || 'Sin título'} · ${r.estado || 'sin estado'}${ok(r.presupuesto) ? ` · presupuesto ${clp(r.presupuesto)} con IVA` : ''}${r.cierre ? ` · cierre ${fechaCorta(String(r.cierre).slice(0, 10))}` : ''}`;
+      hint.textContent = `${r.titulo || 'Sin título'} · ${r.estado || 'sin estado'}${ok(r.presupuesto) ? ` · presupuesto ${dinero(r.presupuesto, 'CLP')} con IVA` : ''}${r.cierre ? ` · cierre ${fechaCorta(String(r.cierre).slice(0, 10))}` : ''}`;
     } else if (hint && req && reqLista.length) {
       hint.textContent = `El N° ${req} no está en ${enLaPlanilla(datos)}.`;
     }
@@ -4045,13 +4086,14 @@
     const fila = (h, i) => `<tr>
         <td><b>${esc(h.nombre)}</b><div class="small muted">${esc([h.categoria, h.material, h.medida].filter(Boolean).join(' · '))}</div></td>
         <td class="num">${h.n}</td>
-        <td class="num">${clp(h.precio.promedio)}<div class="small muted">${clp(h.precio.minimo)} a ${clp(h.precio.maximo)}</div></td>
-        <td class="num">${clp(h.precio.ultimo)}<div class="small muted">${esc(fechaCorta(h.ultimaCompra))}</div></td>
+        <td class="num">${dinero(h.precio.promedio, 'CLP')}<div class="small muted">${dinero(h.precio.minimo, 'CLP')} a ${dinero(h.precio.maximo, 'CLP')}</div></td>
+        <td class="num">${dinero(h.precio.ultimo, 'CLP')}<div class="small muted">${esc(fechaCorta(h.ultimaCompra))}</div></td>
         <td class="pr-usar"><button class="btn btn-sm" value="p:${i}">Usar promedio</button><button class="btn btn-sm" value="u:${i}">Usar última</button></td></tr>`;
     const promesa = ask({
       title: 'Precios de compra de referencia',
       wide: true,
       body: `<p>Lo que QUEMPIN pagó en compras reales (Centro de Costos), <b>sin IVA</b> y reajustado por UF al ${esc(fechaCorta(String(datos.uf.fecha).slice(0, 10)))}. Cada fila es un mismo producto, material y medida.</p>
+        ${monedaDe(state.project) !== 'CLP' ? `<p class="af-linea af-aviso">Los precios están en pesos chilenos y este proyecto en ${esc(MONEDAS[monedaDe(state.project)].corto)}: al usar uno, conviértelo en el costo unitario.</p>` : ''}
         <div class="fila-campos"><div class="campo ancho"><label for="pr-q">Buscar</label><input class="input" id="pr-q" autocomplete="off" value="${esc(it.descripcion || '')}" placeholder="Ej.: válvula de bola bronce 2&quot;"></div></div>
         <div id="pr-res"></div>`,
       buttons: [{ label: 'Cerrar' }]
@@ -4080,7 +4122,7 @@
     renderTab(`[data-list="${list}"][data-uid="${uid}"][data-k="costoUnitario"]`);
     flashRow(uid);
     scheduleSave();
-    toast(`Costo unitario ${clp(valor)}: ${tipo === 'p' ? 'promedio' : 'última compra'} de «${h.nombre}»`);
+    toast(`Costo unitario ${dinero(valor, 'CLP')}: ${tipo === 'p' ? 'promedio' : 'última compra'} de «${h.nombre}»`);
   }
 
   // ---- Sesgo real del presupuesto (paso 5) ----------------------------------------------
@@ -4404,14 +4446,18 @@
   /* Lo que cada etapa muestra adentro: { etapa: html }, del proyecto abierto. pulso: la línea del procesador. */
   let herrDe = { uid: null, html: {}, aviso: '', pulso: '' };
 
+  /* El Análisis Financiero y la Planilla de Ingreso llevan pesos chilenos: un proyecto en otra
+     moneda solo les manda montos de una cotización emitida en pesos (monto 0 / valor null si no hay). */
   function montoVenta(p, cots) {
     const c = cots.find((d) => d.moneda === 'CLP' && ok(d.neto) && d.neto > 0);
     if (c) return { monto: c.neto, desde: { herramienta: 'sistema-quempin', folio: c.folio, pais: c.pais, fecha: c.fecha }, texto: `de la cotización ${c.folio} del ${fechaCorta(c.fecha)}` };
+    if (monedaDe(p) !== 'CLP') return { monto: 0, desde: { herramienta: 'formulador' }, texto: `el proyecto está en ${MONEDAS[monedaDe(p)].corto} y no hay una cotización emitida en pesos` };
     return { monto: cotizacion().neto, desde: { herramienta: 'formulador' }, texto: 'del precio neto del paso 4 (no hay una cotización emitida en pesos)' };
   }
   function valorConIva(p, cots) {
     const c = cots.find((d) => d.moneda === 'CLP' && ok(d.total) && d.total > 0);
-    return c ? { valor: c.total, texto: `total con IVA de la cotización ${c.folio}` } : { valor: cotizacion().bruto, texto: 'total con IVA del paso 4' };
+    if (c) return { valor: c.total, texto: `total con IVA de la cotización ${c.folio}` };
+    return monedaDe(p) === 'CLP' ? { valor: cotizacion().bruto, texto: 'total con IVA del paso 4' } : { valor: null, texto: '' };
   }
   /* ¿La fila de la planilla ya muestra el aviso? ¿Dos avisos dicen lo mismo? (estado y valor) */
   const igualCampo = (k, a, b) => (k === 'estado' ? norm(a) === norm(b) : Math.abs(num(a) - num(b)) < 1);
@@ -4480,7 +4526,7 @@
     const ps = estadoPasos();
     const falta = ps.find((x) => x.est === 'err') || ps.find((x) => x.est === 'pend');
     const vo = ofertaActiva() ? QO().vinculo(p) : null;
-    const resumenFormulacion = linea(`${falta ? `<span class="chip warn">Paso ${falta.n} pendiente</span> ${esc(falta.label)}: ${esc(falta.falta || 'por completar')}` : `<span class="chip ok">5 de 5 pasos</span> Precio neto <b>${clp(r.totals.precioNeto)}</b> · margen ${pct(r.kpis.margen)}`}`)
+    const resumenFormulacion = linea(`${falta ? `<span class="chip warn">Paso ${falta.n} pendiente</span> ${esc(falta.label)}: ${esc(falta.falta || 'por completar')}` : `<span class="chip ok">5 de 5 pasos</span> Precio neto <b>${dinero(r.totals.precioNeto)}</b> · margen ${pct(r.kpis.margen)}`}`)
       + (vo ? linea(`${ICON.folder}<span class="rcl-carpeta">Carpeta de la oferta: <b>${esc(vo.nombre)}</b> · el Excel de la formulación se mantiene al día ahí.</span>`) : '');
     const bFormulacion = falta ? `<button type="button" class="btn" data-act="sigue" data-accion="ir-paso">Ir al paso ${falta.n}${ICON.arrow}</button>` : '<button type="button" class="btn" data-act="tab" data-tab="evaluacion">Ver la evaluación</button>';
     const bloqueAF = (venta) => `<div class="herr-af"><div class="af-panel" id="af-panel"></div>${venta || ''}</div>`;
@@ -4511,7 +4557,7 @@
 
     // 1. Requerimiento: lo que dice la planilla
     html.requerimiento = !req ? sinReq
-      : filaReq ? linea(`<span class="code-badge">N° ${esc(req)}</span> ${esc(filaReq.titulo || 'Sin título')} · la planilla dice: <b>${esc(filaReq.estado || 'sin estado')}</b>${ok(filaReq.valorOfertado) ? ` · ofertado ${clp(filaReq.valorOfertado)}` : ''}${ok(filaReq.valorAdjudicado) ? ` · adjudicado ${clp(filaReq.valorAdjudicado)}` : ''}.`)
+      : filaReq ? linea(`<span class="code-badge">N° ${esc(req)}</span> ${esc(filaReq.titulo || 'Sin título')} · la planilla dice: <b>${esc(filaReq.estado || 'sin estado')}</b>${ok(filaReq.valorOfertado) ? ` · ofertado ${dinero(filaReq.valorOfertado, 'CLP')}` : ''}${ok(filaReq.valorAdjudicado) ? ` · adjudicado ${dinero(filaReq.valorAdjudicado, 'CLP')}` : ''}.`)
         : linea(`<span class="code-badge">N° ${esc(req)}</span> No está en ${enLaPlanilla(reqs)}: revisa el N°.`) + acciones('<button type="button" class="btn" data-act="sigue" data-accion="ir-req">Revisar el N°</button>');
 
     // 2. Formulación, con su N° del Control de Documentos (evaluación de costos, tipo 81): el número se
@@ -4562,7 +4608,7 @@
       tCot = linea(`${chipEstado(eb ? eb.estado : 'pendiente')} Versión ${esc(borr.version)} enviada el ${esc(fechaHora(borr.fecha))}. ${det}`)
         + (espera ? `<ol class="rcl-pasos"><li>Abre <b>Sistema QUEMPIN</b> en tu computador.</li><li>En <b>Nueva Cotización</b>, usa el botón <b>Borradores del Formulador</b> y carga esta cotización.</li><li>Revísala y emítela: este proyecto verá su número solo.</li></ol>` : '');
     }
-    if (cots.length) tCot += linea('Emitidas: ' + cots.slice(0, 4).map((c) => `<span class="code-badge">${esc(c.folio)}</span> ${esc(fechaCorta(c.fecha))} · neto ${c.moneda === 'CLP' ? clp(c.neto) : `${nf(c.neto)} ${esc(c.moneda)}`}`).join(' · '));
+    if (cots.length) tCot += linea('Emitidas: ' + cots.slice(0, 4).map((c) => `<span class="code-badge">${esc(c.folio)}</span> ${esc(fechaCorta(c.fecha))} · neto ${MONEDAS[c.moneda === 'SOL' ? 'PEN' : c.moneda] ? dinero(c.neto, c.moneda === 'SOL' ? 'PEN' : c.moneda) : `${nf(c.neto)} ${esc(c.moneda)}`}`).join(' · '));
     html.cotizacion = tCot + acciones(`<button type="button" class="btn" data-act="herr-cotizacion" ${r.partidas.length ? '' : 'disabled'}>${ICON.enviar}${borr ? 'Preparar de nuevo…' : 'Preparar la cotización…'}</button>`);
 
     // 4. Oferta y adjudicación: el estado y el aviso a la Planilla de Ingreso
@@ -4576,7 +4622,7 @@
       const valor = cambios ? cambios.valorOfertado || cambios.valorAdjudicado : 0;
       tPla += (!cambios ? linea('Cuando la oferta se envíe o tenga respuesta (Adjudicada, Perdida o Descartada), se avisa el estado a la Planilla de Ingreso.')
         : yaEsta ? linea('<span class="chip ok">Al día</span> La Planilla de Ingreso ya muestra el estado de esta oferta.')
-          : (avisado ? '' : linea(`Se avisaría a la planilla: <b>${esc(cambios.estado)}</b>${valor ? ` con ${clp(valor)} (${esc(vi.texto)})` : ''}.`))
+          : (avisado ? '' : linea(`Se avisaría a la planilla: <b>${esc(cambios.estado)}</b>${valor ? ` con ${dinero(valor, 'CLP')} (${esc(vi.texto)})` : ''}.`))
             + (ult ? linea(`${chipEstado('pendiente')} Aviso${(ult.cambios || {}).estado ? ` «${esc(ult.cambios.estado)}»` : ''} enviado el ${esc(fechaHora(ult.fecha))}: espera que quien lleva la planilla lo pase.`) : ''));
       if (cambios && !yaEsta && !avisado) bPla = `<button type="button" class="btn" data-act="herr-planilla">${ICON.enviar}Avisar a la Planilla de Ingreso</button>`;
     } else tPla += linea('Con el N° de requerimiento, el estado y el valor se avisan a la Planilla de Ingreso en el mismo clic.');
@@ -4591,10 +4637,11 @@
       const ven = q && q.venta;
       const ult = (v.ventaAF || {}).ultimoEnvio;
       const ev = ult && af && af.mensajes ? af.mensajes[ult.id] : null;
-      tVenta = linea(`Venta: se enviaría ${clp(mv.monto)} sin IVA, ${esc(mv.texto)}.`)
+      tVenta = linea(mv.monto > 0 ? `Venta: se enviaría ${dinero(mv.monto, 'CLP')} sin IVA, ${esc(mv.texto)}.`
+        : `El Análisis Financiero lleva pesos chilenos y ${esc(mv.texto)}: escribe la venta en su tablero, pestaña «Ingresar datos».`)
         + (ven ? linea(ven.cargada ? (ven.origen ? 'El Análisis Financiero ya tiene una venta enviada desde aquí.' : '<span class="af-aviso">El Análisis Financiero tiene un monto escrito a mano: el envío quedará esperando que lo confirmen allá.</span>') : 'El Análisis Financiero todavía no tiene el monto de venta.') : '')
-        + (ult ? linea(`${chipEstado(ev ? ev.estado : 'pendiente')} Venta enviada el ${esc(fechaHora(ult.fecha))} (${clp(ult.monto)}).`) : '');
-      bVenta = `<button type="button" class="btn" data-act="herr-venta">${ICON.enviar}${ult ? 'Volver a enviar la venta' : 'Enviar la venta'}</button>`;
+        + (ult ? linea(`${chipEstado(ev ? ev.estado : 'pendiente')} Venta enviada el ${esc(fechaHora(ult.fecha))} (${dinero(ult.monto, 'CLP')}).`) : '');
+      if (mv.monto > 0) bVenta = `<button type="button" class="btn" data-act="herr-venta">${ICON.enviar}${ult ? 'Volver a enviar la venta' : 'Enviar la venta'}</button>`;
     }
     const abrirAF = vAF ? `<a class="btn" href="${esc(enlaceAF(p))}" target="_blank" rel="noopener">${ICON.open}Ver la ficha en Análisis Financiero</a>` : '';
     html.ejecucion = bloqueAF(tVenta || bVenta || abrirAF ? `<div class="herr-cuerpo herr-venta">${tVenta}${acciones(bVenta + abrirAF)}</div>` : '');
@@ -4630,13 +4677,13 @@
           <div class="campo ancho"><label for="cq-cli">Cliente (razón social)</label><div class="combo"><input class="input" id="cq-cli" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" value="${esc(p.cliente || '')}">${clientes.length ? `<button type="button" class="combo-btn" data-picker="combo" tabindex="-1" aria-label="Ver los clientes">${ICON.caret}</button>` : ''}</div>
             <span class="hint">Si el cliente ya cotizó antes, Sistema QUEMPIN usa su ficha completa.</span></div>
           <div class="campo"><label for="cq-rut">RUT <span class="opc">(opcional)</span></label><input class="input" id="cq-rut" autocomplete="off"></div>
-          <div class="campo"><label for="cq-pais">País</label><select class="input" id="cq-pais"><option value="Chile">Chile</option><option value="Peru">Perú</option></select></div>
+          <div class="campo"><label for="cq-pais">País</label><select class="input" id="cq-pais"><option value="Chile">Chile</option><option value="Peru" ${monedaDe(p) === 'PEN' ? 'selected' : ''}>Perú</option></select></div>
           <div class="campo ancho"><label for="cq-ref">Referencia</label><input class="input" id="cq-ref" value="${esc(p.titulo || '')}"><span class="hint">Con ella Sistema QUEMPIN arma el nombre del PDF.</span></div>
           <div class="campo"><label for="cq-plazo">Plazo de entrega <span class="opc">(opcional)</span></label><input class="input" id="cq-plazo" placeholder="Ej.: 30 días"></div>
         </div>
         <div class="tabla-contenedor"><table class="tbl af-tabla"><thead><tr><th>Partida</th><th class="num">Cantidad</th><th class="num">Precio unitario neto</th><th class="num">Total neto</th></tr></thead>
-          <tbody>${cot.lineas.map(({ pt, pu, total }) => `<tr><td>${esc(pt.code)} · ${esc(pt.descripcion || 'Sin descripción')}</td><td class="num">${nf(pt.cantidad)} ${esc(pt.unidad || '')}</td><td class="num">${pu === null ? '—' : clp(pu)}</td><td class="num">${clp(total)}</td></tr>`).join('')}</tbody>
-          <tfoot><tr><td colspan="3">Total neto (en pesos)</td><td class="num">${clp(cot.neto)}</td></tr></tfoot></table></div>`,
+          <tbody>${cot.lineas.map(({ pt, pu, total }) => `<tr><td>${esc(pt.code)} · ${esc(pt.descripcion || 'Sin descripción')}</td><td class="num">${nf(pt.cantidad)} ${esc(pt.unidad || '')}</td><td class="num">${pu === null ? '—' : dinero(pu)}</td><td class="num">${dinero(total)}</td></tr>`).join('')}</tbody>
+          <tfoot><tr><td colspan="3">Total neto (en ${esc(MONEDAS[monedaDe(p)].corto)})</td><td class="num">${dinero(cot.neto)}</td></tr></tfoot></table></div>`,
       buttons: [{ label: 'Cancelar' }, { label: 'Enviar a Sistema QUEMPIN', value: 'enviar', primary: true }]
     });
     combos['cq-cli'] = {
@@ -4652,7 +4699,7 @@
     cli.addEventListener('change', llenarRut);
     llenarRut();
     const datos = () => ({
-      pais: $('#cq-pais').value, moneda: 'CLP', referencia: $('#cq-ref').value, plazoEntrega: $('#cq-plazo').value.trim(),
+      pais: $('#cq-pais').value, moneda: monedaDe(p), referencia: $('#cq-ref').value, plazoEntrega: $('#cq-plazo').value.trim(),
       cliente: { razon_social: cli.value, rut: rut.value }
     });
     const btn = $('#modal .modal-foot .btn-primario');
@@ -4677,13 +4724,13 @@
     if (!p || !vAF || !(await asegurarCarpeta())) return false;
     const [docs, af] = await Promise.all([QH().publicacion('documentos-comerciales', true), QH().publicacion('analisis-financiero', true)]);
     const mv = montoVenta(p, QH().cotizacionesDe(p, docs));
-    if (!(mv.monto > 0)) { toast('No hay un monto de venta que enviar.', true); return false; }
+    if (!(mv.monto > 0)) { toast(monedaDe(p) !== 'CLP' ? `No hay un monto de venta en pesos que enviar: ${mv.texto}.` : 'No hay un monto de venta que enviar.', true); return false; }
     const q = ((af && af.proyectos) || []).find((x) => x.tag === vAF.tag);
     const ven = q && q.venta;
     const manual = ven && ven.cargada && !ven.origen;
     const v = await ask({
       title: 'Enviar la venta al Análisis Financiero',
-      body: `<p>Monto de venta <b>${clp(mv.monto)} sin IVA</b> para <span class="code-badge">${esc(vAF.tag)}</span>, ${esc(mv.texto)}.</p>
+      body: `<p>Monto de venta <b>${dinero(mv.monto, 'CLP')} sin IVA</b> para <span class="code-badge">${esc(vAF.tag)}</span>, ${esc(mv.texto)}.</p>
         ${manual ? '<p class="af-linea af-aviso">El Análisis Financiero ya tiene un monto escrito a mano: el envío quedará esperando que lo confirmen allá.</p>' : ''}
         <p class="af-nota">Se aplica en su próxima actualización, con respaldo. Nunca reemplaza un valor escrito a mano sin que lo confirmen.</p>`,
       buttons: [{ label: 'Cancelar' }, { label: 'Enviar', value: 'enviar', primary: true }]

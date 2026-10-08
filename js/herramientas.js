@@ -211,12 +211,12 @@
       cliente,
       items: cot.lineas.map(({ pt, pu, total }) => (pu !== null && pt.cantidad > 0
         ? { descripcion: pt.descripcion || pt.code, unidad: pt.unidad || '', cantidad: pt.cantidad, precioUnitario: pu }
-        : { descripcion: pt.descripcion || pt.code, unidad: pt.unidad || '', cantidad: 1, precioUnitario: Math.max(0, Math.round(total)) })),
+        : { descripcion: pt.descripcion || pt.code, unidad: pt.unidad || '', cantidad: 1, precioUnitario: Math.max(0, total) })),
       observaciones: [`Valores netos por partida de la formulación ${p.codigo || ''} v${p.version}.`]
     };
     if (datos.plazoEntrega) m.cotizacion.plazoEntrega = String(datos.plazoEntrega);
     if (datos.direccionEntrega) m.cotizacion.direccionEntrega = String(datos.direccionEntrega);
-    m.informativo = { precioNeto: Math.round(cot.neto) };
+    m.informativo = { precioNeto: cot.neto };
     return m;
   }
 
@@ -258,8 +258,10 @@
      No adjudicado; Descartada → Descartado (estos dos sin valor). Con los perdidos la planilla calcula
      la tasa de adjudicación que usa el Flujo de Caja (requerimientos.py, resumen). */
   function cambiosParaPlanilla(p, valorConIva) {
-    if (p.estado === 'Adjudicada') return { estado: 'Adjudicado', valorAdjudicado: Math.round(valorConIva) };
-    if (p.estado === 'Enviada') return { estado: 'Ofertado', valorOfertado: Math.round(valorConIva) };
+    // Sin valor (proyecto en otra moneda y sin cotización en pesos) se avisa solo el estado
+    const v = valorConIva > 0 ? Math.round(valorConIva) : null;
+    if (p.estado === 'Adjudicada') return Object.assign({ estado: 'Adjudicado' }, v ? { valorAdjudicado: v } : {});
+    if (p.estado === 'Enviada') return Object.assign({ estado: 'Ofertado' }, v ? { valorOfertado: v } : {});
     if (p.estado === 'Perdida') return { estado: 'No adjudicado' };
     if (p.estado === 'Descartada') return { estado: 'Descartado' };
     return null;

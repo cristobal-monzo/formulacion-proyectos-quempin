@@ -108,9 +108,10 @@
     if (!C || !C.computeProject) return null;
     try {
       const r = C.computeProject(p), t = r.totals;
-      const n = (v) => (Number.isFinite(v) ? Math.round(v) : null);
+      const moneda = C.monedaDe(p);
+      const n = (v) => (Number.isFinite(v) ? C.redondear(v, moneda) : null);
       return {
-        moneda: 'CLP', costoDirecto: n(t.cd), gastosGenerales: n(t.gg), imprevistos: n(t.imp),
+        moneda, costoDirecto: n(t.cd), gastosGenerales: n(t.gg), imprevistos: n(t.imp),
         costoTotal: n(t.costoTotal), utilidad: n(t.utilidad), precioNeto: n(t.precioNeto),
         margen: Number.isFinite(r.kpis.margen) ? Math.round(r.kpis.margen * 10000) / 10000 : null,
         costosAF: X() ? X().costosAF(t) : null,

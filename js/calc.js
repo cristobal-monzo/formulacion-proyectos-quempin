@@ -250,7 +250,26 @@
     return { tipo: 'monto', valor: n, nota: esMon ? undefined : 'sin símbolo: interpretado como monto $ (igual que el Excel)' };
   }
 
-  const api = { computeProject, evaluate, parseUtilidadExcel, num, CATEGORIAS };
+  /* Moneda del proyecto (parametros.moneda): todos sus montos se ingresan y se muestran en
+     ella, sin conversión. Pesos en unidades enteras; soles, dólares y euros con centavos
+     (los mismos códigos y decimales de Sistema QUEMPIN, app/calculos.py). */
+  const MONEDAS = {
+    CLP: { simbolo: '$', nombre: 'Pesos chilenos', corto: 'pesos', decimales: 0 },
+    PEN: { simbolo: 'S/', nombre: 'Soles peruanos', corto: 'soles', decimales: 2 },
+    USD: { simbolo: 'US$', nombre: 'Dólares (US$)', corto: 'dólares', decimales: 2 },
+    EUR: { simbolo: '€', nombre: 'Euros', corto: 'euros', decimales: 2 }
+  };
+  const monedaDe = (p) => {
+    const m = p && p.parametros && p.parametros.moneda;
+    return MONEDAS[m] ? m : 'CLP';
+  };
+  /* Redondea un monto a los decimales de su moneda */
+  const redondear = (v, moneda) => {
+    const f = Math.pow(10, (MONEDAS[moneda] || MONEDAS.CLP).decimales);
+    return Math.round(v * f) / f;
+  };
+
+  const api = { computeProject, evaluate, parseUtilidadExcel, num, CATEGORIAS, MONEDAS, monedaDe, redondear };
   root.QCalc = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
