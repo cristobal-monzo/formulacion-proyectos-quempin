@@ -751,7 +751,8 @@
   }
   function updateCalc() {
     const r = state.result;
-    $$('[data-c]', app).forEach((el) => { el.textContent = fmt(resolve(el.dataset.c), el.dataset.fmt); });
+    // Solo lo que cambió: escribir una celda igual invalida igual el diseño de toda la tabla
+    $$('[data-c]', app).forEach((el) => texto(el, fmt(resolve(el.dataset.c), el.dataset.fmt)));
     const lvl = new Map();
     const msgs = new Map();
     r.warnings.forEach((w) => {
@@ -763,16 +764,17 @@
       const l = lvl.get(tr.dataset.row);
       tr.classList.toggle('has-error', l === 'error');
       tr.classList.toggle('has-warn', l === 'warn');
-      if (msgs.has(tr.dataset.row)) tr.title = msgs.get(tr.dataset.row); else tr.removeAttribute('title');
+      const m = msgs.get(tr.dataset.row);
+      if (m) { if (tr.title !== m) tr.title = m; } else if (tr.hasAttribute('title')) tr.removeAttribute('title');
     });
     // Conteo de ítems por tipo de costo (subpestañas del paso 3)
     $$('[data-count]', app).forEach((el) => {
       const k = el.dataset.count;
-      el.textContent = state.project[k].length;
+      texto(el, String(state.project[k].length));
       el.classList.toggle('err', r.warnings.some((w) => w.tab === k && w.level === 'error'));
     });
     // Ayuda emergente con el cálculo de cada subtotal
-    $$('[data-formula]', app).forEach((el) => { el.dataset.tip = formulaLinea(el.dataset.formula); });
+    $$('[data-formula]', app).forEach((el) => { const t = formulaLinea(el.dataset.formula); if (el.dataset.tip !== t) el.dataset.tip = t; });
     renderLectura();
     updateTabs();
     updateHeader();
@@ -1147,23 +1149,37 @@
     return `${sep}${u.webUrl ? `<a class="meta-carpeta" href="${esc(u.webUrl)}" target="_blank" rel="noopener" title="Abrir la carpeta en SharePoint: ${esc(u.ruta)}">${t}</a>` : `<span class="meta-carpeta">${t}</span>`}`;
   }
 
+  /* Escribe el HTML de un elemento solo si cambió. Lo usan las barras que se repintan en cada tecla
+     (updateCalc) y casi nunca cambian: cada escritura obliga al navegador a recalcular el diseño de
+     toda la página, y con 1.500 materiales eso era ~0,5 s por tecla (medido el 2026-10-08). */
+  function pintar(el, html) {
+    if (!el || el._pintado === html) return false;
+    el._pintado = html;
+    el.innerHTML = html;
+    return true;
+  }
+  function texto(el, valor) {
+    if (el && el.textContent !== valor) el.textContent = valor;
+  }
+
   function updateHeader() {
     const p = state.project;
     const t = $('#ed-title');
     if (!p || !t) return;
-    t.textContent = p.titulo || 'Proyecto sin título';
+    texto(t, p.titulo || 'Proyecto sin título');
     t.classList.toggle('sin-titulo', !p.titulo);
     const sep = '<span class="sep" aria-hidden="true">·</span>';
-    $('#ed-meta').innerHTML = `<span class="code-badge">${esc(p.codigo || 'SIN CÓDIGO')}</span><span>versión ${esc(p.version)}</span>
+    pintar($('#ed-meta'), `<span class="code-badge">${esc(p.codigo || 'SIN CÓDIGO')}</span><span>versión ${esc(p.version)}</span>
       <button type="button" class="estado" data-e="${esc(p.estado)}" data-picker="estado" aria-haspopup="listbox" aria-expanded="false" aria-label="Estado: ${esc(p.estado)}. Cambiar el estado">${esc(p.estado)}${svg('<path d="M6 9l6 6 6-6"/>')}</button>
-      ${p.cliente ? `${sep}<span>${esc(p.cliente)}</span>` : ''}${p.responsable ? `${sep}<span>${esc(p.responsable)}</span>` : ''}${p.fecha ? `${sep}<span>${esc(fechaCorta(p.fecha))}</span>` : ''}${metaCarpeta(p, sep)}`;
-    document.title = `${p.codigo || ''} ${p.titulo || 'Proyecto'} — Formulación QUEMPIN`;
-    const sub = $('#hdr-sub');
-    if (sub) sub.textContent = SUBTITULO;
+      ${p.cliente ? `${sep}<span>${esc(p.cliente)}</span>` : ''}${p.responsable ? `${sep}<span>${esc(p.responsable)}</span>` : ''}${p.fecha ? `${sep}<span>${esc(fechaCorta(p.fecha))}</span>` : ''}${metaCarpeta(p, sep)}`);
+    const titulo = `${p.codigo || ''} ${p.titulo || 'Proyecto'} — Formulación QUEMPIN`;
+    if (document.title !== titulo) document.title = titulo;
+    texto($('#hdr-sub'), SUBTITULO);
     const mn = $('#modnav-proj');
     if (mn) {
-      mn.href = `#/p/${p.uid}/${state.tab}`;
-      mn.firstElementChild.textContent = `${p.codigo || 'Sin código'} v${p.version}`;
+      const href = `#/p/${p.uid}/${state.tab}`;
+      if (mn.getAttribute('href') !== href) mn.href = href;
+      texto(mn.firstElementChild, `${p.codigo || 'Sin código'} v${p.version}`);
     }
   }
 
@@ -1176,10 +1192,10 @@
     const nErr = r.warnings.filter((w) => w.level === 'error').length;
     const nWarn = r.warnings.filter((w) => w.level === 'warn').length;
     const txt = nErr || nWarn ? [nErr ? plural(nErr, 'error', 'errores') : '', nWarn ? plural(nWarn, 'aviso') : ''].filter(Boolean).join(' y ') : 'sin alertas';
-    el.innerHTML = `
+    pintar(el, `
       <div class="lectura-item"><span class="l">Precio neto</span><span class="v">${dinero(r.totals.precioNeto)}</span></div>
       <div class="lectura-item"><span class="l">Margen</span><span class="v"><span class="dot ${r.status.margen}" aria-hidden="true" style="margin:0"></span>${pct(r.kpis.margen)}</span></div>
-      <div class="lectura-item"><span class="l">Alertas</span><button type="button" class="v" data-menu="alertas" aria-haspopup="menu" aria-expanded="false" aria-label="Alertas: ${txt}. Ver y corregir">${nErr ? `<span class="chip bad">✖ ${nErr}</span>` : ''}${nWarn ? `<span class="chip warn">▲ ${nWarn}</span>` : ''}${!nErr && !nWarn ? '<span class="chip ok">✔ 0</span>' : ''}</button></div>`;
+      <div class="lectura-item"><span class="l">Alertas</span><button type="button" class="v" data-menu="alertas" aria-haspopup="menu" aria-expanded="false" aria-label="Alertas: ${txt}. Ver y corregir">${nErr ? `<span class="chip bad">✖ ${nErr}</span>` : ''}${nWarn ? `<span class="chip warn">▲ ${nWarn}</span>` : ''}${!nErr && !nWarn ? '<span class="chip ok">✔ 0</span>' : ''}</button></div>`);
   }
 
   /* Estado de cada paso: 'ok' (completo), 'err', 'warn' o 'pend', y qué falta para completarlo.
@@ -1223,7 +1239,7 @@
     if (!el) return;
     const paso = tabInfo(state.tab).paso;
     const EST = { ok: 'completo', err: 'con errores', warn: 'con avisos', pend: 'pendiente' };
-    el.innerHTML = estadoPasos().map((ps) => {
+    const html = estadoPasos().map((ps) => {
       const on = ps.n === paso;
       const destino = ps.n === 3 ? (COSTOS.includes(state.tab) ? state.tab : state.costoTab) : ps.tabs[0];
       const marca = ps.est === 'ok' ? '✓' : ps.est === 'err' || ps.est === 'warn' ? '!' : ps.n;
@@ -1232,6 +1248,8 @@
           <span class="paso-marca" aria-hidden="true">${marca}</span><span class="paso-l">${esc(ps.label)}</span>${ps.n === 2 || ps.n === 3 ? `<span class="count" aria-hidden="true">${ps.cant}</span>` : ''}
         </button>`;
     }).join('<span class="paso-sep" aria-hidden="true"></span>') + pestanaSeguimiento();
+    // Al escribir casi nunca cambia: sin cambios no se toca el DOM ni se mide (medir fuerza el diseño)
+    if (!pintar(el, html)) return;
     // En pantallas angostas la barra se desplaza: mantener visible el paso activo
     const act = $('.paso-tab.active', el);
     if (act && el.scrollWidth > el.clientWidth) {
@@ -1299,7 +1317,7 @@
       const e = state.result.warnings.filter((w) => w.tab === tab && w.level === 'error').length;
       falta = e ? `${plural(e, 'costo')} sin partida: no se ${e === 1 ? 'suma' : 'suman'} al precio.` : '';
     }
-    el.innerHTML = falta ? `<span class="marca-pop warn" aria-hidden="true"></span>${esc(falta)}` : '';
+    pintar(el, falta ? `<span class="marca-pop warn" aria-hidden="true"></span>${esc(falta)}` : '');
   }
 
   /* Subpestañas del paso 3: un tipo de costo a la vez, con su total */
@@ -1568,9 +1586,17 @@
     return `<b>${esc(l.code)} · ${dinero(l.subtotal)}</b>${nf(num(it.cantidad))} ${esc(it.unidad || '')} × ${dinero(num(it.costoUnitario))} × ${nf(l.qtyPartida)} unidades de la partida`;
   }
 
+  /* Con muchas filas, la tabla usa diseño fijo (anchos de columna explícitos): con el automático, cada
+     cambio de una celda hace que el navegador vuelva a medir todas las filas para decidir los anchos.
+     Con 1.500 materiales eso dejaba ~0,5 s por tecla; con diseño fijo, ~0,1 s (medido el 2026-10-08).
+     Las tablas normales siguen con el automático, que reparte mejor el ancho. */
+  const FILAS_TABLA_LARGA = 300;
+  const colgroup = (anchos) => `<colgroup>${anchos.map((w) => `<col${w ? ` style="width:${w}px"` : ''}>`).join('')}</colgroup>`;
+
   function viewDetalle(key) {
     const cfg = DETALLE[key];
     const items = filtered(key);
+    const larga = items.length > FILAS_TABLA_LARGA;
     const rows = items.map((it) => {
       const ln = state.lineIdx.get(it.uid);
       const code = ln ? ln.code : '';
@@ -1589,7 +1615,8 @@
     return `${pasoHead(key, ayudaCostos(key))}${costosSubnav()}${sinPartidasNote()}
       ${filtroBar(key)}
       <div class="tabla-contenedor">
-        <table class="tbl tbl-apilable" style="min-width:980px">
+        <table class="tbl tbl-apilable${larga ? ' tbl-larga' : ''}" style="min-width:980px">
+          ${larga ? colgroup([64, 0, 210, 120, 96, 170, 96, 130, 48]) : ''}
           <thead><tr>
             <th>ID</th><th>Descripción</th><th>Partida</th>
             <th class="num">Cantidad<span class="th-sub">por unidad de partida</span></th><th>Unidad</th><th class="num">Costo unitario</th>
@@ -1606,6 +1633,7 @@
     const key = 'manoObra';
     const par = state.project.parametros;
     const items = filtered(key);
+    const larga = items.length > FILAS_TABLA_LARGA;
     const rows = items.map((it) => {
       const ln = state.lineIdx.get(it.uid);
       const code = ln ? ln.code : '';
@@ -1628,7 +1656,8 @@
     return `${pasoHead(key, ayuda)}${costosSubnav()}${sinPartidasNote()}
       ${filtroBar(key)}
       <div class="tabla-contenedor">
-        <table class="tbl mo tbl-apilable" style="min-width:1000px">
+        <table class="tbl mo tbl-apilable${larga ? ' tbl-larga' : ''}" style="min-width:1000px">
+          ${larga ? colgroup([64, 0, 210, 140, 140, 140, 120, 130, 48]) : ''}
           <thead><tr><th>ID</th><th>Tarea</th><th>Partida</th>${nivel(1, par.tarifaN1)}${nivel(2, par.tarifaN2)}${nivel(3, par.tarifaN3)}
             <th class="num">Días-hombre</th><th class="num">Subtotal</th><th><span class="visualmente-oculto">Acciones</span></th></tr></thead>
           <tbody>${rows || `<tr class="empty-row"><td colspan="9">${state.filtro[key] ? 'No hay tareas con este filtro.' : 'Sin tareas de mano de obra todavía. <button type="button" class="link-btn" data-act="add-row" data-list="manoObra">Agregar la primera</button>'}</td></tr>`}</tbody>
@@ -4651,7 +4680,7 @@
     if (qAF && ok(Number(qAF.avance))) html.cierre = linea(`Avance en el Análisis Financiero: <b>${pct(Number(qAF.avance))}</b>${Number(qAF.avance) >= 1 ? ': lo gastado frente a lo presupuestado ya cuenta en el sesgo real del simulador (paso 5).' : '. Se registra en su tablero, pestaña «Ingresar datos».'}`);
 
     const l = QH().lecturaEstado(estado);
-    herrDe = { uid: p.uid, html, aviso: '', pulso: l ? `<p class="af-nota herr-pulso"><span class="dot ${l.nivel}" aria-hidden="true"></span> ${esc(l.texto)} <button type="button" class="link-btn" data-act="herr-actualizar">Actualizar</button></p>` : '' };
+    herrDe = { uid: p.uid, html, aviso: '', pulso: l ? `<p class="af-nota herr-pulso${l.detenido ? ' detenido' : ''}"${l.detenido ? ' role="alert"' : ''}><span class="dot ${l.nivel}" aria-hidden="true"></span> ${esc(l.texto)} <button type="button" class="link-btn" data-act="herr-actualizar">Actualizar</button></p>` : '' };
     const rec = recorridoDe(p, r, publicadoPara(p, docs, af, reqs));
     pintarRecorrido(rec);
     pintarPieSigue(rec);
@@ -4865,6 +4894,11 @@
   const BUZON_EQUIPO = 'Formulación de proyectos › .Herramientas formulación › Intercambio › buzon';
   const notaCompartida = (texto, botones) => `<div class="nota compartida-nota" role="region" aria-label="Carpeta del equipo">
       <span>${texto}</span><span class="actions">${botones}</span></div>`;
+  /* Procesador del intercambio detenido (js/pulso.js): sin él, lo que se envía al Análisis Financiero,
+     a la Planilla y a Sistema QUEMPIN queda esperando. Hasta el 2026-10-08 solo lo decía un punto
+     ámbar en Configuración, y estuvo tres días detenido sin que nadie lo notara. */
+  const notaPulso = (l) => `<div class="nota compartida-nota pulso-detenido" role="alert">
+      <span><strong>Lo que envías no se está aplicando.</strong> ${esc(l.texto)}</span></div>`;
   const BTN_DESCARGAR = (id) => `<button type="button" class="btn btn-sm" data-act="${id ? 'entregar' : 'entregar-pendientes'}"${id ? ` data-id="${esc(id)}"` : ''}>${ICON.download}Descargar para el equipo</button>`;
 
   /* Por qué un presupuesto quedaría solo en este navegador, según la última sincronización (sin
@@ -4914,6 +4948,8 @@
       const i = QC().info();
       txt = i.error ? `<span class="dot bad" aria-hidden="true"></span>No se pudo sincronizar con la carpeta del equipo: ${esc(i.error)} <button type="button" class="link-btn" data-act="compartir-ya">Reintentar</button>`
         : `<span class="dot ${i.pendientes ? 'warn' : 'ok'}" aria-hidden="true"></span>Guardados en la carpeta del equipo «${esc(e.nombre)}»${i.ultima ? ` · revisada a las ${esc(new Date(i.ultima).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }))}` : ' · sincronizando…'}`;
+      const pulso = QH() ? QH().lecturaEstado(await QH().publicacion('estado')) : null;
+      if (pulso && pulso.detenido) html = notaPulso(pulso);
     }
     if (caja.innerHTML !== html) caja.innerHTML = html;
     linea.hidden = !txt;

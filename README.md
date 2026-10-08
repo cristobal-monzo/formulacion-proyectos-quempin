@@ -35,6 +35,7 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
   - **N° de requerimiento** (paso 1): une el presupuesto con su requerimiento de la *Planilla de Ingreso*. La lista muestra los 20 últimos ingresados, del más nuevo al más antiguo; al escribir un N° o parte del título se suman los anteriores que calzan. Con la biblioteca conectada, la planilla se lee ahí mismo, al día (si no, la copia que publica el procesador cada 2 horas). «Completar desde la planilla» trae título, ubicación y presupuesto, y «Abrir la planilla» la abre en Excel para la web.
   - **Precios de referencia** (paso 3, botón **$** en materiales y equipos): lo que QUEMPIN pagó por productos parecidos, sin IVA y reajustado por UF (Cotizador Histórico).
   - **Sesgo real** (paso 5, simulador de sobrecostos): «Simular con el sesgo real» usa cuánto se desvió el gasto real del presupuesto en los proyectos terminados (Análisis Financiero).
+  - **Si el procesador del intercambio se detiene, se avisa** (2026-10-08): con más de 4 horas hábiles sin correr (lunes a viernes, 8:30 a 19:00; las noches y los fines de semana no cuentan), la lista de proyectos y el *Seguimiento* lo dicen en rojo, porque lo que se envía a las demás herramientas queda esperando.
   - **Otras herramientas QUEMPIN** (pestaña *Seguimiento*): prepara la cotización en **Sistema QUEMPIN** (llega arriba de «Nueva Cotización», donde se revisa y se emite), envía la **venta** al Análisis Financiero, avisa a la **Planilla de Ingreso** el estado y el valor, y **registra la evaluación de costos** (tipo 81) en el Control de Documentos: toma su número sola al elegir la carpeta de la oferta (una por versión, también la versión nueva que hereda la carpeta), y el Excel exportado lleva ese número.
 - **Comparte los proyectos con el equipo por esa misma carpeta** mientras no se use SharePoint: cada proyecto queda como un archivo en OneDrive y aparece en la lista de los demás equipos que la tengan conectada.
 - **Deja una copia en Excel en la carpeta de cada oferta** (desde el 2026-10-02): `Formulación <código> v<versión>.xlsx`, junto a los antecedentes de la oferta, y la mantiene al día sola mientras se trabaja. Es la misma exportación de *Exportar Excel*, con una nota de que es una copia automática. La carpeta se elige una vez por proyecto: al crearlo o desde el aviso del editor, que la sugiere por el N° de requerimiento.
@@ -95,6 +96,8 @@ En ambos modos, eliminar un proyecto lo envía a la **papelera** (*Más → Pape
 
 Los valores con que parten los proyectos nuevos (IVA, tarifas y metas, y en modo local el prefijo del código) se cambian en **Configuración**, arriba a la derecha.
 
+Proyectos grandes: una pestaña de costos con más de 300 filas usa columnas de ancho fijo, para que escribir siga siendo inmediato (con 1.500 materiales, cada tecla pasó de ~0,5 s a ~0,08 s el 2026-10-08).
+
 Atajos: en las tablas, **Enter** baja a la fila siguiente (en la última fila agrega una nueva). En la columna de unidad, **↓** abre la lista de unidades. Duplicar, mover o eliminar una fila está en su menú **⋯**. En el listado, **/** enfoca el buscador. Los menús y selectores se manejan con flechas, **Enter** y **Esc**. En el teléfono las tablas se muestran como tarjetas.
 
 ## Estructura
@@ -114,6 +117,7 @@ js/intercambio.js       Carpeta de intercambio con las demás herramientas QUEMP
 js/herramientas.js      Lo demás que se intercambia: requerimientos, precios, sesgo, cotización, venta, planilla, Control de Documentos
 js/flujo.js             Recorrido de la oferta (seis etapas) y qué sigue: solo calcula, app.js lo pinta
 js/esquemas.js          Validador del catálogo de mensajes (copia textual de Finanzas QUEMPIN/Sistema Intercambio/esquemas.js)
+js/pulso.js             Pulso del procesador del intercambio: cuándo avisar que está detenido (copia textual de Finanzas QUEMPIN/Sistema Intercambio/pulso.js)
 js/busqueda.js          Buscador de precios (copia textual del de Cotizador Historico/Visualizador Web/busqueda.js)
 js/compartida.js        Proyectos compartidos con el equipo por esa carpeta (modo local)
 js/oferta.js            Copia en Excel de cada presupuesto en la carpeta de su oferta (modo local)

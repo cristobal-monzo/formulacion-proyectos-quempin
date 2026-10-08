@@ -314,19 +314,12 @@
   }
 
   // ---- Pulso del procesador ----------------------------------------------------------------------
-  /* Cuán al día está la carpeta: { nivel: 'ok'|'warn'|'bad', texto, minutos } o null sin estado. */
+  /* Cuán al día está la carpeta: { nivel: 'ok'|'warn'|'bad', detenido, texto, minutos } o null sin
+     estado. La regla vive en js/pulso.js (copia textual de Finanzas QUEMPIN/Sistema Intercambio/pulso.js,
+     la misma que usa el tablero del Análisis Financiero): solo las horas hábiles cuentan para decir que
+     el procesador está detenido. */
   function lecturaEstado(estado, ahora) {
-    const ultima = estado && estado.procesador && estado.procesador.ultimaCorrida;
-    const t = ultima ? new Date(ultima) : null;
-    if (!t || isNaN(t)) return null;
-    const min = Math.max(0, Math.round(((ahora || new Date()) - t) / 60000));
-    const hace = min < 1 ? 'hace menos de un minuto' : min < 60 ? `hace ${min} min` : min < 48 * 60 ? `hace ${Math.round(min / 60)} h` : `hace ${Math.round(min / 1440)} días`;
-    const fallas = Object.keys(estado.procesador.pasos || {}).filter((k) => estado.procesador.pasos[k] && estado.procesador.pasos[k].ok === false);
-    // El procesador corre cada 2 horas (decisión del usuario, 2026-10-02): en
-    // verde hasta 2 h y media, para no marcar «atrasado» entre dos corridas.
-    const nivel = fallas.length ? 'warn' : min <= 150 ? 'ok' : min <= 24 * 60 ? 'warn' : 'bad';
-    const texto = `Las demás herramientas revisaron la carpeta ${hace}` + (fallas.length ? ` (con problemas en: ${fallas.join(', ')})` : '') + '.';
-    return { nivel, texto, minutos: min };
+    return root.QPulso ? root.QPulso.lectura(estado, ahora) : null;
   }
 
   root.QHerramientas = {
