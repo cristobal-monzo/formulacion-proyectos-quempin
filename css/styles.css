@@ -540,6 +540,27 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
 .proj-title { font-weight: 700; color: var(--text-primary); }
 .proj-sub { font-size: 12px; color: var(--text-muted); }
 
+/* ---- Lista de proyectos: sin desplazamiento lateral -------------------------
+   Sin ancho mínimo. Hasta 1100 px el responsable y la utilidad por día-hombre pasan a una
+   línea de Proyecto y de Margen; hasta 900 px también la fecha y las alertas (a Proyecto y
+   Código). Bajo 640 px la tabla se apila en tarjetas (.tbl-apilable) y muestra todo. */
+.tbl.tbl-lista { min-width: 0; }
+.tbl-lista .proj-carpeta { width: 0; min-width: 100%; } /* la carpeta larga se corta con «…» y no ensancha la tabla */
+.tbl-lista .en-linea { display: none; }
+.tbl-lista .sub-celda { margin-top: 3px; font-size: 11.5px; font-weight: 400; color: var(--text-muted); white-space: normal; }
+/* El proyecto se lleva el espacio que sobra antes que la columna del estado */
+@media (min-width: 641px) { .tbl-lista td.col-titulo { min-width: 200px; width: 26%; } }
+@media (min-width: 641px) and (max-width: 1100px) {
+  .tbl-lista .col-resp, .tbl-lista .col-dh { display: none; }
+  .tbl-lista div.en-linea.l1 { display: block; }
+}
+@media (min-width: 641px) and (max-width: 900px) {
+  .tbl-lista .col-fecha, .tbl-lista .col-alertas { display: none; }
+  .tbl-lista div.en-linea.l2 { display: block; margin-top: 5px; }
+  .tbl-lista span.en-linea.l2 { display: inline; }
+  .tbl-lista td.code .ver { display: block; margin: 3px 0 0; }
+}
+
 /* ---- Tarjetas tipo hub (inicio vacío y guía) ------------------------------- */
 .hub-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
 .hub-card {
@@ -667,14 +688,16 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
   .eq-op { margin: -7px 0; }
 }
 
-/* Editor de utilidad por partida */
-.util-tbl { min-width: 500px; }
+/* Editor de utilidad por partida: sin ancho mínimo y con títulos y controles que se parten,
+   para que la tabla quepa junto a «Valores para la cotización» sin barra lateral */
+.util-tbl { min-width: 0; }
+.util-tbl th { white-space: normal; }
 .util-tbl .pnom { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 .util-tbl .pnom .t { font-weight: 700; line-height: 1.3; }
 .util-tbl .pnom .s { font-size: 11.5px; color: var(--text-muted); }
 .util-tbl .dot { margin-right: 7px; }
-.util-edit { display: flex; align-items: center; gap: 6px; }
-.util-edit .ci { width: 96px; min-width: 70px; }
+.util-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.util-edit .ci { width: 110px; min-width: 70px; }
 .util-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--gridline); background: var(--surface-1); border-radius: 10px 10px 0 0; }
 .util-quick .lbl { font-size: 12px; font-weight: 700; color: var(--text-secondary); }
 .util-quick .input-affix { width: 96px; }
@@ -1053,7 +1076,8 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
 }
 
 /* Utilidad y precio: meta del margen bajo el total, y aviso breve si falta el presupuesto */
-.meta-margen { font-size: 11px; font-weight: 400; color: var(--text-muted); white-space: nowrap; }
+.meta-margen { font-size: 11px; font-weight: 400; color: var(--text-muted); white-space: normal; }
+.meta-margen span { white-space: nowrap; }
 .hint-linea { font-size: 12.5px; color: var(--text-secondary); margin: 10px 2px 0; }
 /* Alertas dentro del veredicto */
 .lista-atencion.en-veredicto { margin: 4px 0 10px; padding: 2px 14px; background: var(--surface-1); }

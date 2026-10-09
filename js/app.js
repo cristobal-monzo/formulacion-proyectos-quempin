@@ -1059,7 +1059,7 @@
           <div class="viz-filterfoot" id="list-foot"></div>
         </div>
         <div class="tabla-contenedor">
-          <table class="tbl tbl-apilable tbl-lista" id="list-table" style="min-width:980px">
+          <table class="tbl tbl-apilable tbl-lista" id="list-table">
             <thead id="list-head"></thead>
             <tbody id="list-body"></tbody>
           </table>
@@ -1185,16 +1185,19 @@
       ${chips.length ? '<button type="button" class="viz-clearbtn" data-act="limpiar-filtros">Limpiar filtros</button>' : ''}`;
   }
 
+  /* Sin desplazamiento lateral: en ventanas angostas las columnas con cls se ocultan y su dato
+     pasa a una línea de otra celda (.en-linea; ver «Lista de proyectos» en styles.css) */
   const LIST_COLS = [
-    { k: 'codigo', l: 'Código' }, { k: 'titulo', l: 'Proyecto' }, { k: null, l: 'Responsable' },
-    { k: 'fecha', l: 'Fecha' }, { k: 'estado', l: 'Estado' }, { k: 'precio', l: 'Precio neto', num: true },
-    { k: 'margen', l: 'Margen', num: true }, { k: 'rentDH', l: 'Utilidad<span class="th-sub">por día-hombre</span>', num: true }, { k: null, l: 'Alertas', num: true }, { k: null, l: '<span class="visualmente-oculto">Acciones</span>' }
+    { k: 'codigo', l: 'Código' }, { k: 'titulo', l: 'Proyecto' }, { k: null, l: 'Responsable', cls: 'col-resp' },
+    { k: 'fecha', l: 'Fecha', cls: 'col-fecha' }, { k: 'estado', l: 'Estado' }, { k: 'precio', l: 'Precio neto', num: true },
+    { k: 'margen', l: 'Margen', num: true }, { k: 'rentDH', l: 'Utilidad<span class="th-sub">por día-hombre</span>', num: true, cls: 'col-dh' },
+    { k: null, l: 'Alertas', num: true, cls: 'col-alertas' }, { k: null, l: '<span class="visualmente-oculto">Acciones</span>' }
   ];
   function renderListHead() {
     const s = state.list.sort;
     $('#list-head').innerHTML = `<tr>${LIST_COLS.map((c) => c.k
-      ? `<th class="ordenable ${c.num ? 'num' : ''} ${s.k === c.k ? 'es-orden' : ''}" data-sort="${c.k}" tabindex="0" aria-sort="${s.k === c.k ? (s.dir > 0 ? 'ascending' : 'descending') : 'none'}">${c.l}<span class="orden">${s.k === c.k ? (s.dir > 0 ? '▲' : '▼') : '↕'}</span></th>`
-      : `<th class="${c.num ? 'num' : ''}">${c.l}</th>`).join('')}</tr>`;
+      ? `<th class="ordenable ${c.num ? 'num' : ''} ${c.cls || ''} ${s.k === c.k ? 'es-orden' : ''}" data-sort="${c.k}" tabindex="0" aria-sort="${s.k === c.k ? (s.dir > 0 ? 'ascending' : 'descending') : 'none'}">${c.l}<span class="orden">${s.k === c.k ? (s.dir > 0 ? '▲' : '▼') : '↕'}</span></th>`
+      : `<th class="${c.num ? 'num' : ''} ${c.cls || ''}">${c.l}</th>`).join('')}</tr>`;
   }
 
   function renderListBody(list, rs) {
@@ -1226,16 +1229,18 @@
       const nAlert = r.warnings.filter((w) => w.level !== 'info').length;
       const nErr = r.warnings.filter((w) => w.level === 'error').length;
       const s = (recorridoDe(p, r) || {}).siguiente;
+      const chipAlertas = nAlert ? `<span class="chip ${nErr ? 'bad' : 'warn'}" title="${plural(nAlert, 'alerta')}">${nErr ? '✖' : '▲'} ${nAlert}</span>` : '';
       return `<tr class="clickable" data-open="${p.uid}" data-destino="${destinoDe(p, r)}" tabindex="0" aria-label="Abrir ${esc(p.codigo)} ${esc(p.titulo || 'Sin título')}${s ? `. ${esc(s.corto)}` : ''}">
-        <td class="nowrap code"><span class="code-badge">${esc(p.codigo || '—')}</span><span class="ver">v${esc(p.version)}</span></td>
-        <td class="col-titulo" style="min-width:240px"><div class="proj-title">${esc(p.titulo || 'Sin título')}</div><div class="proj-sub">${esc([p.cliente, p.ubicacion].filter(Boolean).join(' · ') || '—')}</div>${carpetaCorta(p)}${aqui.has(p.uid) ? '<span class="chip warn solo-aqui" title="No está en la carpeta del equipo">Solo en este navegador</span>' : ''}</td>
-        <td data-label="Responsable">${esc(p.responsable || '—')}</td>
-        <td class="nowrap" data-label="Fecha">${esc(fechaCorta(p.fecha))}</td>
+        <td class="nowrap code"><span class="code-badge">${esc(p.codigo || '—')}</span><span class="ver">v${esc(p.version)}</span>${chipAlertas ? `<div class="en-linea l2">${chipAlertas}</div>` : ''}</td>
+        <td class="col-titulo"><div class="proj-title">${esc(p.titulo || 'Sin título')}</div><div class="proj-sub">${esc([p.cliente, p.ubicacion].filter(Boolean).join(' · ') || '—')}</div>
+          <div class="proj-sub en-linea l1">${esc(p.responsable ? `Responsable: ${p.responsable}` : 'Sin responsable')}<span class="en-linea l2"> · ${esc(fechaCorta(p.fecha))}</span></div>${carpetaCorta(p)}${aqui.has(p.uid) ? '<span class="chip warn solo-aqui" title="No está en la carpeta del equipo">Solo en este navegador</span>' : ''}</td>
+        <td class="col-resp" data-label="Responsable">${esc(p.responsable || '—')}</td>
+        <td class="nowrap col-fecha" data-label="Fecha">${esc(fechaCorta(p.fecha))}</td>
         <td data-label="Estado"><span class="estado" data-e="${esc(p.estado)}">${esc(p.estado)}</span>${s ? `<span class="sigue-corto ${s.espera ? 'espera' : s.fin ? 'fin' : ''}" title="${esc(s.texto)}">${s.espera || s.fin ? '' : '→ '}${esc(s.corto)}</span>` : ''}</td>
         <td class="num" data-label="Precio neto"><b>${dinero(r.totals.precioNeto, monedaDe(p))}</b></td>
-        <td class="num" data-label="Margen"><span class="dot ${r.status.margen}" aria-hidden="true"></span>${pct(r.kpis.margen)}</td>
-        <td class="num" data-label="Utilidad por día-hombre">${dinero(r.kpis.rentDH, monedaDe(p))}</td>
-        <td class="num" data-label="Alertas">${nAlert ? `<span class="chip ${nErr ? 'bad' : 'warn'}">${nErr ? '✖' : '▲'} ${nAlert}</span>` : '<span class="muted">0</span>'}</td>
+        <td class="num" data-label="Margen"><span class="dot ${r.status.margen}" aria-hidden="true"></span>${pct(r.kpis.margen)}${ok(r.kpis.rentDH) ? `<div class="sub-celda en-linea l1" title="Utilidad por día-hombre">${dinero(r.kpis.rentDH, monedaDe(p))} por día-hombre</div>` : ''}</td>
+        <td class="num col-dh" data-label="Utilidad por día-hombre">${dinero(r.kpis.rentDH, monedaDe(p))}</td>
+        <td class="num col-alertas" data-label="Alertas">${chipAlertas || '<span class="muted">0</span>'}</td>
         <td class="cell-actions"><button type="button" class="icon-btn" data-menu="proj" data-id="${p.uid}" aria-haspopup="menu" aria-expanded="false" aria-label="Acciones de ${esc(p.codigo)}">${ICON.more}</button></td>
       </tr>`;
     }).join('');
@@ -1538,7 +1543,7 @@
   const rowUnit = (list, it, label) => unitCombo(rowInput(list, it, 'unidad', label, 'w-xs', false, 'autocomplete="off"'), label);
   const btnFila = (list, uid, code) => `<button type="button" class="icon-btn" data-menu="fila" data-list="${list}" data-uid="${uid}" aria-haspopup="menu" aria-expanded="false" aria-label="Acciones de ${esc(code)}" title="Acciones de ${esc(code)}">${ICON.more}</button>`;
   const seg = (name, opts, attrs, cls) => `<div class="segmentado ${cls || ''}" role="radiogroup" ${attrs.label ? `aria-label="${esc(attrs.label)}"` : ''}>${opts.map((o) =>
-    `<label><input type="radio" name="${name}" value="${esc(o.v)}" ${o.checked ? 'checked' : ''} ${attrs.data || ''}><span>${o.l}</span></label>`).join('')}</div>`;
+    `<label ${o.tip ? `data-tip="${esc(o.tip)}"` : ''}><input type="radio" name="${name}" value="${esc(o.v)}" ${o.checked ? 'checked' : ''} ${attrs.data || ''}><span>${o.l}</span></label>`).join('')}</div>`;
   /* Sección plegable con el resumen de sus valores en la línea de título */
   const plegable = (key, titulo, resumen, cuerpo, cls) => `<details class="panel plegable ${cls || ''}" id="${key}" data-open-key="${key}" ${state.abiertos.has(key) || state.imprimir ? 'open' : ''}>
       <summary><span class="pl-t"><span class="seccion-titulo">${titulo}</span><span class="pl-res" id="res-${key}">${resumen}</span></span><span class="pl-accion" aria-hidden="true"></span></summary>
@@ -1674,7 +1679,7 @@
         <td class="cell-actions">${btnFila('partidas', it.uid, code)}</td>
       </tr>`;
       }
-      const uLabel = it.utilidadTipo === 'monto' ? 'monto fijo' : `recargo ${nf(num(it.utilidadValor))} %`;
+      const uLabel = it.utilidadTipo === 'monto' ? 'monto fijo' : it.utilidadTipo === 'final' ? 'según el valor final' : `recargo ${nf(num(it.utilidadValor))} %`;
       return `<tr data-row="${it.uid}">
         <td class="code">${code}</td>
         <td data-label="Descripción">${rowInput('partidas', it, 'descripcion', `Descripción de ${code}`, 'desc', false, 'placeholder="Ej.: Instalación de medidor de 2&quot;"')}</td>
@@ -1887,20 +1892,27 @@
     const nCot = cotizables(p).length;
     const utilRows = cotizables(p).map((it) => {
       const code = codP(it.uid);
-      const isPct = it.utilidadTipo !== 'monto';
+      const tipo = it.utilidadTipo === 'monto' || it.utilidadTipo === 'final' ? it.utilidadTipo : 'pct';
+      const mon = MONEDAS[monedaDe(p)].corto;
+      const lblValor = { pct: `Utilidad de ${code} en % de recargo`, monto: `Utilidad de ${code} en ${mon}`, final: `Valor final de ${code} en ${mon} (precio neto de la partida)` }[tipo];
       return `<tr data-row="${it.uid}">
         <td><div class="pnom"><span class="pcode">${code}</span><div style="min-width:0"><div class="t">${esc(it.descripcion || 'Partida sin descripción')}</div>
           <div class="s">${esc(nf(num(it.cantidad)))} ${esc(it.unidad || '')} · costo directo <span data-c="P:${it.uid}:cd" data-fmt="clp"></span>${pb ? ` (incluye <span data-c="P:${it.uid}:cuotaBase" data-fmt="clp"></span> de PB)` : ''}</div></div></div></td>
         <td data-label="Utilidad"><div class="util-edit">
-          ${seg(`ut-${it.uid}`, [{ v: 'pct', l: '%', checked: isPct }, { v: 'monto', l: simbolo(), checked: !isPct }], { label: `Tipo de utilidad de ${code}`, data: `data-list="partidas" data-uid="${it.uid}" data-k="utilidadTipo" data-rerender` }, 'sm')}
-          ${rowInput('partidas', it, 'utilidadValor', `Utilidad de ${code} ${isPct ? 'en % de recargo' : `en ${MONEDAS[monedaDe(p)].corto}`}`, 'num', true, `placeholder="${isPct ? '%' : simbolo()}"`)}
+          ${seg(`ut-${it.uid}`, [
+            { v: 'pct', l: '%', checked: tipo === 'pct', tip: '<b>% de recargo</b>Sobre el costo de la partida.' },
+            { v: 'monto', l: simbolo(), checked: tipo === 'monto', tip: `<b>Monto de utilidad</b>En ${mon}, se suma al costo de la partida.` },
+            { v: 'final', l: 'Final', checked: tipo === 'final', tip: '<b>Valor final</b>El precio neto de la partida, sin IVA. La utilidad se calcula: es lo que queda sobre su costo.' }
+          ], { label: `Tipo de utilidad de ${code}`, data: `data-list="partidas" data-uid="${it.uid}" data-k="utilidadTipo" data-rerender` }, 'sm')}
+          ${rowInput('partidas', it, 'utilidadValor', lblValor, 'num', true, `placeholder="${tipo === 'pct' ? '%' : simbolo()}"`)}
         </div></td>
         <td class="num calc" data-label="Utilidad en ${simbolo()}" data-c="P:${it.uid}:utilidad" data-fmt="clp"></td>
         <td class="num calc" data-label="Margen"><span class="dot na" data-sem-p="${it.uid}" aria-hidden="true"></span><span data-c="P:${it.uid}:margen" data-fmt="pct"></span></td>
       </tr>`;
     }).join('');
     const ayuda = `<p>La utilidad de cada partida es un <b>% de recargo sobre su costo</b> o un <b>monto fijo en ${simbolo()}</b>. Un recargo de 100 % equivale a un margen de 50 % sobre la venta.
-        Al cambiar entre % y ${simbolo()} se conserva el monto.</p>
+        Con <b>Final</b> se escribe el valor final de la partida (su precio neto, sin IVA) y la utilidad se calcula: es lo que queda sobre su costo.
+        Al cambiar entre %, ${simbolo()} y Final se conserva el monto.</p>
       <p><b>Llevar al margen objetivo</b> calcula el recargo que deja el margen justo en la meta del proyecto; <b>Deshacer</b> vuelve a los valores que ingresaste a mano.</p>
       <p>Los valores por partida se redondean ${MONEDAS[monedaDe(p)].decimales ? 'al centavo' : 'al peso'} (precio unitario × cantidad) para que la cotización cuadre.</p>`;
     return `
@@ -1926,7 +1938,7 @@
                 </span>
               </div>
               <table class="tbl util-tbl tbl-apilable">
-                <thead><tr><th>Partida</th><th>Utilidad<span class="th-sub">% de recargo sobre su costo o ${simbolo()} fijo</span></th><th class="num">Utilidad en ${simbolo()}</th><th class="num">Margen</th></tr></thead>
+                <thead><tr><th>Partida</th><th>Utilidad<span class="th-sub">% de recargo, ${simbolo()} fijo o valor final</span></th><th class="num">Utilidad en&nbsp;${simbolo()}</th><th class="num">Margen</th></tr></thead>
                 <tbody>${utilRows || '<tr class="empty-row"><td colspan="4">Aún no hay partidas. <button type="button" class="link-btn" data-act="tab" data-tab="partidas">Crear la primera partida</button></td></tr>'}</tbody>
                 <tfoot><tr><td>Total</td><td class="small muted" style="font-weight:400">Recargo promedio <span data-c="K:markup" data-fmt="pct"></span></td>
                   <td class="num" data-label="Utilidad en ${simbolo()}" data-c="T:utilidad" data-fmt="clp"></td>
@@ -2036,7 +2048,8 @@
   };
 
   // ---- Deshacer la utilidad aplicada a todas las partidas ------------------------
-  const fmtUtil = (x) => (x.utilidadTipo === 'monto' ? dinero(num(x.utilidadValor)) : `${nf(num(x.utilidadValor))} %`);
+  const fmtUtil = (x) => (x.utilidadTipo === 'monto' ? dinero(num(x.utilidadValor))
+    : x.utilidadTipo === 'final' ? `valor final ${dinero(num(x.utilidadValor))}` : `${nf(num(x.utilidadValor))} %`);
   function undoVigente() {
     const u = state.utilUndo;
     return u && state.project && u.puid === state.project.uid && u.antes.size ? u : null;
@@ -2112,7 +2125,8 @@
 
     // Efecto inmediato de la utilidad: semáforo del margen total y, si hay presupuesto, competitividad
     $$('[data-sem-total]', app).forEach((el) => { el.className = 'dot ' + st.margen; });
-    put('meta-margen', `${CHIP_TXT.margen[st.margen] || 'Sin datos'} · objetivo ${pctShort(mObj)}, mínimo ${pctShort(mMin)}`);
+    // En trozos que no se cortan: la línea se parte entre ellos y no ensancha la columna
+    put('meta-margen', [CHIP_TXT.margen[st.margen] || 'Sin datos', `objetivo ${pctShort(mObj)}`, `mínimo ${pctShort(mMin)}`].map((x) => `<span>${esc(x)}</span>`).join(' · '));
     put('res-eval', k.competitividad === null
       ? `<p class="hint-linea">Sin presupuesto del mandante: ${linkDatos('agrégalo en Datos del proyecto')} para saber si la oferta cabe.</p>`
       : `<div class="eval-item s-${st.competitividad}"><div class="eval-top"><span class="eval-n">Frente al presupuesto del mandante</span>${chip(st.competitividad, 'competitividad')}</div>
@@ -2331,7 +2345,7 @@
           ${paso(1, 'Datos del proyecto', 'Al crear el proyecto eliges la carpeta de su oferta, o la creas ahí mismo con «Crear nueva carpeta»: con el N° de la Planilla de Ingreso, el proyecto trae su título, su ubicación y el presupuesto del mandante. Completa el cliente y el responsable.', 'los parámetros (IVA, tarifas, metas) ya vienen con los valores habituales; ábrelos solo si este proyecto es distinto.')}
           ${paso(2, 'Partidas', 'Divide el trabajo en partidas con su unidad y cantidad, por ejemplo «3 medidores de 2"». Los costos comunes a todo el trabajo (instalación de faenas, traslados…) van en la <b>partida base</b>: no se cotiza sola y su costo se divide en partes iguales entre las demás partidas.', 'una partida por cada ítem que irá en la cotización.')}
           ${paso(3, 'Costos', 'En Materiales, Equipos, Mano de obra y Otros ingresa lo que necesita <b>una</b> unidad de la partida y elige a qué partida pertenece. La herramienta multiplica por la cantidad.', 'un costo sin partida no se suma al precio: la herramienta lo marca en rojo.')}
-          ${paso(4, 'Utilidad y precio', 'Define la utilidad de cada partida (% de recargo o monto fijo) y copia los valores netos para la cotización.', '«Llevar al margen objetivo» calcula el recargo que deja el margen justo en la meta.')}
+          ${paso(4, 'Utilidad y precio', 'Define la utilidad de cada partida (% de recargo, monto fijo o valor final) y copia los valores netos para la cotización.', '«Llevar al margen objetivo» calcula el recargo que deja el margen justo en la meta.')}
           ${paso(5, 'Evaluación', 'Responde cuatro preguntas: ¿es rentable?, ¿resiste sobrecostos?, ¿cabe en el presupuesto?, ¿los números están completos?', 'si todo está en verde, el botón del pie lleva a lo que sigue: preparar la cotización en Sistema QUEMPIN. Desde ahí, la pestaña «Seguimiento» acompaña la oferta hasta su ejecución.')}
         </ol>
       </section>
@@ -2424,10 +2438,11 @@
       if (!it) return;
       const v = readVal(el);
       if (el.dataset.k === 'utilidadTipo' && it.utilidadTipo !== v) {
-        // Al cambiar entre % y $ se conserva el monto de utilidad de la partida
+        // Al cambiar entre %, $ y valor final se conserva el monto de utilidad de la partida
         const pt = state.partIdx.get(it.uid);
         if (pt) {
           if (v === 'monto') it.utilidadValor = redondear(pt.utilidad, monedaDe(state.project));
+          else if (v === 'final') it.utilidadValor = redondear(pt.precio, monedaDe(state.project));
           else it.utilidadValor = pt.cd ? Math.round((pt.utilidad / pt.cd) * 1e6) / 1e4 : 0;
         }
       }
@@ -2516,7 +2531,8 @@
     if (list === 'partidas') {
       it = S.newPartida();
       const last = cotizables(p).pop(); // la utilidad de la partida anterior (la base no tiene)
-      if (last) { it.utilidadTipo = last.utilidadTipo; it.utilidadValor = last.utilidadTipo === 'pct' ? last.utilidadValor : 0; }
+      // Un valor final no se copia: en cero dejaría la partida nueva con precio $0
+      if (last) { it.utilidadTipo = last.utilidadTipo === 'final' ? 'monto' : last.utilidadTipo; it.utilidadValor = last.utilidadTipo === 'pct' ? last.utilidadValor : 0; }
     } else {
       const f = state.filtro[list];
       it = DETALLE[list].factory(f && f !== '__none__' ? f : (p.partidas.length === 1 ? p.partidas[0].uid : ''));
@@ -5302,7 +5318,7 @@
       return v ? `<div class="proj-carpeta" title="Excel en la carpeta de la oferta: ${esc(v.ruta.join(' › '))}">${ICON.folder}<span>${esc(QO().grupoDeRuta(v.ruta))} · ${esc(v.nombre)}</span></div>` : '';
     }
     const u = window.QCloud.ubicacion(p.uid);
-    return u ? `<div class="proj-carpeta">${ICON.folder}<span>${esc(u.grupo)} · ${esc(u.carpeta)}</span></div>` : '';
+    return u ? `<div class="proj-carpeta" title="${esc(u.grupo)} · ${esc(u.carpeta)}">${ICON.folder}<span>${esc(u.grupo)} · ${esc(u.carpeta)}</span></div>` : '';
   }
 
   // ---------------------------------------------------------------------------

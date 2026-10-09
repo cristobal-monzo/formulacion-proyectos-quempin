@@ -221,7 +221,7 @@
     ];
     const hP = wsP.getRow(4);
     hP.values = ['ID', 'Descripción partida', 'Unid.', 'Cant.', 'Materiales', 'Equipos', 'Mano de obra', 'Otros', 'Costo directo',
-      'Días-Hombre', 'Utilidad tipo (% / $)', 'Utilidad valor', 'Utilidad $', 'GG + Imprevistos', 'Precio neto', 'Precio unitario', '% del precio'];
+      'Días-Hombre', 'Utilidad tipo (% / $ / Final)', 'Utilidad valor', 'Utilidad $', 'GG + Imprevistos', 'Precio neto', 'Precio unitario', '% del precio'];
     styleHeader(hP);
     r.partidas.forEach((pt, i) => {
       const rr = 5 + i;
@@ -236,12 +236,13 @@
       link(row.getCell(8), FMT_M); row.getCell(8).value = F(`SUMIF(${S.O}!$C$5:$C$${oEnd},A${rr},${S.O}!$H$5:$H$${oEnd})${cuota('H')}`, pt.otros);
       calc(row.getCell(9), FMT_M); row.getCell(9).value = F(`SUM(E${rr}:H${rr})`, pt.cd);
       link(row.getCell(10), FMT.num); row.getCell(10).value = F(`SUMIF(${S.H}!$C$5:$C$${hEnd},A${rr},${S.H}!$L$5:$L$${hEnd})${cuota('J')}`, pt.dh);
-      row.getCell(11).value = pt.utilidadTipo === 'monto' ? '$' : '%';
+      row.getCell(11).value = { monto: '$', final: 'Final' }[pt.utilidadTipo] || '%';
       row.getCell(11).alignment = { horizontal: 'center' };
       input(row.getCell(11));
-      if (pt.utilidadTipo === 'monto') { row.getCell(12).value = pt.utilidadValor; input(row.getCell(12), FMT_M); }
-      else { row.getCell(12).value = pt.utilidadValor / 100; input(row.getCell(12), FMT.pct); }
-      calc(row.getCell(13), FMT_M); row.getCell(13).value = F(`IF(K${rr}="%",I${rr}*L${rr},L${rr})`, pt.utilidad);
+      if (pt.utilidadTipo === 'pct') { row.getCell(12).value = pt.utilidadValor / 100; input(row.getCell(12), FMT.pct); }
+      else { row.getCell(12).value = pt.utilidadValor; input(row.getCell(12), FMT_M); }
+      // "Final": L es el precio neto de la partida y la utilidad es lo que queda sobre el costo
+      calc(row.getCell(13), FMT_M); row.getCell(13).value = F(`IF(K${rr}="%",I${rr}*L${rr},IF(K${rr}="Final",L${rr}-I${rr}-N${rr},L${rr}))`, pt.utilidad);
       calc(row.getCell(14), FMT_M); row.getCell(14).value = F(`I${rr}*(${PR.gg}+${PR.imp})`, pt.ggimp);
       calc(row.getCell(15), FMT_M); row.getCell(15).value = F(`I${rr}+M${rr}+N${rr}`, pt.precio);
       calc(row.getCell(16), FMT_M); row.getCell(16).value = F(`IFERROR(O${rr}/D${rr},0)`, pt.pu || 0);

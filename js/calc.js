@@ -10,6 +10,9 @@
  *   Subtotal Otros      = Cant. partida × Cant. O × Costo un. O
  *   Utilidad partida    = % sobre el costo directo de la partida, o monto fijo
  *
+ * Agrega el "valor final" (utilidadTipo 'final'): el precio neto de la partida se fija a mano
+ * y la utilidad es lo que queda sobre su costo (costo directo + gastos generales e imprevistos).
+ *
  * Agrega (con valor 0 por defecto, para mantener paridad con el Excel):
  *   Gastos generales e imprevistos como % del costo directo.
  *
@@ -68,7 +71,7 @@
       descripcion: pt.descripcion || '',
       unidad: pt.unidad || '',
       cantidad: num(pt.cantidad),
-      utilidadTipo: pt.utilidadTipo === 'monto' ? 'monto' : 'pct',
+      utilidadTipo: pt.utilidadTipo === 'monto' || pt.utilidadTipo === 'final' ? pt.utilidadTipo : 'pct',
       utilidadValor: num(pt.utilidadValor),
       mat: 0, eq: 0, mo: 0, otros: 0, dh: 0,
       items: { materiales: [], equipos: [], manoObra: [], otros: [] }
@@ -157,8 +160,10 @@
     let utilidadTotal = 0;
     partidas.forEach((pt) => {
       pt.cd = pt.mat + pt.eq + pt.mo + pt.otros;
-      pt.utilidad = pt.utilidadTipo === 'monto' ? pt.utilidadValor : pt.cd * pt.utilidadValor / 100;
       pt.ggimp = pt.cd * (ggPct + impPct);
+      pt.utilidad = pt.utilidadTipo === 'monto' ? pt.utilidadValor
+        : pt.utilidadTipo === 'final' ? pt.utilidadValor - pt.cd - pt.ggimp
+        : pt.cd * pt.utilidadValor / 100;
       pt.precio = pt.cd + pt.ggimp + pt.utilidad;
       pt.pu = div(pt.precio, pt.cantidad);
       utilidadTotal += pt.utilidad;
