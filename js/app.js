@@ -89,6 +89,7 @@
     chev: '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
     caret: '<svg class="caret" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
     chevR: svg('<path d="M9 6l6 6-6 6"/>'),
+    chevD: svg('<path d="M6 9l6 6 6-6"/>'),
     sheet: svg('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/>'),
     file: svg('<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>'),
     archive: svg('<path d="M3 7h18v4H3zM5 11v9h14v-9M10 15h4"/>'),
@@ -107,6 +108,8 @@
     login: svg('<path d="M14 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M9 16l4-4-4-4M13 12H3"/>'),
     logout: svg('<path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/>'),
     restore: svg('<path d="M4 12a8 8 0 1 0 3-6.2M4 4v4h4"/>'),
+    deshacer: svg('<path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>'),
+    rehacer: svg('<path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>'),
     enviar: svg('<path d="M21 3L3 10.5l7 3 3 7.5z"/><path d="M21 3L10 13.5"/>'),
     chart: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
     monitor: svg('<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/>')
@@ -523,14 +526,23 @@
       if (list === 'partidas') {
         const arr = state.project.partidas;
         const i = arr.findIndex((x) => x.uid === uid);
+        const esBase = !!(arr[i] && arr[i].base);
+        const hayBase = arr.some((x) => x.base);
         items = [
           { icon: ICON.layers, title: 'Ver o agregar sus costos', desc: `Costos · ${DETALLE[state.costoTab].titulo}, solo de esta partida`, act: 'ver-costos', uid },
+          { sep: true }
+        ].concat(esBase ? [
+          { icon: ICON.restore, title: 'Volver a partida normal', desc: 'Deja de dividirse entre las demás y se cotiza sola', act: 'partida-base', uid },
           { sep: true },
-          { icon: ICON.up, title: 'Subir', act: 'mover', list, uid, dir: '-1', disabled: i <= 0 },
+          { icon: ICON.trash, title: 'Eliminar partida base', act: 'del-row', list, uid, danger: true }
+        ] : [
+          // La partida base va siempre primera: las demás no pasan sobre ella
+          { icon: ICON.up, title: 'Subir', act: 'mover', list, uid, dir: '-1', disabled: i <= (hayBase ? 1 : 0) },
           { icon: ICON.down, title: 'Bajar', act: 'mover', list, uid, dir: '1', disabled: i >= arr.length - 1 },
           { sep: true },
+          hayBase ? null : { icon: ICON.archive, title: 'Convertir en partida base', desc: 'Su costo se divide en partes iguales entre las demás partidas', act: 'partida-base', uid },
           { icon: ICON.trash, title: 'Eliminar partida', act: 'del-row', list, uid, danger: true }
-        ];
+        ].filter(Boolean));
       } else {
         items = [
           { icon: ICON.copy, title: 'Duplicar fila', desc: 'Copia justo debajo, con la misma partida', act: 'dup-row', list, uid },
@@ -573,10 +585,11 @@
       const it = findItem(btn.dataset.list, btn.dataset.uid);
       if (!it) return;
       const cur = state.partIdx.has(it.partida) ? it.partida : '';
-      const items = p.partidas.map((pt, i) => ({
+      const items = p.partidas.map((pt) => ({
         value: pt.uid, selected: cur === pt.uid,
-        lead: `<span class="pcode">P${i + 1}</span>`,
+        lead: `<span class="pcode${pt.base ? ' base' : ''}">${codP(pt.uid)}</span>`,
         title: pt.descripcion || 'Partida sin descripción',
+        desc: pt.base ? 'Partida base: se divide en partes iguales entre las demás' : '',
         right: `${nf(num(pt.cantidad))} ${pt.unidad || ''}`.trim()
       }));
       if (items.length) items.push({ sep: true });
@@ -641,7 +654,10 @@
     const el = $('#save-state');
     if (el) { el.textContent = text; el.className = 'en-vivo ' + (cls || ''); }
   }
-  function scheduleSave() {
+  /* campo: el campo de texto que se está escribiendo; mientras se siga en él, es un solo paso para
+     Deshacer (ver anotarCambio). */
+  function scheduleSave(campo) {
+    anotarCambio(campo);
     setSaveState('Guardando…', 'saving');
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveNow, 350);
@@ -650,6 +666,7 @@
     clearTimeout(saveTimer);
     saveTimer = null;
     if (!state.project) return;
+    anotarCambio(); // lo que se guarda sin pasar por scheduleSave (p. ej., al elegir la carpeta de la oferta)
     // Otra persona (SharePoint o carpeta compartida) u otra pestaña guardó este proyecto
     // mientras se editaba: preguntar antes de sobrescribir.
     const cur = S.get(state.project.uid);
@@ -719,10 +736,146 @@
     const foco = document.activeElement && app.contains(document.activeElement) ? focusKeyOf(document.activeElement) : null;
     state.project = p;
     state.utilUndo = null;
+    iniciarHistorial(p); // lo anterior era sobre la versión reemplazada
     recalc();
     renderTab(foco);
     showSyncState();
   }
+
+  // ---------------------------------------------------------------------------
+  //  Deshacer y rehacer (Ctrl+Z / Ctrl+Y)
+  // ---------------------------------------------------------------------------
+  /* Historial del proyecto abierto, en fotos de su contenido (JSON): cada paso guarda cómo estaba
+     antes, la vista donde se hizo y el campo editado. Lo que se escribe seguido en un mismo campo es
+     un solo paso; cualquier otra acción (agregar o borrar una fila, aplicar la utilidad, elegir de una
+     lista) es otro. Quedan fuera la identidad y las marcas de guardado del proyecto, y sus vínculos con
+     las otras herramientas (lo enviado al AF o a Sistema QUEMPIN, la carpeta de la oferta), que deshacer
+     no puede retirar; sí entra el N° de requerimiento, que se escribe en el paso 1. */
+  const HIST_MAX = 100;
+  const HIST_FUERA = ['uid', 'schema', 'creado', 'creadoPor', 'modificado', 'modificadoPor', 'eliminado', 'eliminadoEn', 'eliminadoPor', 'vinculos'];
+  const hist = { uid: null, actual: '', undo: [], redo: [], grupo: null };
+  function fotoProyecto(p) {
+    const o = {};
+    Object.keys(p).forEach((k) => { if (!HIST_FUERA.includes(k)) o[k] = p[k]; });
+    o.$req = (p.vinculos && p.vinculos.requerimiento) || null;
+    return JSON.stringify(o);
+  }
+  /* Deja el contenido del proyecto como en la foto sin cambiar el objeto: saveNow lo compara con el
+     de la lista para saber si otra persona lo modificó. */
+  function aplicarFoto(p, foto) {
+    const o = JSON.parse(foto);
+    const req = o.$req;
+    delete o.$req;
+    Object.keys(p).forEach((k) => { if (!HIST_FUERA.includes(k)) delete p[k]; });
+    Object.assign(p, o);
+    if (req || (p.vinculos && p.vinculos.requerimiento)) {
+      const vin = Object.assign({}, p.vinculos);
+      if (req) vin.requerimiento = req; else delete vin.requerimiento;
+      p.vinculos = vin;
+    }
+  }
+  function iniciarHistorial(p) {
+    Object.assign(hist, { uid: p.uid, actual: fotoProyecto(p), undo: [], redo: [], grupo: null });
+    pintarHistorial();
+  }
+  /* Anota lo que cambió desde la última foto. Con el mismo campo que el paso anterior, sigue siendo
+     ese paso; al salir del campo (evento change) el grupo se cierra. */
+  function anotarCambio(campo) {
+    const p = state.project;
+    if (!p || hist.uid !== p.uid) return;
+    const foto = fotoProyecto(p);
+    if (foto === hist.actual) return;
+    if (!campo || campo !== hist.grupo || !hist.undo.length) {
+      hist.undo.push({ foto: hist.actual, tab: state.tab, campo: campo || null });
+      if (hist.undo.length > HIST_MAX) hist.undo.shift();
+    }
+    hist.actual = foto;
+    hist.redo = [];
+    hist.grupo = campo || null;
+    pintarHistorial();
+  }
+  const deshacerCambio = () => moverHistorial('deshacer');
+  const rehacerCambio = () => moverHistorial('rehacer');
+  /* Saca el paso de una pila y deja la foto actual en la otra; vuelve a la vista donde se hizo y
+     muestra el campo o la fila que cambió. */
+  function moverHistorial(verbo) {
+    const p = state.project;
+    if (!p || hist.uid !== p.uid) return;
+    if (!(verbo === 'deshacer' ? hist.undo : hist.redo).length) { toast(`No hay cambios que ${verbo}.`); return; }
+    // El campo con el foco se suelta antes: si no, al redibujar Chrome dispara su «change» con el
+    // valor anterior y lo vuelve a escribir sobre lo deshecho.
+    if (app.contains(document.activeElement)) document.activeElement.blur();
+    const [desde, hacia] = verbo === 'deshacer' ? [hist.undo, hist.redo] : [hist.redo, hist.undo];
+    const paso = desde.pop();
+    if (!paso) return;
+    hacia.push({ foto: hist.actual, tab: paso.tab, campo: paso.campo });
+    const antes = hist.actual;
+    const moneda = monedaDe(p);
+    aplicarFoto(p, paso.foto);
+    hist.actual = paso.foto;
+    hist.grupo = null;
+    state.utilUndo = null; // el «Deshacer» de la utilidad se refería a otro estado
+    recalc();
+    const otraVista = paso.tab !== state.tab && TABS.some((t) => t.id === paso.tab);
+    if (otraVista) state.tab = paso.tab;
+    if (monedaDe(p) !== moneda) renderEditor(); else renderTab();
+    mostrarCambio(paso.campo, antes, paso.foto, otraVista);
+    scheduleSave();
+    pintarHistorial();
+    toast(verbo === 'deshacer' ? 'Cambio deshecho · Ctrl+Y lo rehace' : 'Cambio rehecho · Ctrl+Z lo deshace');
+  }
+  /* Enfoca el campo que se había editado o resalta la fila que cambió. */
+  function mostrarCambio(campo, antes, despues, otraVista) {
+    const body = $('#tab-body');
+    const el = campo && $(campo, body);
+    if (el) {
+      const d = el.closest('details:not([open])');
+      if (d) d.open = true;
+      el.focus({ preventScroll: true });
+      const tr = el.closest('tr[data-row]');
+      if (tr) flashRow(tr.dataset.row, true); else el.scrollIntoView({ block: 'center' });
+      return;
+    }
+    const uid = filaCambiada(antes, despues);
+    if (uid && $(`tr[data-row="${uid}"]`, body)) flashRow(uid, true);
+    else if (otraVista) window.scrollTo({ top: 0 });
+  }
+  /* La primera fila que aparece o cambia entre dos fotos, empezando por la lista de la vista abierta. */
+  function filaCambiada(antes, despues) {
+    const a = JSON.parse(antes), b = JSON.parse(despues);
+    const listas = ['partidas'].concat(COSTOS);
+    const orden = listas.includes(state.tab) ? [state.tab].concat(listas.filter((k) => k !== state.tab)) : listas;
+    for (const k of orden) {
+      const previo = new Map((a[k] || []).map((x) => [x.uid, JSON.stringify(x)]));
+      const it = (b[k] || []).find((x) => previo.get(x.uid) !== JSON.stringify(x));
+      if (it) return it.uid;
+    }
+    return null;
+  }
+  function pintarHistorial() {
+    const u = $('#ed-deshacer'), r = $('#ed-rehacer');
+    if (!u || !r) return;
+    const n = hist.undo.length, m = hist.redo.length;
+    u.setAttribute('aria-disabled', n ? 'false' : 'true');
+    r.setAttribute('aria-disabled', m ? 'false' : 'true');
+    u.dataset.tip = `<b>Deshacer</b>${n ? `Vuelve atrás el último cambio${n > 1 ? ` (hay ${n})` : ''}` : 'Nada que deshacer todavía'}<div class="tt-hint">Ctrl+Z</div>`;
+    r.dataset.tip = `<b>Rehacer</b>${m ? `Vuelve a hacer lo deshecho${m > 1 ? ` (hay ${m})` : ''}` : 'Nada que rehacer'}<div class="tt-hint">Ctrl+Y</div>`;
+  }
+  /* Ctrl+Z deshace y Ctrl+Y (o Ctrl+Shift+Z) rehace en todo el editor, también dentro de un campo del
+     proyecto: así el campo y el proyecto no llevan historiales distintos. Los demás campos (buscadores,
+     el N° de requerimiento a medio escribir, los diálogos) conservan el deshacer del navegador. */
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey || e.isComposing || !state.project) return;
+    const k = (e.key || '').toLowerCase();
+    const rehacer = k === 'y' || (k === 'z' && e.shiftKey);
+    if (k !== 'z' && !rehacer) return;
+    if ($('#modal').open || (P && pop.contains(e.target))) return;
+    const t = e.target;
+    const campo = t.closest && t.closest('input, textarea, select, [contenteditable="true"]');
+    if (campo && !(app.contains(campo) && (campo.dataset.f || campo.dataset.list || campo.dataset.cat !== undefined))) return;
+    e.preventDefault();
+    if (rehacer) rehacerCambio(); else deshacerCambio();
+  });
 
   // ---------------------------------------------------------------------------
   //  Cálculo
@@ -732,9 +885,13 @@
     state.result = r;
     state.lineIdx = new Map();
     Object.values(r.lines).forEach((arr) => arr.forEach((l) => state.lineIdx.set(l.uid, l)));
-    state.partIdx = new Map(r.partidas.map((p) => [p.uid, p]));
+    // Incluye la partida base (PB): los costos se asocian a ella como a cualquier partida
+    state.partIdx = new Map((r.base ? [r.base] : []).concat(r.partidas).map((p) => [p.uid, p]));
     return r;
   }
+  /* Código de una partida del proyecto abierto: PB la partida base, P1, P2… las demás */
+  const codP = (uid) => (state.partIdx.get(uid) || {}).code || '';
+  const cotizables = (p) => p.partidas.filter((pt) => !pt.base);
   function resolve(key) {
     const r = state.result;
     const [t, a, b, c] = key.split(':');
@@ -918,14 +1075,14 @@
       <p class="desc">${desc}</p>${btn}</article>`;
     return `<div class="hub-grid">
       ${enSP()
-        ? card(ICON.plus, 'Nuevo proyecto', 'Elige la carpeta de la oferta. El título, la ubicación y el presupuesto se toman de la planilla de ingreso.', `<button class="btn btn-primario" data-act="nuevo">Crear proyecto →</button>`)
+        ? card(ICON.plus, 'Nuevo proyecto', 'Elige la carpeta de la oferta. El título, la ubicación, el ID de licitación y el presupuesto se toman de la planilla de ingreso.', `<button class="btn btn-primario" data-act="nuevo">Crear proyecto →</button>`)
         : card(ICON.plus, 'Nuevo proyecto', 'Parte de cero con los parámetros habituales de QUEMPIN (IVA, tarifas y metas).', `<button class="btn btn-primario" data-act="nuevo">Crear proyecto →</button>`)}
       ${enSP() ? '' : card(ICON.sparkle, 'Proyecto de ejemplo', 'Tres partidas de medidores de gas natural con los datos del Excel original, para ver cómo funciona.', `<button class="btn" data-act="ejemplo">Cargar ejemplo</button>`)}
       ${card(ICON.upload, 'Importar archivo', enSP() ? 'Un Excel de formulación antiguo (.xlsm) o un proyecto exportado desde aquí (.xlsx o .json). Se guarda en la carpeta de la oferta que elijas.' : 'Un proyecto exportado desde aquí (.xlsx o .json) o un Excel de formulación antiguo (.xlsm).', `<button class="btn" data-act="importar">Importar archivo</button>`)}
     </div>
     ${QF() ? `<section class="section">
       <div class="section-head"><h3 class="seccion-titulo">Cómo avanza un proyecto</h3><a href="#/guia">Guía de uso</a></div>
-      <p class="pasos-mini-intro">Seis etapas, cada una en su herramienta. El Formulador te acompaña en todas: al abrir un proyecto, la barra de arriba dice en qué etapa va y qué sigue.</p>
+      <p class="pasos-mini-intro">Seis etapas, cada una en su herramienta. El Formulador te acompaña en todas: al abrir un proyecto, la línea «Recorrido de la oferta» dice en qué etapa va; al desplegarla se ven las seis y qué sigue.</p>
       <ol class="pasos-mini seis">${QF().ETAPAS.map((e) => `<li class="${e.id === 'formulacion' || e.id === 'oferta' ? 'aqui' : ''}"><b>${esc(e.titulo)}</b><span class="pm-donde">${esc(e.donde)}</span><span>${esc(e.id === 'formulacion' ? 'Costos, precio y evaluación en 5 pasos: datos, partidas, costos, utilidad y precio, y evaluación.' : e.hace)}</span></li>`).join('')}</ol>
     </section>` : ''}`;
   }
@@ -937,7 +1094,7 @@
       .filter((p) => !L.estado || p.estado === L.estado)
       .filter((p) => !L.resp || (p.responsable || '').trim() === L.resp)
       .filter((p) => !L.mes || mesIngreso(p) === L.mes)
-      .filter((p) => !q || norm([p.codigo, p.titulo, p.cliente, p.responsable, p.ubicacion, QH() ? QH().reqDe(p) : '', (vinculoAF(p) || {}).tag,
+      .filter((p) => !q || norm([p.codigo, p.titulo, p.cliente, p.idLicitacion, p.responsable, p.ubicacion, QH() ? QH().reqDe(p) : '', (vinculoAF(p) || {}).tag,
         enSP() ? (window.QCloud.ubicacion(p.uid) || {}).ruta : ''].join(' ')).includes(q));
   }
   /* Proyectos de un N° de requerimiento o de un TAG del Análisis Financiero, del más nuevo al más viejo
@@ -1096,6 +1253,8 @@
     }
     state.project = p;
     state.tab = valid ? tab : 'ficha';
+    // Al volver al mismo proyecto sin cambios de otros, el historial sigue
+    if (hist.uid !== p.uid || fotoProyecto(p) !== hist.actual) iniciarHistorial(p);
     recalc();
     renderEditor();
   }
@@ -1110,6 +1269,8 @@
           </div>
           <div class="editor-actions">
             <div class="actions">
+              <button type="button" class="btn" id="ed-deshacer" data-act="deshacer" aria-label="Deshacer (Ctrl+Z)" aria-keyshortcuts="Control+Z">${ICON.deshacer}</button>
+              <button type="button" class="btn" id="ed-rehacer" data-act="rehacer" aria-label="Rehacer (Ctrl+Y)" aria-keyshortcuts="Control+Y">${ICON.rehacer}</button>
               <button class="btn" data-act="exp-xlsx" data-id="${p.uid}">${ICON.download}Exportar Excel</button>
               <button class="btn" data-menu="editor-more" data-id="${p.uid}" aria-haspopup="menu" aria-expanded="false" aria-label="Más acciones del proyecto">${ICON.more}</button>
             </div>
@@ -1131,6 +1292,7 @@
     renderTab();
     pintarEditorCompartida();
     pintarEditorOferta();
+    pintarHistorial();
   }
 
   function metaCarpeta(p, sep) {
@@ -1213,7 +1375,7 @@
         est = String(p.titulo || '').trim() ? 'ok' : 'pend';
         if (est !== 'ok') falta = 'Falta el título del proyecto.';
       } else if (ps.n === 2) {
-        cant = p.partidas.length;
+        cant = p.partidas.filter((pt) => !pt.base).length; // la partida base no cuenta: no se cotiza sola
         const e = cuenta('error', ['partidas']);
         est = e ? 'err' : cant ? 'ok' : 'pend';
         falta = !cant ? 'Agrega al menos una partida.' : e ? `${plural(e, 'partida')} con cantidad cero.` : '';
@@ -1434,6 +1596,7 @@
             ${campoRequerimiento(p)}
             ${fInput('titulo', 'Título del proyecto', { cls: 'ancho', placeholder: 'Ej.: Instalación de medidores de gas natural' })}
             ${fInput('cliente', 'Cliente / mandante')}
+            ${fInput('idLicitacion', 'ID de licitación', { opcional: true, placeholder: 'Ej.: 1234-56-LE26' })}
             ${fInput('ubicacion', 'Ubicación')}
             ${fInput('responsable', 'Responsable')}
             ${fInput('fecha', 'Fecha de formulación', { type: 'date' })}
@@ -1480,23 +1643,44 @@
     if (!el) return;
     const p = state.project;
     const dup = S.all().find((x) => x.uid !== p.uid && x.codigo === p.codigo && String(x.version) === String(p.version));
+    const req = QH() && QH().reqDe(p);
     el.textContent = dup ? `⚠ Ya existe otro proyecto ${p.codigo} v${p.version} («${String(dup.titulo || '').slice(0, 40)}»).`
-      : enSP() ? 'N° de la oferta en la planilla de ingreso.' : 'Correlativo automático; puedes editarlo.';
+      : enSP() ? 'N° de la oferta en la planilla de ingreso.'
+        : !codigoAutomatico(p.codigo) ? 'Escrito a mano: «Completar desde la planilla» no lo cambia.'
+          : req && p.codigo === codigoDeReq(p, req) ? 'QMPN, año y N° de requerimiento; puedes editarlo.'
+            : `Al completar desde la planilla queda ${codigoDeReq(p, req || 'N°')}; puedes editarlo.`;
     el.style.color = dup ? 'var(--status-bad)' : '';
   }
 
   // ---- Paso 2: partidas -----------------------------------------------------------
   function viewPartidas() {
     const p = state.project;
-    const rows = p.partidas.map((it, i) => {
-      const code = 'P' + (i + 1);
+    const nCot = cotizables(p).length;
+    const hayBase = nCot < p.partidas.length;
+    const rows = p.partidas.map((it) => {
+      const code = codP(it.uid);
+      if (it.base) {
+        // La partida base no tiene utilidad ni precio propios: su costo se reparte entre las demás
+        const reparto = nCot
+          ? `Se divide en partes iguales entre ${nCot === 1 ? 'la otra partida' : `las ${nCot} partidas`}: <b data-c="P:${it.uid}:cuota" data-fmt="clp"></b> a cada una, sumados a su costo directo.`
+          : 'Agrega las partidas que se cotizan: el costo de la partida base se divide en partes iguales entre ellas.';
+        return `<tr data-row="${it.uid}" class="fila-base">
+        <td class="code"><span class="pcode base">${code}</span></td>
+        <td data-label="Partida base">${rowInput('partidas', it, 'descripcion', 'Descripción de la partida base', 'desc', false, 'placeholder="Ej.: Instalación de faenas y traslados"')}</td>
+        <td data-label="Cantidad">${rowInput('partidas', it, 'cantidad', `Cantidad de ${code}`, 'w-sm', true)}</td>
+        <td data-label="Unidad">${rowUnit('partidas', it, `unidad de ${code}`)}</td>
+        <td class="num calc" data-label="Costo directo" data-c="P:${it.uid}:cd" data-fmt="clp"></td>
+        <td class="reparto-base" colspan="3"><span class="etq-base">Partida base</span> ${reparto}</td>
+        <td class="cell-actions">${btnFila('partidas', it.uid, code)}</td>
+      </tr>`;
+      }
       const uLabel = it.utilidadTipo === 'monto' ? 'monto fijo' : `recargo ${nf(num(it.utilidadValor))} %`;
       return `<tr data-row="${it.uid}">
         <td class="code">${code}</td>
         <td data-label="Descripción">${rowInput('partidas', it, 'descripcion', `Descripción de ${code}`, 'desc', false, 'placeholder="Ej.: Instalación de medidor de 2&quot;"')}</td>
         <td data-label="Cantidad">${rowInput('partidas', it, 'cantidad', `Cantidad de ${code}`, 'w-sm', true)}</td>
         <td data-label="Unidad">${rowUnit('partidas', it, `unidad de ${code}`)}</td>
-        <td class="num calc" data-label="Costo directo" data-c="P:${it.uid}:cd" data-fmt="clp"></td>
+        <td class="num calc" data-label="Costo directo"><span data-c="P:${it.uid}:cd" data-fmt="clp"></span>${hayBase ? `<div class="small muted">incluye <span data-c="P:${it.uid}:cuotaBase" data-fmt="clp"></span> de PB</div>` : ''}</td>
         <td class="num calc" data-label="Utilidad"><span data-c="P:${it.uid}:utilidad" data-fmt="clp"></span><div class="small muted">${esc(uLabel)}</div></td>
         <td class="num calc strong" data-label="Precio neto" data-c="P:${it.uid}:precio" data-fmt="clp"></td>
         <td class="num calc" data-label="Precio unitario" data-c="P:${it.uid}:pu" data-fmt="clp"></td>
@@ -1504,10 +1688,12 @@
       </tr>`;
     }).join('');
     const ayuda = `<p>La <b>cantidad</b> es cuántas unidades tiene la partida (3 medidores, 120 m de cañería…). En el paso 3 cada costo se ingresa para <b>una</b> unidad y se multiplica por esta cantidad.</p>
-      <p>Las columnas sombreadas se calculan solas. <b>Precio neto</b> = costo directo + utilidad (la utilidad se define en el paso 4). <b>Precio unitario</b> = precio neto ÷ cantidad.</p>`;
+      <p>Las columnas sombreadas se calculan solas. <b>Precio neto</b> = costo directo + utilidad (la utilidad se define en el paso 4). <b>Precio unitario</b> = precio neto ÷ cantidad.</p>
+      <p>La <b>partida base</b> (PB) junta los costos comunes a todo el trabajo, como la instalación de faenas o los traslados. No va sola en la cotización: su costo directo se divide en partes iguales entre las demás partidas y se suma al de cada una antes de su utilidad. Sus costos se asocian a PB en el paso 3, como en cualquier partida.</p>`;
     return `${pasoHead('partidas', ayuda)}
       <div class="tbl-toolbar">
-        <div class="left"><button type="button" class="btn btn-primario btn-sm" data-act="add-row" data-list="partidas">${ICON.plus}Agregar partida</button></div>
+        <div class="left"><button type="button" class="btn btn-primario btn-sm" data-act="add-row" data-list="partidas">${ICON.plus}Agregar partida</button>
+          ${hayBase ? '' : `<button type="button" class="btn btn-sm" data-act="add-base" data-tip="<b>Partida base</b>Costos comunes a todo el trabajo (instalación de faenas, traslados…). Su costo se divide en partes iguales entre las demás partidas.">${ICON.plus}Agregar partida base</button>`}</div>
       </div>
       <div class="tabla-contenedor">
         <table class="tbl tbl-apilable" style="min-width:900px">
@@ -1517,7 +1703,7 @@
           </tr></thead>
           <tbody>${rows || `<tr class="empty-row"><td colspan="9">Aún no hay partidas. <button type="button" class="link-btn" data-act="add-row" data-list="partidas">Agregar la primera</button></td></tr>`}</tbody>
           <tfoot><tr>
-            <td></td><td colspan="3">Total (${plural(p.partidas.length, 'partida')})</td>
+            <td></td><td colspan="3">Total (${plural(nCot, 'partida')}${hayBase ? ', con la partida base repartida' : ''})</td>
             <td class="num" data-label="Costo directo" data-c="T:cd" data-fmt="clp"></td>
             <td class="num" data-label="Utilidad" data-c="T:utilidad" data-fmt="clp"></td>
             <td class="num" data-label="Precio neto" data-c="T:precioNeto" data-fmt="clp"></td>
@@ -1533,7 +1719,7 @@
     const tieneDatos = String(it.descripcion || '').trim() || num(it.costoUnitario) > 0 || num(it.n1p) + num(it.n2p) + num(it.n3p) > 0;
     const full = pt ? `${pt.code} · ${pt.descripcion || 'Sin descripción'}` : 'Sin partida';
     return `<button type="button" class="picker ${!pt && tieneDatos ? 'error' : ''}" data-picker="partida" data-list="${list}" data-uid="${it.uid}" aria-haspopup="listbox" aria-expanded="false" aria-label="Partida asociada: ${esc(full)}" title="${esc(full)}">
-      ${pt ? `<span class="pcode">${pt.code}</span><span class="txt">${esc(pt.descripcion || 'Sin descripción')}</span>` : `<span class="pcode none">—</span><span class="txt muted">${tieneDatos ? 'Elegir partida' : 'Sin partida'}</span>`}${ICON.chev}</button>`;
+      ${pt ? `<span class="pcode${pt.base ? ' base' : ''}">${pt.code}</span><span class="txt">${esc(pt.descripcion || 'Sin descripción')}</span>` : `<span class="pcode none">—</span><span class="txt muted">${tieneDatos ? 'Elegir partida' : 'Sin partida'}</span>`}${ICON.chev}</button>`;
   }
   function filtroBar(key) {
     const p = state.project;
@@ -1548,7 +1734,7 @@
         <div class="filtro"><label for="filtro-${key}">Mostrar</label>
           <select id="filtro-${key}" data-filtro="${key}" class="${f ? 'is-set' : ''}">
             <option value="">Todas las partidas</option>
-            ${p.partidas.map((pt, i) => `<option value="${pt.uid}" ${f === pt.uid ? 'selected' : ''}>P${i + 1} · ${esc(pt.descripcion || 'Sin descripción')}</option>`).join('')}
+            ${p.partidas.map((pt) => `<option value="${pt.uid}" ${f === pt.uid ? 'selected' : ''}>${codP(pt.uid)} · ${esc(pt.descripcion || 'Sin descripción')}${pt.base ? ' (partida base)' : ''}</option>`).join('')}
             <option value="__none__" ${f === '__none__' ? 'selected' : ''}>Sin partida asociada</option>
           </select></div>
       </div>` : ''}
@@ -1696,12 +1882,15 @@
   function viewResumen() {
     const p = state.project;
     const mObj = num(p.parametros.margenObjetivo);
-    const utilRows = p.partidas.map((it, i) => {
-      const code = 'P' + (i + 1);
+    // La partida base no lleva utilidad propia: su costo ya está en el costo directo de cada partida
+    const pb = p.partidas.find((it) => it.base);
+    const nCot = cotizables(p).length;
+    const utilRows = cotizables(p).map((it) => {
+      const code = codP(it.uid);
       const isPct = it.utilidadTipo !== 'monto';
       return `<tr data-row="${it.uid}">
         <td><div class="pnom"><span class="pcode">${code}</span><div style="min-width:0"><div class="t">${esc(it.descripcion || 'Partida sin descripción')}</div>
-          <div class="s">${esc(nf(num(it.cantidad)))} ${esc(it.unidad || '')} · costo directo <span data-c="P:${it.uid}:cd" data-fmt="clp"></span></div></div></div></td>
+          <div class="s">${esc(nf(num(it.cantidad)))} ${esc(it.unidad || '')} · costo directo <span data-c="P:${it.uid}:cd" data-fmt="clp"></span>${pb ? ` (incluye <span data-c="P:${it.uid}:cuotaBase" data-fmt="clp"></span> de PB)` : ''}</div></div></div></td>
         <td data-label="Utilidad"><div class="util-edit">
           ${seg(`ut-${it.uid}`, [{ v: 'pct', l: '%', checked: isPct }, { v: 'monto', l: simbolo(), checked: !isPct }], { label: `Tipo de utilidad de ${code}`, data: `data-list="partidas" data-uid="${it.uid}" data-k="utilidadTipo" data-rerender` }, 'sm')}
           ${rowInput('partidas', it, 'utilidadValor', `Utilidad de ${code} ${isPct ? 'en % de recargo' : `en ${MONEDAS[monedaDe(p)].corto}`}`, 'num', true, `placeholder="${isPct ? '%' : simbolo()}"`)}
@@ -1730,9 +1919,9 @@
               <div class="util-quick no-print">
                 <span class="lbl">Recargo para todas</span>
                 <div class="input-affix"><input class="input" id="util-all" type="number" step="any" placeholder="100" aria-label="Recargo en % a aplicar a todas las partidas"><span class="affix">%</span></div>
-                <button type="button" class="btn btn-sm" data-act="apply-util" ${p.partidas.length ? '' : 'disabled'}>Aplicar</button>
+                <button type="button" class="btn btn-sm" data-act="apply-util" ${nCot ? '' : 'disabled'}>Aplicar</button>
                 <span class="grupo-btn">
-                  <button type="button" class="btn btn-sm" data-act="util-objetivo" ${p.partidas.length ? '' : 'disabled'} data-tip="Calcula el recargo que deja el margen sobre venta justo en el objetivo del proyecto y lo aplica a todas las partidas.">${ICON.target}Llevar al margen objetivo (${esc(nf(mObj))} %)</button>
+                  <button type="button" class="btn btn-sm" data-act="util-objetivo" ${nCot ? '' : 'disabled'} data-tip="Calcula el recargo que deja el margen sobre venta justo en el objetivo del proyecto y lo aplica a todas las partidas.">${ICON.target}Llevar al margen objetivo (${esc(nf(mObj))} %)</button>
                   <button type="button" class="btn btn-sm" id="util-undo" data-act="util-deshacer" aria-disabled="true">${ICON.restore}Deshacer</button>
                 </span>
               </div>
@@ -1744,6 +1933,7 @@
                   <td class="num" data-label="Margen"><span class="dot na" data-sem-total aria-hidden="true"></span><span data-c="K:margen" data-fmt="pct"></span><div class="meta-margen" id="meta-margen"></div></td></tr></tfoot>
               </table>
             </div>
+            ${pb ? `<p class="hint-linea"><span class="pcode base">PB</span> La partida base «${esc(pb.descripcion || 'Partida base')}» (<span data-c="P:${pb.uid}:cd" data-fmt="clp"></span>) no va sola en la cotización: ${nCot ? `se divide en partes iguales entre ${nCot === 1 ? 'la partida' : `las ${nCot} partidas`} y cada una aplica su utilidad sobre ese costo` : 'se dividirá entre las partidas que agregues'}.</p>` : ''}
             <div class="eval" id="res-eval"></div>
           </div>
           <aside class="calc-resultados" id="res-precio" aria-label="Valores por partida para la cotización"></aside>
@@ -1857,7 +2047,7 @@
     const p = state.project;
     let u = undoVigente();
     if (!u) { u = { puid: p.uid, antes: new Map() }; state.utilUndo = u; }
-    p.partidas.forEach((pt) => { if (!u.antes.has(pt.uid)) u.antes.set(pt.uid, { utilidadTipo: pt.utilidadTipo, utilidadValor: pt.utilidadValor }); });
+    cotizables(p).forEach((pt) => { if (!u.antes.has(pt.uid)) u.antes.set(pt.uid, { utilidadTipo: pt.utilidadTipo, utilidadValor: pt.utilidadValor }); });
     u.accion = accion;
   }
   function pintarDeshacer() {
@@ -1866,7 +2056,7 @@
     const u = undoVigente();
     b.setAttribute('aria-disabled', u ? 'false' : 'true');
     if (!u) { b.dataset.tip = '<b>Nada que deshacer</b>Se activa después de usar «Aplicar» o «Llevar al margen objetivo».'; return; }
-    const lista = state.project.partidas.map((pt, i) => (u.antes.has(pt.uid) ? `P${i + 1}: ${fmtUtil(u.antes.get(pt.uid))}` : null)).filter(Boolean);
+    const lista = state.project.partidas.map((pt) => (u.antes.has(pt.uid) ? `${codP(pt.uid)}: ${fmtUtil(u.antes.get(pt.uid))}` : null)).filter(Boolean);
     const txt = lista.slice(0, 6).join(' · ') + (lista.length > 6 ? ` y ${lista.length - 6} más` : '');
     b.dataset.tip = `<b>Volver a la utilidad ingresada a mano</b>Deshace «${esc(u.accion)}»: ${esc(txt)}`;
   }
@@ -2084,7 +2274,7 @@
       <tbody>${rowsP || '<tr class="empty-row"><td colspan="13">Sin partidas.</td></tr>'}</tbody>
       <tfoot><tr><td></td><td></td><td colspan="2">Total</td><td class="num">${dinero(t.mat)}</td><td class="num">${dinero(t.eq)}</td><td class="num">${dinero(t.mo)}</td><td class="num">${dinero(t.otros)}</td>
         <td class="num">${dinero(t.cd)}</td><td class="num">${dinero(t.utilidad)}</td><td class="num">${dinero(t.precioNeto)}</td><td></td><td class="num">${t.precioNeto ? '100,0 %' : '—'}</td></tr></tfoot>
-    </table></div>`);
+    </table></div>${r.base && r.base.partes ? `<p class="hint-linea">Los costos de cada partida incluyen su parte de la partida base PB «${esc(r.base.descripcion || 'Partida base')}»: ${dinero(r.base.cd)} ÷ ${r.base.partes} = ${dinero(r.base.cuota)} por partida.</p>` : ''}`);
 
   }
 
@@ -2103,7 +2293,12 @@
           : `${nf(num(it.cantidad))} ${esc(it.unidad || '')} × ${dinero(num(it.costoUnitario))}`;
         return `<tr><td class="code">${l.code}</td><td>${esc(l.descripcion || '—')}</td><td>${det}</td><td class="num">${dinero(l.costoPorUnidadPartida)} por unidad</td><td class="num">${dinero(l.subtotal)}</td></tr>`;
       }).join('');
-    }).join('');
+    }).join('') + (pt.cuotaBase ? (() => {
+      // Su parte de la partida base, en partes iguales con las demás partidas
+      const b = state.result.base;
+      return `<tr class="apu-cat"><td colspan="4"><span class="nombre"><span class="pcode base">PB</span>Parte de la partida base</span></td><td class="num">${dinero(pt.cuotaBase)}</td></tr>
+        <tr><td class="code">PB</td><td>${esc(b.descripcion || 'Partida base')}</td><td>${dinero(b.cd)} ÷ ${b.partes} ${b.partes === 1 ? 'partida' : 'partidas'}</td><td class="num">${pt.cantidad > 0 ? `${dinero(pt.cuotaBase / pt.cantidad)} por unidad` : '—'}</td><td class="num">${dinero(pt.cuotaBase)}</td></tr>`;
+    })() : '');
     return body ? `<table class="apu-table"><thead><tr><th>ID</th><th>Ítem</th><th>Cantidad por unidad de partida</th><th class="num">Costo por unidad</th><th class="num">Subtotal</th></tr></thead><tbody>${body}</tbody></table>`
       : '<p class="small muted" style="margin:8px 0">Esta partida no tiene costos asociados.</p>';
   }
@@ -2134,14 +2329,14 @@
         <div class="section-head"><h3 class="seccion-titulo">Paso a paso</h3><p>Los mismos pasos que ves arriba al abrir un proyecto.</p></div>
         <ol class="guia-pasos">
           ${paso(1, 'Datos del proyecto', 'Al crear el proyecto eliges la carpeta de su oferta, o la creas ahí mismo con «Crear nueva carpeta»: con el N° de la Planilla de Ingreso, el proyecto trae su título, su ubicación y el presupuesto del mandante. Completa el cliente y el responsable.', 'los parámetros (IVA, tarifas, metas) ya vienen con los valores habituales; ábrelos solo si este proyecto es distinto.')}
-          ${paso(2, 'Partidas', 'Divide el trabajo en partidas con su unidad y cantidad, por ejemplo «3 medidores de 2"».', 'una partida por cada ítem que irá en la cotización.')}
+          ${paso(2, 'Partidas', 'Divide el trabajo en partidas con su unidad y cantidad, por ejemplo «3 medidores de 2"». Los costos comunes a todo el trabajo (instalación de faenas, traslados…) van en la <b>partida base</b>: no se cotiza sola y su costo se divide en partes iguales entre las demás partidas.', 'una partida por cada ítem que irá en la cotización.')}
           ${paso(3, 'Costos', 'En Materiales, Equipos, Mano de obra y Otros ingresa lo que necesita <b>una</b> unidad de la partida y elige a qué partida pertenece. La herramienta multiplica por la cantidad.', 'un costo sin partida no se suma al precio: la herramienta lo marca en rojo.')}
           ${paso(4, 'Utilidad y precio', 'Define la utilidad de cada partida (% de recargo o monto fijo) y copia los valores netos para la cotización.', '«Llevar al margen objetivo» calcula el recargo que deja el margen justo en la meta.')}
           ${paso(5, 'Evaluación', 'Responde cuatro preguntas: ¿es rentable?, ¿resiste sobrecostos?, ¿cabe en el presupuesto?, ¿los números están completos?', 'si todo está en verde, el botón del pie lleva a lo que sigue: preparar la cotización en Sistema QUEMPIN. Desde ahí, la pestaña «Seguimiento» acompaña la oferta hasta su ejecución.')}
         </ol>
       </section>
       ${QF() ? `<section class="section">
-        <div class="section-head"><h3 class="seccion-titulo">El recorrido del proyecto</h3><p>Las seis etapas de la barra de arriba de cada proyecto y de su pestaña «Seguimiento», las mismas de la guía del equipo. La barra dice siempre en cuál va y qué sigue, con un botón.</p></div>
+        <div class="section-head"><h3 class="seccion-titulo">El recorrido del proyecto</h3><p>Las seis etapas de la pestaña «Seguimiento» de cada proyecto, las mismas de la guía del equipo: la etapa actual va abierta, con lo que sigue y su botón, y las demás se despliegan para ver el detalle. Arriba de los pasos, la línea «Recorrido de la oferta» dice en cuál va; al desplegarla se ven las seis.</p></div>
         <ol class="guia-pasos">${QF().ETAPAS.map((e, i) => paso(i + 1, `${esc(e.titulo)} <span class="tn">· ${esc(e.donde)}</span>`, esc(e.hace))).join('')}</ol>
       </section>` : ''}
       <section class="section">
@@ -2191,8 +2386,10 @@
     if (!el || !el.dataset) return null;
     if (el.dataset.list && el.dataset.uid) return `[data-list="${el.dataset.list}"][data-uid="${el.dataset.uid}"][data-k="${el.dataset.k}"]${el.type === 'radio' ? ':checked' : ''}`;
     if (el.dataset.f) return `[data-f="${el.dataset.f}"]`;
+    if (el.dataset.cat !== undefined && el.dataset.k) return `[data-cat="${el.dataset.cat}"][data-k="${el.dataset.k}"]`;
     return null;
   }
+  const escribible = (el) => el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && el.type !== 'radio' && el.type !== 'checkbox');
 
   function onEdit(e) {
     const el = e.target;
@@ -2208,6 +2405,7 @@
       return;
     }
     if (el.type === 'radio' && e.type === 'input') return; // los radios se procesan en 'change'
+    if (e.type === 'change') hist.grupo = null; // al salir del campo, lo que se escriba después es otro paso de Deshacer
     if (el.id === 'f-req') {
       if (e.type === 'change') fijarRequerimiento(el.value);
       return;
@@ -2253,7 +2451,7 @@
     if (touched) {
       recalc();
       updateCalc();
-      scheduleSave();
+      scheduleSave(e.type === 'input' && escribible(el) ? focusKeyOf(el) : null);
     }
   }
   app.addEventListener('input', onEdit);
@@ -2267,6 +2465,8 @@
     const key = d.dataset.kpi || d.dataset.openKey;
     if (!set) return;
     if (d.open) set.add(key); else set.delete(key);
+    // Plegada, la barra del recorrido no mide nada: al abrirla, la etapa actual queda a la vista
+    if (key === ABRE_BARRA && d.open) centrarEtapaActual();
   }, true);
 
   app.addEventListener('keydown', (e) => {
@@ -2315,7 +2515,7 @@
     let it;
     if (list === 'partidas') {
       it = S.newPartida();
-      const last = p.partidas[p.partidas.length - 1];
+      const last = cotizables(p).pop(); // la utilidad de la partida anterior (la base no tiene)
       if (last) { it.utilidadTipo = last.utilidadTipo; it.utilidadValor = last.utilidadTipo === 'pct' ? last.utilidadValor : 0; }
     } else {
       const f = state.filtro[list];
@@ -2349,15 +2549,20 @@
     refreshList();
   }
 
-  function goTab(tab, focus) {
+  /* ancla: la barra de subpestañas de Costos que se tocó. Entre tipos de costo la página no sube:
+     la barra queda donde estaba en la pantalla. */
+  function goTab(tab, focus, ancla) {
     // Secciones plegables que deben quedar abiertas al llegar
     const abrir = { catalogo: 'f-catalogo', tarifas: 'f-precio', metas: 'f-metas' }[focus];
     if (abrir) state.abiertos.add(abrir);
+    const antes = ancla ? ancla.getBoundingClientRect().top : null;
     state.tab = tab;
     renderTab();
     const mn = $('#modnav-proj');
     if (mn) mn.href = `#/p/${state.project.uid}/${tab}`;
-    window.scrollTo({ top: 0 });
+    const barra = antes === null ? null : $('#tab-body .subtabs');
+    if (barra) window.scrollBy({ top: barra.getBoundingClientRect().top - antes, behavior: 'instant' });
+    else window.scrollTo({ top: 0 });
     if (abrir || focus === 'veredicto') {
       setTimeout(() => { const c = $('#' + (focus === 'catalogo' ? 'f-catalogo' : focus)); if (c) c.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 30);
     } else if (focus === 'util') {
@@ -2694,7 +2899,7 @@
         }
 
         // ---- Editor
-        case 'tab': if (p) goTab(d.tab, d.focus); break;
+        case 'tab': if (p) goTab(d.tab, d.focus, btn.closest('.subtabs')); break;
         case 'ir': {
           // Lleva a la fila con el problema; si le falta la partida, abre el selector
           if (DETALLE[d.tab]) state.filtro[d.tab] = '';
@@ -2709,6 +2914,31 @@
           break;
         }
         case 'add-row': addRow(d.list); break;
+        case 'add-base': {
+          // Una sola partida base, siempre la primera de la lista
+          if (p.partidas.some((x) => x.base)) break;
+          const it = S.newPartidaBase();
+          p.partidas.unshift(it);
+          recalc(); renderTab(`[data-list="partidas"][data-uid="${it.uid}"][data-k="descripcion"]`); flashRow(it.uid); scheduleSave();
+          toast('Partida base agregada: asóciale sus costos en el paso 3 y se dividirán en partes iguales entre las demás partidas.');
+          break;
+        }
+        case 'partida-base': {
+          const i = p.partidas.findIndex((x) => x.uid === d.uid);
+          if (i < 0) break;
+          const pt = p.partidas[i];
+          if (pt.base) {
+            delete pt.base;
+            toast(`${pt.descripcion || 'La partida'} vuelve a ser una partida normal: se cotiza sola, con su utilidad.`);
+          } else {
+            if (p.partidas.some((x) => x.base)) break;
+            pt.base = true;
+            p.partidas.unshift(p.partidas.splice(i, 1)[0]);
+            toast(`${pt.descripcion || 'La partida'} es ahora la partida base: su costo se divide en partes iguales entre las demás.`);
+          }
+          recalc(); renderTab(`[data-menu="fila"][data-uid="${pt.uid}"]`); flashRow(pt.uid); scheduleSave();
+          break;
+        }
         case 'ver-costos': state.filtro[state.costoTab] = d.uid; goTab(state.costoTab); break;
         case 'dup-row': {
           const list = d.list;
@@ -2748,7 +2978,7 @@
           const arr = p[d.list];
           const i = arr.findIndex((x) => x.uid === d.uid);
           const j = i + parseInt(d.dir, 10);
-          if (i < 0 || j < 0 || j >= arr.length) break;
+          if (i < 0 || j < 0 || j >= arr.length || arr[i].base || arr[j].base) break; // la base no se mueve
           [arr[i], arr[j]] = [arr[j], arr[i]];
           recalc(); renderTab(`[data-menu="fila"][data-uid="${d.uid}"]`); flashRow(d.uid); scheduleSave();
           break;
@@ -2757,9 +2987,9 @@
           const v = parseFloat($('#util-all').value);
           if (!Number.isFinite(v)) { toast('Ingresa el % de recargo a aplicar.', true); $('#util-all').focus(); break; }
           guardarUndo(`Recargo de ${nf(v)} % para todas`);
-          p.partidas.forEach((pt) => { pt.utilidadTipo = 'pct'; pt.utilidadValor = v; });
+          cotizables(p).forEach((pt) => { pt.utilidadTipo = 'pct'; pt.utilidadValor = v; });
           recalc(); renderTab('[data-act="apply-util"]'); scheduleSave();
-          toast(`Recargo de ${nf(v)} % aplicado a ${plural(p.partidas.length, 'partida')}. «Deshacer» vuelve a tus valores.`);
+          toast(`Recargo de ${nf(v)} % aplicado a ${plural(cotizables(p).length, 'partida')}. «Deshacer» vuelve a tus valores.`);
           break;
         }
         case 'util-objetivo': {
@@ -2770,11 +3000,13 @@
           const g = (num(par.gastosGenerales) + num(par.imprevistos)) / 100;
           const rec = Math.round((m * (1 + g) / (1 - m)) * 10000) / 100;
           guardarUndo(`Llevar al margen objetivo (${nf(num(par.margenObjetivo))} %)`);
-          p.partidas.forEach((pt) => { pt.utilidadTipo = 'pct'; pt.utilidadValor = rec; });
+          cotizables(p).forEach((pt) => { pt.utilidadTipo = 'pct'; pt.utilidadValor = rec; });
           recalc(); renderTab('[data-act="util-objetivo"]'); scheduleSave();
           toast(`Recargo de ${nf(rec)} % aplicado: margen ${pct(state.result.kpis.margen)}. «Deshacer» vuelve a tus valores.`);
           break;
         }
+        case 'deshacer': deshacerCambio(); break;
+        case 'rehacer': rehacerCambio(); break;
         case 'util-deshacer': {
           const u = undoVigente();
           if (!u) { toast('No hay cambios automáticos de utilidad que deshacer.'); break; }
@@ -2797,7 +3029,7 @@
         case 'copiar-tabla': {
           if (!(await copiarTexto(tablaCotizacion()))) { toast('No se pudo copiar la tabla.', true); break; }
           marcarCopiado(btn);
-          toast(`Tabla de ${plural(p.partidas.length, 'partida')} copiada: pégala en Excel o Word`);
+          toast(`Tabla de ${plural(cotizables(p).length, 'partida')} copiada: pégala en Excel o Word`);
           break;
         }
         case 'scroll': {
@@ -3225,6 +3457,7 @@
     if (opts && opts.datosOferta) {
       p.titulo = (ok && r.titulo) || c.titulo || p.titulo;
       if (ok && r.ubicacion) p.ubicacion = r.ubicacion;
+      if (ok && r.referencia) p.idLicitacion = String(r.referencia);
       p.parametros.presupuestoMaximo = ok && r.presupuesto ? r.presupuesto : null;
       p.parametros.presupuestoIncluyeIva = true;
     }
@@ -3396,7 +3629,7 @@
       }
       const r = pl && elegida.numero ? pl.get(elegida.numero) : null;
       const distinta = !!r && opts.planilla && !coincidePlanilla(elegida.titulo, r.titulo);
-      const datos = r ? [r.titulo, r.ubicacion, r.presupuesto ? `presupuesto ${dinero(r.presupuesto, 'CLP')} con IVA` : ''].filter(Boolean).join(' · ') : '';
+      const datos = r ? [r.titulo, r.ubicacion, r.referencia ? `ID de licitación ${r.referencia}` : '', r.presupuesto ? `presupuesto ${dinero(r.presupuesto, 'CLP')} con IVA` : ''].filter(Boolean).join(' · ') : '';
       const conPlanilla = r && !distinta
         ? (opts.completar ? `Toma de la Planilla de Ingreso (N° ${esc(r.numero)}): ${esc(datos)}.` : `N° de requerimiento ${esc(r.numero)} en la Planilla de Ingreso: ${esc(r.titulo || 'sin título')}.`)
         : !r && elegida.numero && pl ? `El N° ${esc(elegida.numero)} no está en la Planilla de Ingreso.` : '';
@@ -4017,6 +4250,30 @@
   const REQ_RECIENTES = 20;
   let reqLista = [];   // la planilla completa, del N° más alto (el último ingresado) al más bajo
   const enLaPlanilla = (datos) => (datos && datos.origen === 'planilla' ? 'la planilla de ingreso' : 'la planilla de ingreso publicada');
+  /* Código del proyecto con N° de requerimiento: QMPN-<año de la formulación>-<N°>. Reemplaza al
+     correlativo automático (o a un QMPN de otro N°), nunca a un código escrito a mano. */
+  const PREFIJO_REQ = 'QMPN';
+  const escRe = (t) => String(t).replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+  function codigoDeReq(p, req) {
+    const anio = /^\d{4}-/.test(String(p.fecha || '')) ? String(p.fecha).slice(0, 4) : String(new Date().getFullYear());
+    return `${PREFIJO_REQ}-${anio}-${req}`;
+  }
+  function codigoAutomatico(codigo) {
+    const c = String(codigo || '').trim();
+    const prefijos = [PREFIJO_REQ, S.getConfig().prefijo].filter(Boolean).map(escRe).join('|');
+    return !c || new RegExp(`^(${prefijos})-\\d{4}-\\d+$`, 'i').test(c);
+  }
+  /* Deja el código QMPN-año-N° si el actual es automático (en SharePoint el código ya es el N°).
+     Si otra formulación de la misma oferta ya tiene esa versión, esta pasa a la siguiente. true = cambió. */
+  function codigoDesdeReq(p, req) {
+    if (!req || enSP() || !codigoAutomatico(p.codigo)) return false;
+    const c = codigoDeReq(p, req);
+    if (c === p.codigo) return false;
+    p.codigo = c;
+    const mismas = S.all().filter((x) => x.uid !== p.uid && x.codigo === c);
+    if (mismas.some((x) => String(x.version) === String(p.version))) p.version = mismas.reduce((a, x) => Math.max(a, parseInt(x.version, 10) || 1), 1) + 1;
+    return true;
+  }
   /* Opciones del N°: los 20 últimos ingresados (el N° es correlativo), del más nuevo al más antiguo.
      Con texto escrito quedan los que empiezan con ese N° o lo tienen en el título, y detrás los
      anteriores que calzan (hasta 20 más). */
@@ -4040,7 +4297,7 @@
     const planillaWeb = (window.QPN_M365 || {}).planillaWeb;
     return `<div class="campo ancho"><label for="f-req">N° de requerimiento <span class="opc">(Planilla de Ingreso)</span></label>
         <div class="req-fila"><div class="combo"><input class="input" id="f-req" inputmode="numeric" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" value="${esc(v && v.numero ? v.numero : '')}" placeholder="${enCodigo ? `${esc(enCodigo)} (el código)` : 'Ej.: 280'}"><button type="button" class="combo-btn" data-picker="combo" tabindex="-1" aria-label="Ver los requerimientos">${ICON.caret}</button></div>
-          <button type="button" class="btn btn-sm" data-act="req-completar" data-tip="<b>Completar desde la planilla</b>Trae el título, la ubicación y el presupuesto del requerimiento a los campos que estén vacíos.">Completar desde la planilla</button>
+          <button type="button" class="btn btn-sm" data-act="req-completar" data-tip="<b>Completar desde la planilla</b>Trae el título, la ubicación, el ID de licitación y el presupuesto del requerimiento a los campos que estén vacíos, y deja el código ${esc(codigoDeReq(p, 'N°'))}.">Completar desde la planilla</button>
           ${planillaWeb ? `<a class="link-btn req-abrir" href="${esc(planillaWeb)}" target="_blank" rel="noopener" data-tip="<b>Abrir la planilla de ingreso</b>Se abre en Excel para la web, en otra pestaña, para buscar o verificar el N°.">${ICON.open}Abrir la planilla</a>` : ''}</div>
         <span class="hint" id="req-hint">El N° con que se registró el requerimiento: une este proyecto con su cotización, el Análisis Financiero y el Flujo de Caja. La lista muestra los ${REQ_RECIENTES} últimos ingresados; para uno anterior, escribe su N° o parte del título.</span></div>`;
   }
@@ -4081,11 +4338,14 @@
     const hechos = [];
     if (!String(p.titulo || '').trim() && r.titulo) { p.titulo = r.titulo; hechos.push('título'); }
     if (!String(p.ubicacion || '').trim() && r.ubicacion) { p.ubicacion = r.ubicacion; hechos.push('ubicación'); }
+    if (!String(p.idLicitacion || '').trim() && r.referencia) { p.idLicitacion = String(r.referencia); hechos.push('ID de licitación'); }
     if (!(num(p.parametros.presupuestoMaximo) > 0) && ok(r.presupuesto) && r.presupuesto > 0) {
       p.parametros.presupuestoMaximo = r.presupuesto;
       p.parametros.presupuestoIncluyeIva = true;
       hechos.push('presupuesto (con IVA)');
     }
+    const version = p.version;
+    if (codigoDesdeReq(p, req)) hechos.push(`código ${p.codigo}${p.version !== version ? ` v${p.version}` : ''}`);
     p.vinculos = Object.assign({}, p.vinculos, { requerimiento: { numero: req, titulo: r.titulo || '' } });
     recalc();
     renderTab('#f-req');
@@ -4258,9 +4518,12 @@
   /* Enlace al tablero de Análisis Financiero; con el TAG, abre la ficha de ese proyecto. */
   const enlaceAF = (p) => { const v = vinculoAF(p); return TABLERO_AF + (v && v.tag ? `#proyecto=${encodeURIComponent(v.tag)}` : ''); };
 
-  /* Barra del recorrido, arriba del editor en todas las pestañas (pedido del usuario, 2026-10-06: que
-     siempre se vea dónde está el proyecto y qué sigue). Cada etapa lleva a donde se trabaja: el N°, los
-     pasos de la formulación o el seguimiento. En el seguimiento no repite el botón: allí está a la vista. */
+  /* Barra del recorrido, arriba del editor (pedido del usuario, 2026-10-06: que siempre se vea dónde
+     está el proyecto y qué sigue). Desde el 2026-10-09 va plegada: lo principal del Formulador son los
+     pasos de la formulación, y dos barras de pasos seguidas confundían. Una línea dice en qué etapa va la
+     oferta; al desplegarla se ven las seis etapas y qué sigue, y cada etapa lleva a donde se trabaja: el
+     N°, los pasos de la formulación o el seguimiento. En el seguimiento no se muestra: allí están las seis. */
+  const ABRE_BARRA = 'recorrido-barra';
   function pintarSigue() {
     const el = $('#ed-recorrido');
     const p = state.project;
@@ -4272,20 +4535,20 @@
     }
     const rec = recorridoDe(p);
     let html = '';
-    if (rec && !state.imprimir) {
+    if (rec && !state.imprimir && state.tab !== 'seguimiento') {
       const s = rec.siguiente;
       const actual = rec.etapas[rec.actual];
       const ps = estadoPasos();
       const listos = ps.filter((x) => x.est === 'ok').length;
+      const detDe = (x) => (x.id === 'formulacion' && x.estado !== 'hecha' && x.estado !== 'no-aplica' ? `${listos} de ${PASOS.length} pasos` : x.detalle);
       const etapas = rec.etapas.map((x) => {
-        const det = x.id === 'formulacion' && x.estado !== 'hecha' && x.estado !== 'no-aplica' ? `${listos} de ${PASOS.length} pasos` : x.detalle;
+        const det = detDe(x);
         return `<li class="rcb-etapa rc-${x.estado}" ${x.n === actual.n ? 'aria-current="step"' : ''}>
           <button type="button" class="rcb-btn" data-act="etapa" data-etapa="${x.id}" data-tip="<b>${x.n}. ${esc(x.titulo)} · ${esc(x.donde)}</b>${esc(x.hace)}">
             <span class="rcb-marca" aria-hidden="true">${x.estado === 'hecha' ? '✓' : x.n}</span>
             <span class="rcb-txt"><span class="rcb-t">${esc(x.id === 'oferta' ? 'Oferta' : x.titulo)}</span><span class="rcb-det">${esc(det)}<span class="visualmente-oculto">: ${ETIQ_ETAPA[x.estado]}</span></span></span>
           </button></li>`;
       }).join('');
-      const enSeg = state.tab === 'seguimiento';
       let texto, cta = '';
       if (s.accion === 'ir-paso') {
         const lbl = (PASOS.find((x) => x.n === s.paso) || {}).label || '';
@@ -4297,15 +4560,25 @@
         texto = '<b>Falta</b> el N° de requerimiento, en estos datos';
       } else if (s.accion && s.boton) {
         texto = `<b>${rotuloSigue(s)}</b>`;
-        if (!enSeg) cta = `<button type="button" class="btn btn-primario btn-sm" data-act="sigue" data-accion="${esc(s.accion)}">${esc(s.boton.replace(/…$/, ''))}${s.accion === 'abrir-af' ? ICON.open : ICON.arrow}</button>`;
-        else texto = `<b>${rotuloSigue(s)}:</b> ${esc(s.boton.replace(/…$/, ''))}`;
+        cta = `<button type="button" class="btn btn-primario btn-sm" data-act="sigue" data-accion="${esc(s.accion)}">${esc(s.boton.replace(/…$/, ''))}${s.accion === 'abrir-af' ? ICON.open : ICON.arrow}</button>`;
       } else {
         texto = `<b>${rotuloSigue(s)}:</b> ${esc(s.corto)}`;
-        if (!enSeg) cta = `<button type="button" class="btn btn-sm" data-act="tab" data-tab="seguimiento">Ver el seguimiento</button>`;
+        cta = `<button type="button" class="btn btn-sm" data-act="tab" data-tab="seguimiento">Ver el seguimiento</button>`;
       }
-      html = `<nav class="rc-barra no-print ${s.espera ? 'espera' : s.fin ? 'fin' : ''}" aria-label="Recorrido del proyecto: etapa ${actual.n} de ${rec.etapas.length}, ${esc(actual.titulo)}">
-          <ol class="rcb-etapas">${etapas}</ol>
-          <div class="rcb-sigue" role="status"><span class="rcb-sigue-t">${texto}</span>${cta}</div>
+      const marca = actual.estado === 'hecha' ? '✓' : actual.n;
+      html = `<nav class="rc-nav no-print" aria-label="Recorrido del proyecto: etapa ${actual.n} de ${rec.etapas.length}, ${esc(actual.titulo)}">
+          <details class="rc-barra ${s.espera ? 'espera' : s.fin ? 'fin' : ''}" data-open-key="${ABRE_BARRA}" ${state.abiertos.has(ABRE_BARRA) ? 'open' : ''}>
+            <summary class="rcb-resumen rc-${actual.estado}">
+              <span class="rcb-rotulo">Recorrido de la oferta</span>
+              <span class="rcb-marca" aria-hidden="true">${marca}</span>
+              <span class="rcb-res-t"><b>Etapa ${actual.n} de ${rec.etapas.length}: ${esc(actual.titulo)}</b> <span class="rcb-res-det">· ${esc(detDe(actual))}</span></span>
+              <span class="rcb-ver"><span class="rcb-ver-abrir">Ver las etapas</span><span class="rcb-ver-cerrar">Ocultar</span>${ICON.chevD}</span>
+            </summary>
+            <div class="rcb-panel">
+              <ol class="rcb-etapas">${etapas}</ol>
+              <div class="rcb-sigue" role="status"><span class="rcb-sigue-t">${texto}</span>${cta}</div>
+            </div>
+          </details>
         </nav>`;
     }
     // Se pinta en cada edición (updateCalc): solo se toca el DOM si cambió
@@ -4313,7 +4586,7 @@
       el.dataset.html = html;
       el.innerHTML = html;
       centrarEtapaActual();
-      marcarSiAvanzo(el, '.rcb-etapa[aria-current]', rec);
+      marcarSiAvanzo(el, '.rcb-resumen', rec);
     }
   }
   /* Cuando el proyecto cambia de etapa (cotizó, se envió, se adjudicó…), la etapa nueva se resalta un
@@ -4353,7 +4626,7 @@
     if (el.innerHTML !== html) el.innerHTML = html;
   }
 
-  /* Ir a donde se trabaja una etapa: el N° (1), el paso pendiente de la formulación (2) o el seguimiento (3 a 6). */
+  /* Ir a donde se trabaja una etapa: el N° (1), el paso pendiente de la formulación (2) o su lugar en el seguimiento (3 a 6). */
   function irAEtapa(id) {
     if (id === 'requerimiento') { hacerSiguiente('ir-req'); return; }
     if (id === 'formulacion') {
@@ -4363,6 +4636,8 @@
       if (tab !== state.tab) goTab(tab);
       return;
     }
+    // Una etapa plegada en el seguimiento se abre: se pidió ver esa
+    if (state.project) state.abiertos.add(claveEtapa(state.project, id));
     if (state.tab !== 'seguimiento') goTab('seguimiento');
     setTimeout(() => { const e = $('#etapa-' + id); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'center' }); }, 60);
   }
@@ -4515,8 +4790,11 @@
     return m;
   }
 
-  /* Seguimiento: el aviso de lo que sigue y la línea de tiempo con las seis etapas. Lo de las demás
-     herramientas (herrDe) llega después de leer la carpeta; mientras tanto cada etapa ya dice qué es. */
+  /* Seguimiento: la línea de tiempo con las seis etapas. Lo de las demás herramientas (herrDe) llega
+     después de leer la carpeta; mientras tanto cada etapa ya dice qué es. Desde el 2026-10-09 (pedido del
+     usuario: que se vea fácil en qué etapa se está trabajando) la etapa actual va abierta y destacada, con
+     lo que sigue adentro; las demás quedan en una línea y se despliegan para ver el detalle. */
+  const claveEtapa = (p, id) => `etapa-${p.uid}-${id}`;
   function pintarRecorrido(rec) {
     const el = $('#recorrido');
     const p = state.project;
@@ -4525,19 +4803,35 @@
     const e = rec.etapas[rec.actual];
     const botones = botonesSigue(s);
     const h = herrDe.uid === p.uid ? herrDe : { html: {}, aviso: '', pulso: '' };
-    el.innerHTML = `${h.aviso}
-      <div class="rc-sigue ${s.espera ? 'espera' : s.fin ? 'fin' : ''}" role="status">
-        <p class="rc-sigue-t">${rotuloSigue(s)} <span>· Etapa ${e.n} de ${rec.etapas.length}: ${esc(e.titulo)}, en ${esc(e.donde)}</span></p>
-        <p class="rc-sigue-x">${esc(s.texto)}</p>
-        ${botones ? `<div class="actions">${botones}</div>` : ''}
-      </div>
-      <ol class="rc-linea" aria-label="Etapas del proyecto">${rec.etapas.map((x) => `<li class="rcl rc-${x.estado}" id="etapa-${x.id}" ${x.n === e.n ? 'aria-current="step"' : ''}>
-          <span class="rcl-marca" aria-hidden="true">${x.estado === 'hecha' ? '✓' : x.n}</span>
+    const cabeza = (x) => `<h4 class="rcl-t">${esc(x.titulo)}</h4><span class="rcl-donde">${esc(x.donde)}</span><span class="rcl-det">${esc(x.detalle)}<span class="visualmente-oculto">: ${ETIQ_ETAPA[x.estado]}</span></span>`;
+    const herr = (x) => (h.html[x.id] ? `<div class="rcl-herr">${h.html[x.id]}</div>` : '');
+    const etapa = (x) => {
+      const marca = `<span class="rcl-marca" aria-hidden="true">${x.estado === 'hecha' ? '✓' : x.n}</span>`;
+      if (x.n === e.n) {
+        // data-sigue: el botón principal ya está arriba; su copia en el detalle de la herramienta se oculta (CSS)
+        return `<li class="rcl rc-${x.estado} rcl-actual" id="etapa-${x.id}" aria-current="step" data-sigue="${esc(s.accion || '')}">${marca}
           <div class="rcl-cuerpo">
-            <div class="rcl-head"><h4 class="rcl-t">${esc(x.titulo)}</h4><span class="rcl-donde">${esc(x.donde)}</span><span class="rcl-det">${esc(x.detalle)}<span class="visualmente-oculto">: ${ETIQ_ETAPA[x.estado]}</span></span></div>
+            <p class="rcl-ahora">Etapa actual · ${x.n} de ${rec.etapas.length}</p>
+            <div class="rcl-head">${cabeza(x)}</div>
             <p class="rcl-hace">${esc(x.hace)}</p>
-            ${h.html[x.id] ? `<div class="rcl-herr">${h.html[x.id]}</div>` : ''}
-          </div></li>`).join('')}</ol>
+            <div class="rc-sigue ${s.espera ? 'espera' : s.fin ? 'fin' : ''}" role="status">
+              <p class="rc-sigue-t">${rotuloSigue(s)}</p>
+              <p class="rc-sigue-x">${esc(s.texto)}</p>
+              ${botones ? `<div class="actions">${botones}</div>` : ''}
+            </div>
+            ${herr(x)}
+          </div></li>`;
+      }
+      const k = claveEtapa(p, x.id);
+      return `<li class="rcl rc-${x.estado} rcl-plegada" id="etapa-${x.id}">${marca}
+          <details class="rcl-cuerpo" data-open-key="${esc(k)}" ${state.abiertos.has(k) ? 'open' : ''}>
+            <summary class="rcl-head">${cabeza(x)}<span class="rcl-ver"><span class="visualmente-oculto">Ver el detalle</span>${ICON.chevD}</span></summary>
+            <p class="rcl-hace">${esc(x.hace)}</p>
+            ${herr(x)}
+          </details></li>`;
+    };
+    el.innerHTML = `${h.aviso}
+      <ol class="rc-linea" aria-label="Etapas del proyecto">${rec.etapas.map(etapa).join('')}</ol>
       ${h.pulso}`;
     if ($('#af-panel', el)) pintarPanelAF();
     marcarSiAvanzo(el, '.rcl[aria-current]', rec);
@@ -5061,6 +5355,8 @@
     if (opts && opts.datosOferta) {
       if (!String(p.titulo || '').trim()) p.titulo = (r && r.titulo) || c.titulo || '';
       if (r && r.ubicacion && !String(p.ubicacion || '').trim()) p.ubicacion = r.ubicacion;
+      if (r && r.referencia && !String(p.idLicitacion || '').trim()) p.idLicitacion = String(r.referencia);
+      if (r) codigoDesdeReq(p, r.numero);
       if (r && r.presupuesto && !(num(p.parametros.presupuestoMaximo) > 0)) {
         p.parametros.presupuestoMaximo = r.presupuesto;
         p.parametros.presupuestoIncluyeIva = true;

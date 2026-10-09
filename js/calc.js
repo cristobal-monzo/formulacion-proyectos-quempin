@@ -13,6 +13,10 @@
  * Agrega (con valor 0 por defecto, para mantener paridad con el Excel):
  *   Gastos generales e imprevistos como % del costo directo.
  *
+ * Partida base (opcional, una por proyecto, base: true): costos comunes a todo el trabajo
+ * (instalación de faenas, traslados…). No se cotiza sola: su costo directo se divide en partes
+ * iguales entre las demás partidas y se suma al de cada una, por categoría, antes de la utilidad.
+ *
  * Todas las cantidades de detalle son POR UNIDAD DE PARTIDA.
  * Los porcentajes se guardan como número de 0 a 100 (19 = 19 %).
  */
@@ -54,9 +58,13 @@
     const warn = (level, tab, uid, msg) => warnings.push({ level, tab, uid, msg });
 
     // --- Partidas -----------------------------------------------------------
-    const partidas = (p.partidas || []).map((pt, i) => ({
+    // La partida base (la primera marcada) lleva el código PB; las demás se numeran sin contarla.
+    const iBase = (p.partidas || []).findIndex((pt) => pt && pt.base);
+    let nCod = 0;
+    const todas = (p.partidas || []).map((pt, i) => ({
       uid: pt.uid,
-      code: 'P' + (i + 1),
+      code: i === iBase ? 'PB' : 'P' + (++nCod),
+      base: i === iBase,
       descripcion: pt.descripcion || '',
       unidad: pt.unidad || '',
       cantidad: num(pt.cantidad),
@@ -65,7 +73,9 @@
       mat: 0, eq: 0, mo: 0, otros: 0, dh: 0,
       items: { materiales: [], equipos: [], manoObra: [], otros: [] }
     }));
-    const byUid = new Map(partidas.map((x) => [x.uid, x]));
+    const base = iBase >= 0 ? todas[iBase] : null;
+    const partidas = todas.filter((x) => !x.base);
+    const byUid = new Map(todas.map((x) => [x.uid, x]));
 
     // --- Detalle ------------------------------------------------------------
     const lines = { materiales: [], equipos: [], manoObra: [], otros: [] };
@@ -119,6 +129,29 @@
       });
     });
 
+    // --- Partida base: su costo se divide en partes iguales ----------------------
+    // cdPropio: lo que la partida tiene asociado; cuotaBase: lo que recibe de la base.
+    partidas.forEach((pt) => { pt.cdPropio = pt.mat + pt.eq + pt.mo + pt.otros; pt.cuotaBase = 0; });
+    if (base) {
+      base.cd = base.mat + base.eq + base.mo + base.otros;
+      base.partes = partidas.length;
+      base.cuota = base.partes ? base.cd / base.partes : 0;
+      partidas.forEach((pt) => {
+        pt.mat += base.mat / base.partes; pt.eq += base.eq / base.partes;
+        pt.mo += base.mo / base.partes; pt.otros += base.otros / base.partes;
+        pt.dh += base.dh / base.partes;
+        pt.cuotaBase = base.cuota;
+      });
+      const etiqueta = `PB${base.descripcion ? ' «' + base.descripcion + '»' : ''}`;
+      if (base.cantidad <= 0) {
+        warn('error', 'partidas', base.uid, `${etiqueta} (partida base) tiene cantidad cero: todos sus costos quedan en $0.`);
+      } else if (base.cd === 0) {
+        warn('warn', 'partidas', base.uid, `${etiqueta} (partida base) no tiene costos asociados.`);
+      } else if (!base.partes) {
+        warn('error', 'partidas', base.uid, `${etiqueta} (partida base) no tiene otras partidas entre las que dividirse: su costo no se suma al proyecto.`);
+      }
+    }
+
     // --- Totales por partida -------------------------------------------------
     // (las alertas de utilidad apuntan a la pestaña Resumen, donde se ingresa la utilidad)
     let utilidadTotal = 0;
@@ -133,8 +166,8 @@
       const etiqueta = `${pt.code}${pt.descripcion ? ' «' + pt.descripcion + '»' : ''}`;
       if (pt.cantidad <= 0) {
         warn('error', 'partidas', pt.uid, `${etiqueta} tiene cantidad cero: todos sus costos quedan en $0.`);
-      } else if (pt.cd === 0) {
-        warn('warn', 'partidas', pt.uid, `${etiqueta} no tiene costos asociados.`);
+      } else if (pt.cdPropio === 0) {
+        warn('warn', 'partidas', pt.uid, `${etiqueta} no tiene costos asociados${pt.cuotaBase ? ' (solo su parte de la partida base)' : ''}.`);
       }
       if (pt.cd > 0 && pt.utilidad === 0) {
         warn('warn', 'resumen', pt.uid, `${etiqueta} no tiene utilidad asignada.`);
@@ -190,7 +223,8 @@
       presupuesto
     };
 
-    return { partidas, lines, totals: t, kpis: k, warnings, status: evaluate(k, par) };
+    // partidas: las que se cotizan (con su parte de la base); base: la partida base o null
+    return { partidas, base, lines, totals: t, kpis: k, warnings, status: evaluate(k, par) };
   }
 
   /* Semáforos: 'ok' | 'warn' | 'bad' | 'na' | 'info' */

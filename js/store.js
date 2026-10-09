@@ -271,6 +271,7 @@
       version: 1,
       titulo: '',
       cliente: '',
+      idLicitacion: '',
       ubicacion: '',
       responsable: cfg.responsable,
       fecha: hoy(),
@@ -290,6 +291,8 @@
   }
 
   const newPartida = () => ({ uid: uid(), descripcion: '', unidad: 'Un.', cantidad: 1, utilidadTipo: 'pct', utilidadValor: 0 });
+  /* Partida base: costos comunes que se dividen en partes iguales entre las demás (js/calc.js) */
+  const newPartidaBase = () => Object.assign(newPartida(), { descripcion: 'Partida base', unidad: 'gl', base: true });
   const newMaterial = (partida) => ({ uid: uid(), descripcion: '', partida: partida || '', unidad: 'Un.', cantidad: 1, costoUnitario: 0 });
   const newEquipo = (partida) => ({ uid: uid(), descripcion: '', partida: partida || '', unidad: 'día', cantidad: 1, costoUnitario: 0 });
   const newManoObra = (partida) => ({ uid: uid(), descripcion: '', partida: partida || '', n1p: 0, n1d: 0, n2p: 0, n2d: 0, n3p: 0, n3d: 0 });
@@ -308,11 +311,15 @@
     ['partidas', 'materiales', 'equipos', 'manoObra', 'otros'].forEach((k) => {
       out[k] = Array.isArray(out[k]) ? out[k].map((it) => Object.assign({}, it, { uid: it.uid || uid() })) : [];
     });
+    // Una sola partida base, siempre la primera de la lista
+    const iBase = out.partidas.findIndex((pt) => pt.base);
+    out.partidas.forEach((pt, i) => { if (pt.base && i !== iBase) delete pt.base; });
+    if (iBase > 0) out.partidas.unshift(out.partidas.splice(iBase, 1)[0]);
     return out;
   }
   function newProjectShape() {
     return {
-      schema: SCHEMA, uid: '', codigo: '', version: 1, titulo: '', cliente: '', ubicacion: '',
+      schema: SCHEMA, uid: '', codigo: '', version: 1, titulo: '', cliente: '', idLicitacion: '', ubicacion: '',
       responsable: '', fecha: hoy(), estado: 'Borrador', descripcion: '',
       parametros: clone(DEFAULT_PARAMETROS), catalogoOtros: clone(DEFAULT_CATALOGO),
       partidas: [], materiales: [], equipos: [], manoObra: [], otros: [],
@@ -375,7 +382,7 @@
     SCHEMA, ESTADOS, UNIDADES, DEFAULT_PARAMETROS, DEFAULT_CATALOGO,
     uid, hoy, clone, getConfig, setConfig,
     all, trash, get, upsert, remove, restore, purge, nextCodigo, normalize, cloneProject,
-    newProject, newPartida, newMaterial, newEquipo, newManoObra, newOtro, exampleProject,
+    newProject, newPartida, newPartidaBase, newMaterial, newEquipo, newManoObra, newOtro, exampleProject,
     on, emit, getMode, getUser, useCloud, useLocal, applyRemote, setSharedConfig, localProjects,
     _resetCache: () => { cache = null; }
   };

@@ -331,6 +331,15 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
   font-size: 11px; font-weight: 900; border-radius: 4px; background: var(--brand-black); color: #ffffff; box-shadow: inset 0 0 0 1px var(--bar-outline);
 }
 .pcode.none { background: transparent; color: var(--text-muted); box-shadow: inset 0 0 0 1px var(--gridline); }
+/* Partida base (PB): sus costos se dividen en partes iguales entre las demás partidas (2026-10-09) */
+.pcode.base { background: var(--brand-orange); color: #000000; box-shadow: none; }
+.hint-linea .pcode.base { margin-right: 4px; vertical-align: 1px; }
+.tbl tr.fila-base td { background: var(--orange-soft); }
+.tbl tbody tr.fila-base:hover td { background: var(--orange-soft); }
+.tbl tr.fila-base td.reparto-base { font-size: 12.5px; color: var(--text-secondary); line-height: 1.45; }
+.reparto-base b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.etq-base { display: inline-block; margin-right: 4px; font-size: 10.5px; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; color: var(--brand-orange-ink); }
+@media (max-width: 640px) { .tbl-apilable tr.fila-base { background: var(--orange-soft); } .tbl-apilable td.reparto-base { grid-column: 1 / -1; } }
 
 /* ---- Barra de pestañas fija con lectura en vivo (Calculadora Técnica) ------- */
 .barra-pestanas {
@@ -1329,7 +1338,7 @@ button.meta-carpeta .dot { margin: 0 0 0 2px; flex: 0 0 auto; }
 .pr-tabla .pr-usar .btn { margin-left: 4px; }
 .sens-sesgo { margin-top: 12px; }
 .sens-nota { margin: 0 0 8px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.5; }
-.herr-pulso { margin: 4px 0 0; }
+.herr-pulso { margin: 12px 0 0; }
 .herr-pulso.detenido { color: var(--text-primary); font-weight: 700; }
 /* Costos y venta del Análisis Financiero en un solo bloque */
 .herr-af .af-panel { flex-direction: column; align-items: stretch; gap: 6px; }
@@ -1343,13 +1352,35 @@ button.meta-carpeta .dot { margin: 0 0 0 2px; flex: 0 0 auto; }
 .af-extra .check-l input { margin-top: 3px; flex: 0 0 auto; }
 
 /* ---- El recorrido del proyecto (js/flujo.js; 2026-10-06) -----------------------------------------
-   Barra arriba del editor (dónde está el proyecto y qué sigue, en todas las pestañas) y pestaña
-   «Seguimiento» con la línea de tiempo: cada etapa con su herramienta, su estado y sus acciones. */
+   Barra arriba del editor (dónde está el proyecto y qué sigue) y pestaña «Seguimiento» con la línea de
+   tiempo: cada etapa con su herramienta, su estado y sus acciones. Desde el 2026-10-09 la barra va
+   plegada en una línea (lo principal son los pasos de la formulación) y en el seguimiento solo la etapa
+   actual va abierta. */
 #ed-recorrido:empty { display: none; }
-.rc-barra {
-  display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; margin: 0 0 14px; padding: 6px 8px 6px 6px;
-  background: var(--surface-card); border: 1px solid var(--border-hairline); border-radius: 12px;
+.rc-nav { margin: 0 0 12px; }
+.rc-barra { border: 1px solid var(--border-hairline); border-radius: 10px; }
+.rc-barra[open] { background: var(--surface-card); }
+.rcb-resumen {
+  display: flex; align-items: center; gap: 4px 10px; min-height: 36px; padding: 4px 10px 4px 12px; border-radius: 9px;
+  list-style: none; cursor: pointer; font-size: 12.5px; color: var(--text-secondary); user-select: none;
 }
+.rcb-resumen::-webkit-details-marker { display: none; }
+.rcb-resumen:hover { background: var(--surface-1); }
+.rcb-resumen:focus-visible { outline-offset: -2px; }
+.rc-barra[open] .rcb-resumen { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.rcb-rotulo { font-size: 10.5px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); white-space: nowrap; padding-right: 10px; border-right: 1px solid var(--gridline); }
+.rcb-resumen .rcb-marca { width: 20px; height: 20px; font-size: 10.5px; }
+.rcb-res-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rcb-res-t b { font-weight: 700; color: var(--text-primary); }
+.rcb-resumen.rc-actual .rcb-res-det { color: var(--brand-orange-ink); font-weight: 700; }
+.rcb-ver { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; padding-left: 8px; font-weight: 700; color: var(--text-muted); white-space: nowrap; }
+.rcb-resumen:hover .rcb-ver { color: var(--text-primary); }
+.rcb-ver svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s ease; }
+.rc-barra[open] .rcb-ver svg { transform: rotate(180deg); }
+.rc-barra:not([open]) .rcb-ver-cerrar, .rc-barra[open] .rcb-ver-abrir { display: none; }
+.rcb-panel { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; padding: 6px 8px 6px 6px; border-top: 1px solid var(--gridline); }
+@media (max-width: 600px) { .rcb-rotulo, .rcb-ver-abrir, .rcb-ver-cerrar { display: none; } }
+@media (prefers-reduced-motion: reduce) { .rcb-ver svg { transition: none; } }
 .rcb-etapas { list-style: none; margin: 0; padding: 0; display: flex; align-items: center; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .rcb-etapas::-webkit-scrollbar { display: none; }
 /* relative: el texto para lectores de pantalla (posición absoluta) queda dentro del carrusel y no ensancha la página */
@@ -1372,13 +1403,13 @@ button.meta-carpeta .dot { margin: 0 0 0 2px; flex: 0 0 auto; }
 .rcb-det { font-size: 11px; font-weight: 700; color: var(--text-muted); white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
 /* El detalle se lee en la etapa actual; en las demás, en el tooltip y el seguimiento (y lo oye un lector de pantalla) */
 .rcb-etapa:not([aria-current]) .rcb-det { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.rcb-etapa.rc-hecha .rcb-marca { background: var(--text-primary); border-color: var(--text-primary); color: var(--page-plane); }
+.rcb-etapa.rc-hecha .rcb-marca, .rcb-resumen.rc-hecha .rcb-marca { background: var(--text-primary); border-color: var(--text-primary); color: var(--page-plane); }
 .rcb-etapa.rc-hecha .rcb-t { font-weight: 400; color: var(--text-secondary); }
 .rcb-etapa.rc-actual .rcb-btn { background: var(--orange-soft); }
-.rcb-etapa.rc-actual .rcb-marca { background: var(--brand-orange); border-color: var(--brand-orange); color: #000000; }
+.rcb-etapa.rc-actual .rcb-marca, .rcb-resumen.rc-actual .rcb-marca { background: var(--brand-orange); border-color: var(--brand-orange); color: #000000; }
 .rcb-etapa.rc-actual .rcb-det { color: var(--brand-orange-ink); }
 .rcb-etapa.rc-espera .rcb-btn { background: var(--surface-1); }
-.rcb-etapa.rc-espera .rcb-marca { border-style: dashed; }
+.rcb-etapa.rc-espera .rcb-marca, .rcb-resumen.rc-espera .rcb-marca { border-style: dashed; }
 .rcb-etapa.rc-omitida, .rcb-etapa.rc-no-aplica { opacity: .6; }
 .rcb-etapa.rc-no-aplica .rcb-t { text-decoration: line-through; text-decoration-thickness: 1px; }
 .rcb-sigue { display: flex; align-items: center; gap: 6px 12px; flex: 0 1 auto; margin-left: auto; padding-left: 14px; border-left: 1px solid var(--gridline); min-height: 40px; }
@@ -1398,22 +1429,11 @@ button.meta-carpeta .dot { margin: 0 0 0 2px; flex: 0 0 auto; }
 .paso-seg.active .paso-marca { background: var(--brand-orange); border-color: var(--brand-orange); color: #000000; }
 .paso-aviso { width: 8px; height: 8px; border-radius: 50%; background: var(--brand-orange); flex: 0 0 auto; }
 
-/* Seguimiento: lo que sigue y la línea de tiempo con las seis etapas */
+/* Seguimiento: la línea de tiempo con las seis etapas */
 .recorrido { margin: 0 0 16px; }
 .recorrido > .nota { margin-bottom: 14px; }
-.rc-sigue {
-  background: var(--surface-card); border: 1px solid var(--border-hairline); border-left: 3px solid var(--brand-orange);
-  border-radius: 8px; padding: 12px 16px; margin: 0 0 18px;
-}
-.rc-sigue.espera { border-left-color: var(--brand-gray-7); }
-.rc-sigue.fin { border-left-color: var(--text-primary); }
-.rc-sigue-t { margin: 0 0 4px; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .05em; color: var(--brand-orange-ink); }
-.rc-sigue.espera .rc-sigue-t, .rc-sigue.fin .rc-sigue-t { color: var(--text-secondary); }
-.rc-sigue-t span { font-weight: 700; text-transform: none; letter-spacing: 0; color: var(--text-secondary); }
-.rc-sigue-x { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--text-primary); }
-.rc-sigue .actions { margin-top: 10px; }
-.rc-linea { list-style: none; margin: 0; padding: 0; }
-.rcl { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 0 14px; padding: 0 0 18px; }
+.rc-linea { list-style: none; margin: 0; padding: 0; max-width: 960px; }
+.rcl { position: relative; display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 0 14px; padding: 0 0 8px; }
 /* La línea que une las etapas: oscura hasta donde ya se avanzó */
 .rcl::before { content: ''; position: absolute; left: 15px; top: 30px; bottom: 0; width: 2px; background: var(--gridline); }
 .rcl:last-child::before { display: none; }
@@ -1429,6 +1449,50 @@ button.meta-carpeta .dot { margin: 0 0 0 2px; flex: 0 0 auto; }
 .rcl-det { font-size: 12px; font-weight: 700; color: var(--text-secondary); }
 .rcl-hace { margin: 2px 0 0; font-size: 12.5px; color: var(--text-muted); max-width: 820px; }
 .rcl-herr { margin-top: 10px; padding: 12px 14px; background: var(--surface-card); border: 1px solid var(--border-hairline); border-radius: 10px; max-width: 920px; }
+/* Etapas plegadas (las que no son la actual): una línea que se despliega para ver el detalle */
+.rcl-plegada .rcl-cuerpo { padding: 0; }
+.rcl-plegada .rcl-head {
+  align-items: center; min-height: 32px; padding: 3px 10px; margin-left: -10px; border-radius: 8px;
+  list-style: none; cursor: pointer; user-select: none;
+}
+.rcl-plegada .rcl-head::-webkit-details-marker { display: none; }
+.rcl-plegada .rcl-head:hover { background: var(--surface-1); }
+.rcl-plegada .rcl-head:focus-visible { outline-offset: -2px; }
+.rcl-plegada .rcl-t { font-size: 14px; font-weight: 700; }
+.rcl-plegada.rc-hecha .rcl-t { color: var(--text-secondary); }
+.rcl-ver { display: inline-flex; margin-left: auto; color: var(--text-muted); }
+.rcl-plegada .rcl-head:hover .rcl-ver { color: var(--text-primary); }
+.rcl-ver svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s ease; }
+.rcl-plegada details[open] > .rcl-head .rcl-ver svg { transform: rotate(180deg); }
+.rcl-plegada details[open] { padding-bottom: 10px; }
+/* La etapa actual: abierta y destacada, con lo que sigue adentro */
+.rcl-actual { padding-bottom: 14px; }
+.rcl-actual > .rcl-cuerpo {
+  margin: -2px 0 0; padding: 12px 18px 16px; background: var(--surface-card);
+  border: 1.5px solid var(--brand-orange); border-radius: 12px;
+}
+.rcl-ahora { margin: 0 0 2px; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; color: var(--brand-orange-ink); }
+.rcl-actual .rcl-t { font-size: 19px; }
+.rcl-actual .rcl-det { font-size: 12.5px; }
+.rc-sigue { margin: 12px 0 0; padding: 10px 14px; background: var(--orange-soft); border-left: 3px solid var(--brand-orange); border-radius: 8px; }
+.rc-sigue.espera, .rc-sigue.fin { background: var(--surface-1); }
+.rc-sigue.espera { border-left-color: var(--brand-gray-7); }
+.rc-sigue.fin { border-left-color: var(--text-primary); }
+.rc-sigue-t { margin: 0 0 2px; font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; color: var(--brand-orange-ink); }
+.rc-sigue.espera .rc-sigue-t, .rc-sigue.fin .rc-sigue-t { color: var(--text-secondary); }
+.rc-sigue-x { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--text-primary); }
+.rc-sigue .actions { margin-top: 10px; }
+/* Dentro de la tarjeta, el detalle de la herramienta va sin otro recuadro */
+.rcl-actual .rcl-herr { margin-top: 14px; padding: 12px 0 0; background: none; border: 0; border-top: 1px solid var(--gridline); border-radius: 0; max-width: none; }
+/* La acción que sigue ya está arriba como botón principal: su copia en el detalle no se repite */
+.rcl-actual[data-sigue="ir-req"] .rcl-herr [data-accion="ir-req"],
+.rcl-actual[data-sigue="ir-paso"] .rcl-herr [data-accion="ir-paso"],
+.rcl-actual[data-sigue="oferta-elegir"] .rcl-herr [data-act="oferta-elegir"],
+.rcl-actual[data-sigue="herr-cotizacion"] .rcl-herr [data-act="herr-cotizacion"],
+.rcl-actual[data-sigue="herr-planilla"] .rcl-herr [data-act="herr-planilla"],
+.rcl-actual[data-sigue="herr-venta"] .rcl-herr [data-act="herr-venta"],
+.rcl-actual[data-sigue="enviar-af"] .rcl-herr [data-act="enviar-af"],
+.rcl-actual[data-sigue="abrir-af"] .rcl-herr a[href*="analisis-financiero"] { display: none; }
 .rcl-herr .actions { margin-top: 8px; }
 .rcl-herr .af-linea svg { width: 14px; height: 14px; vertical-align: -2px; margin-right: 5px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .rcl-pasos { margin: 6px 0 4px; padding-left: 20px; font-size: 13px; color: var(--text-secondary); }
@@ -1436,7 +1500,6 @@ button.meta-carpeta .dot { margin: 0 0 0 2px; flex: 0 0 auto; }
 .rcl.rc-hecha .rcl-marca { background: var(--text-primary); border-color: var(--text-primary); color: var(--page-plane); }
 .rcl.rc-actual .rcl-marca { background: var(--brand-orange); border-color: var(--brand-orange); color: #000000; box-shadow: 0 0 0 4px var(--orange-soft); }
 .rcl.rc-actual .rcl-det { color: var(--brand-orange-ink); }
-.rcl.rc-actual .rcl-herr { border-color: var(--brand-orange); }
 .rcl.rc-espera .rcl-marca { border-style: dashed; }
 .rcl.rc-omitida .rcl-cuerpo, .rcl.rc-no-aplica .rcl-cuerpo, .rcl.rc-pendiente .rcl-cuerpo { opacity: .78; }
 .rcl.rc-no-aplica .rcl-t { text-decoration: line-through; text-decoration-thickness: 1px; }
@@ -1445,12 +1508,14 @@ button.meta-carpeta .dot { margin: 0 0 0 2px; flex: 0 0 auto; }
   .rcl-marca { width: 26px; height: 26px; font-size: 12px; }
   .rcl::before { left: 12px; top: 26px; }
   .rcl-herr { padding: 10px 12px; }
+  .rcl-actual > .rcl-cuerpo { padding: 10px 12px 12px; }
+  .rcl-actual .rcl-t { font-size: 17px; }
 }
 /* La etapa nueva se resalta un instante cuando el proyecto avanza (marcarSiAvanzo) */
 @keyframes rc-cambio { 0% { box-shadow: 0 0 0 0 rgba(255, 81, 0, 0.55); } 100% { box-shadow: 0 0 0 12px rgba(255, 81, 0, 0); } }
-.rcb-etapa.rc-cambio .rcb-marca, .rcl.rc-cambio .rcl-marca { animation: rc-cambio .9s ease-out 2; }
+.rcb-etapa.rc-cambio .rcb-marca, .rcb-resumen.rc-cambio .rcb-marca, .rcl.rc-cambio .rcl-marca { animation: rc-cambio .9s ease-out 2; }
 .rcl.rc-cambio .rcl-herr { transition: background-color .9s ease-out; }
-@media (prefers-reduced-motion: reduce) { .rcb-etapa.rc-cambio .rcb-marca, .rcl.rc-cambio .rcl-marca { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .rcb-etapa.rc-cambio .rcb-marca, .rcb-resumen.rc-cambio .rcb-marca, .rcl.rc-cambio .rcl-marca { animation: none; } .rcl-ver svg { transition: none; } }
 .paso-pie-fin { display: inline-flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 @media (max-width: 640px) { .paso-pie-fin { display: flex; width: 100%; } .paso-pie-fin .btn { flex: 1 1 auto; } }
 /* Lista: qué sigue con cada oferta, bajo su estado */

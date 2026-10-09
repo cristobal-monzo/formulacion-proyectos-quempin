@@ -88,17 +88,17 @@ En ambos modos, eliminar un proyecto lo envía a la **papelera** (*Más → Pape
 ## Uso rápido
 
 1. **Datos** → al crear el proyecto eliges (o creas) la carpeta de su oferta: con su N° de requerimiento llegan el título, la ubicación y el presupuesto de la planilla. Completa el cliente y el responsable. Los parámetros (IVA, tarifas, metas) ya vienen con los valores de *Configuración*; ábrelos solo si este proyecto es distinto.
-2. **Partidas** → agrega cada partida con su cantidad y unidad.
+2. **Partidas** → agrega cada partida con su cantidad y unidad. Los costos comunes a todo el trabajo (instalación de faenas, traslados…) van en la **partida base** (*Agregar partida base*, o *⋯ → Convertir en partida base*; código PB, siempre primera): no va sola en la cotización y su costo directo se divide en partes iguales entre las demás partidas, por categoría, antes de la utilidad de cada una (2026-10-09). En el Excel exportado queda en un bloque bajo el total de la hoja *Partidas*, con fórmulas vivas.
 3. **Costos** → en *Materiales*, *Equipos*, *Mano de obra* y *Otros* agrega los ítems, elige su partida e ingresa las cantidades **por unidad de partida**. En *Otros* puedes usar **Agregar desde catálogo**.
 4. **Utilidad y precio** → define la **utilidad** de cada partida (% o $) y copia los valores netos para la cotización.
 5. **Evaluación** → revisa el veredicto y corrige las alertas. El botón del pie lleva a lo que sigue: **preparar la cotización** en Sistema QUEMPIN.
-6. **Seguimiento** → la oferta sigue sola su recorrido: la cotización emitida aparece con su número, **Marcar como Enviada** cuando sale al cliente y, si se adjudica, **Pasar a ejecución**. La barra de arriba dice siempre qué sigue. Para una revisión de la oferta usa **⋯ → Crear nueva versión** (mismo código, v2, v3…).
+6. **Seguimiento** → la oferta sigue sola su recorrido: la cotización emitida aparece con su número, **Marcar como Enviada** cuando sale al cliente y, si se adjudica, **Pasar a ejecución**. La línea «Recorrido de la oferta», arriba de los pasos, dice en qué etapa va; al desplegarla se ven las seis etapas y qué sigue. Para una revisión de la oferta usa **⋯ → Crear nueva versión** (mismo código, v2, v3…).
 
 Los valores con que parten los proyectos nuevos (IVA, tarifas y metas, y en modo local el prefijo del código) se cambian en **Configuración**, arriba a la derecha.
 
 Proyectos grandes: una pestaña de costos con más de 300 filas usa columnas de ancho fijo, para que escribir siga siendo inmediato (con 1.500 materiales, cada tecla pasó de ~0,5 s a ~0,08 s el 2026-10-08).
 
-Atajos: en las tablas, **Enter** baja a la fila siguiente (en la última fila agrega una nueva). En la columna de unidad, **↓** abre la lista de unidades. Duplicar, mover o eliminar una fila está en su menú **⋯**. En el listado, **/** enfoca el buscador. Los menús y selectores se manejan con flechas, **Enter** y **Esc**. En el teléfono las tablas se muestran como tarjetas.
+Atajos: en el proyecto abierto, **Ctrl+Z** deshace el último cambio y **Ctrl+Y** (o Ctrl+Shift+Z) lo rehace, hasta 100 pasos; también con las flechas junto a *Exportar Excel* (2026-10-09). Lo escrito seguido en un mismo campo es un paso, y cada acción (agregar o eliminar una fila, aplicar la utilidad) es otro; al deshacer, la herramienta vuelve a la pestaña donde se hizo el cambio y lo marca. No retira lo ya enviado a otras herramientas (Análisis Financiero, Sistema QUEMPIN, carpeta de la oferta). En las tablas, **Enter** baja a la fila siguiente (en la última fila agrega una nueva). En la columna de unidad, **↓** abre la lista de unidades. Duplicar, mover o eliminar una fila está en su menú **⋯**. En el listado, **/** enfoca el buscador. Los menús y selectores se manejan con flechas, **Enter** y **Esc**. En el teléfono las tablas se muestran como tarjetas.
 
 ## Estructura
 

@@ -210,8 +210,11 @@
     const hEnd = lineEnd(r.lines.manoObra.length);
     const oEnd = lineEnd(r.lines.otros.length);
     const S = { M: sheetRef('Materiales'), E: sheetRef('Equipos'), H: sheetRef('Mano de obra'), O: sheetRef('Otros'), P: sheetRef('Partidas') };
+    // Partida base: bloque propio bajo el total; cada partida suma su parte (costo ÷ partidas) en cada columna
+    const bRow = r.base ? pTot + 3 : null;
+    const cuota = (L) => (r.base ? `+IFERROR($${L}$${bRow}/$K$${bRow},0)` : '');
 
-    styleTitle(wsP, 'PARTIDAS Y RESUMEN DE COSTOS', `${ident} — Las cantidades de detalle se ingresan por unidad de partida.`, 17);
+    styleTitle(wsP, 'PARTIDAS Y RESUMEN DE COSTOS', `${ident} — Las cantidades de detalle se ingresan por unidad de partida.${r.base ? ' Los costos incluyen la parte de la partida base (abajo).' : ''}`, 17);
     wsP.columns = [
       { width: 7 }, { width: 44 }, { width: 8 }, { width: 9 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 },
       { width: 16 }, { width: 10 }, { width: 10 }, { width: 12 }, { width: 15 }, { width: 15 }, { width: 16 }, { width: 15 }, { width: 10 }
@@ -227,12 +230,12 @@
       row.getCell(2).value = pt.descripcion;
       row.getCell(3).value = pt.unidad;
       input(row.getCell(4), FMT.num); row.getCell(4).value = pt.cantidad;
-      link(row.getCell(5), FMT_M); row.getCell(5).value = F(`SUMIF(${S.M}!$C$5:$C$${mEnd},A${rr},${S.M}!$H$5:$H$${mEnd})`, pt.mat);
-      link(row.getCell(6), FMT_M); row.getCell(6).value = F(`SUMIF(${S.E}!$C$5:$C$${eEnd},A${rr},${S.E}!$H$5:$H$${eEnd})`, pt.eq);
-      link(row.getCell(7), FMT_M); row.getCell(7).value = F(`SUMIF(${S.H}!$C$5:$C$${hEnd},A${rr},${S.H}!$M$5:$M$${hEnd})`, pt.mo);
-      link(row.getCell(8), FMT_M); row.getCell(8).value = F(`SUMIF(${S.O}!$C$5:$C$${oEnd},A${rr},${S.O}!$H$5:$H$${oEnd})`, pt.otros);
+      link(row.getCell(5), FMT_M); row.getCell(5).value = F(`SUMIF(${S.M}!$C$5:$C$${mEnd},A${rr},${S.M}!$H$5:$H$${mEnd})${cuota('E')}`, pt.mat);
+      link(row.getCell(6), FMT_M); row.getCell(6).value = F(`SUMIF(${S.E}!$C$5:$C$${eEnd},A${rr},${S.E}!$H$5:$H$${eEnd})${cuota('F')}`, pt.eq);
+      link(row.getCell(7), FMT_M); row.getCell(7).value = F(`SUMIF(${S.H}!$C$5:$C$${hEnd},A${rr},${S.H}!$M$5:$M$${hEnd})${cuota('G')}`, pt.mo);
+      link(row.getCell(8), FMT_M); row.getCell(8).value = F(`SUMIF(${S.O}!$C$5:$C$${oEnd},A${rr},${S.O}!$H$5:$H$${oEnd})${cuota('H')}`, pt.otros);
       calc(row.getCell(9), FMT_M); row.getCell(9).value = F(`SUM(E${rr}:H${rr})`, pt.cd);
-      link(row.getCell(10), FMT.num); row.getCell(10).value = F(`SUMIF(${S.H}!$C$5:$C$${hEnd},A${rr},${S.H}!$L$5:$L$${hEnd})`, pt.dh);
+      link(row.getCell(10), FMT.num); row.getCell(10).value = F(`SUMIF(${S.H}!$C$5:$C$${hEnd},A${rr},${S.H}!$L$5:$L$${hEnd})${cuota('J')}`, pt.dh);
       row.getCell(11).value = pt.utilidadTipo === 'monto' ? '$' : '%';
       row.getCell(11).alignment = { horizontal: 'center' };
       input(row.getCell(11));
@@ -256,8 +259,35 @@
     tP.getCell(17).value = F(`IFERROR(O${pTot}/$O$${pTot},0)`, T.precioNeto ? 1 : 0); tP.getCell(17).numFmt = FMT.pct;
     const PT = (L) => `Partidas!$${L}$${pTot}`;
 
+    if (r.base) {
+      const b = r.base;
+      const hB = wsP.getRow(bRow - 1);
+      hB.values = ['ID', 'Partida base (no se cotiza sola)', 'Unid.', 'Cant.', 'Materiales', 'Equipos', 'Mano de obra', 'Otros', 'Costo directo',
+        'Días-Hombre', 'Se divide entre', 'Parte de cada partida'];
+      styleHeader(hB);
+      const row = wsP.getRow(bRow);
+      row.getCell(1).value = b.code;
+      row.getCell(2).value = b.descripcion;
+      row.getCell(3).value = b.unidad;
+      input(row.getCell(4), FMT.num); row.getCell(4).value = b.cantidad;
+      link(row.getCell(5), FMT_M); row.getCell(5).value = F(`SUMIF(${S.M}!$C$5:$C$${mEnd},A${bRow},${S.M}!$H$5:$H$${mEnd})`, b.mat);
+      link(row.getCell(6), FMT_M); row.getCell(6).value = F(`SUMIF(${S.E}!$C$5:$C$${eEnd},A${bRow},${S.E}!$H$5:$H$${eEnd})`, b.eq);
+      link(row.getCell(7), FMT_M); row.getCell(7).value = F(`SUMIF(${S.H}!$C$5:$C$${hEnd},A${bRow},${S.H}!$M$5:$M$${hEnd})`, b.mo);
+      link(row.getCell(8), FMT_M); row.getCell(8).value = F(`SUMIF(${S.O}!$C$5:$C$${oEnd},A${bRow},${S.O}!$H$5:$H$${oEnd})`, b.otros);
+      calc(row.getCell(9), FMT_M); row.getCell(9).value = F(`SUM(E${bRow}:H${bRow})`, b.cd);
+      link(row.getCell(10), FMT.num); row.getCell(10).value = F(`SUMIF(${S.H}!$C$5:$C$${hEnd},A${bRow},${S.H}!$L$5:$L$${hEnd})`, b.dh);
+      calc(row.getCell(11), FMT.int); row.getCell(11).value = F(`COUNTA($A$5:$A$${pEnd})`, b.partes);
+      calc(row.getCell(12), FMT_M); row.getCell(12).value = F(`IFERROR(I${bRow}/K${bRow},0)`, b.cuota);
+      const nota = wsP.getCell(`B${bRow + 1}`);
+      nota.value = b.partes
+        ? `Su costo se divide en partes iguales entre las ${b.partes} partidas de arriba y ya está sumado en sus columnas de costo y días-hombre.`
+        : 'No hay otras partidas entre las que dividirla: su costo no se suma al proyecto.';
+      nota.font = { name: FONT, size: 9, italic: true, color: { argb: b.partes ? C.gray : C.badFg } };
+    }
+
     // ---------------- Detalle: Materiales / Equipos / Otros ----------------
-    const qtyFormula = (rr) => `IFERROR(INDEX(${S.P}!$D$5:$D$${pEnd},MATCH(C${rr},${S.P}!$A$5:$A$${pEnd},0)),0)`;
+    // Los costos de la partida base (PB) buscan su cantidad en el bloque de la base
+    const qtyFormula = (rr) => `IFERROR(INDEX(${S.P}!$D$5:$D$${pEnd},MATCH(C${rr},${S.P}!$A$5:$A$${pEnd},0)),${r.base ? `IF(C${rr}=${S.P}!$A$${bRow},${S.P}!$D$${bRow},0)` : '0'})`;
     function detailSheet(ws, titulo, key, lines, items, end) {
       styleTitle(ws, titulo, `${ident} — Cantidad por unidad de partida × Cant. partida × Costo unitario.`, 8);
       ws.columns = [{ width: 7 }, { width: 44 }, { width: 10 }, { width: 8 }, { width: 14 }, { width: 15 }, { width: 12 }, { width: 16 }];
@@ -549,7 +579,7 @@
     section('DATOS DEL PROYECTO');
     const idRows = [
       ['Código', p.codigo], ['Versión', p.version], ['Título', p.titulo], ['Cliente / mandante', p.cliente],
-      ['Ubicación', p.ubicacion], ['Responsable', p.responsable], ['Fecha de formulación', p.fecha],
+      ['ID de licitación', p.idLicitacion], ['Ubicación', p.ubicacion], ['Responsable', p.responsable], ['Fecha de formulación', p.fecha],
       ['Estado', p.estado], ['Descripción', p.descripcion],
       [copia ? 'Actualizado el' : 'Exportado el', new Date().toLocaleString('es-CL')], ['ID interno', p.uid]
     ];
