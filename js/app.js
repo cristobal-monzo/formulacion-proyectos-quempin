@@ -1619,12 +1619,12 @@
     const opcCal = [{ v: 'habiles', l: 'Días hábiles', tip: 'Lunes a viernes, sin los días no laborables' }, { v: 'corridos', l: 'Días corridos', tip: 'Todos los días cuentan' }]
       .map((o) => Object.assign(o, { checked: (g.calendario || 'habiles') === o.v }));
     const escala = g.escala || 'auto';
-    const cuerpoCfg = `<div class="fila-campos tres">
+    const opcEscala = [['auto', 'Auto', 'Según el plazo'], ['dias', 'Días'], ['semanas', 'Semanas'], ['meses', 'Meses']]
+      .map(([v, l, tip]) => ({ v, l, tip, checked: escala === v }));
+    const cuerpoCfg = `<div class="fila-campos">
         <div class="campo"><label for="g-inicio">Fecha de inicio</label><input class="input" type="date" id="g-inicio" data-g="inicio" value="${esc(g.inicio || '')}">
           <span class="hint">${g.inicio ? 'El primer día de trabajo.' : `Sin fecha, el programa parte hoy (${esc(fechaG(QG().aDia(S.hoy())))}).`}</span></div>
         <div class="campo"><span class="lbl" id="g-cal-l">Calendario</span>${seg('g-cal', opcCal, { label: 'Calendario', data: 'data-g="calendario"' })}</div>
-        <div class="campo"><label for="g-escala">Escala de la lámina</label><select class="input" id="g-escala" data-g="escala">
-          ${[['auto', 'Automática'], ['dias', 'Días'], ['semanas', 'Semanas'], ['meses', 'Meses']].map(([v, l]) => `<option value="${v}" ${escala === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       </div>
       <div class="campo"><label for="g-nolab">Días no laborables <span class="opc">(opcional)</span></label><input class="input" id="g-nolab" data-g="noLaborables" value="${esc(listaFechas(g.noLaborables))}" placeholder="Ej.: 18-09-2026, 19-09-2026" autocomplete="off">
         <span class="hint">Feriados o días sin faena, separados por coma. Solo cuentan con el calendario de días hábiles.</span></div>`;
@@ -1649,18 +1649,31 @@
         <div class="actions">${nPart ? `<button type="button" class="btn btn-primario" data-act="g-partidas">${ICON.layers}Crear desde las partidas</button>` : ''}
           <button type="button" class="btn" data-act="g-tarea">${ICON.plus}Agregar una tarea</button></div>
       </div>`;
+    // Primero lo que se presenta (resumen y lámina); debajo, la tabla donde se edita
     return `${pasoHead('gantt', ayuda)}
       ${plegable('g-cfg', 'Calendario', esc(resumenCalendario(g)), cuerpoCfg)}
-      ${g.tareas.length ? `<div class="tbl-toolbar g-toolbar">
-        <div class="left">
-          <button type="button" class="btn btn-sm" data-act="g-tarea">${ICON.plus}Tarea</button>
-          <button type="button" class="btn btn-sm" data-act="g-hito">${ICON.plus}Hito</button>
-          ${sinPartida ? `<button type="button" class="btn btn-sm" data-act="g-partidas" data-tip="<b>Desde las partidas</b>Agrega una tarea por cada partida que todavía no tiene la suya">${ICON.layers}Desde las partidas (${sinPartida})</button>` : ''}
-        </div>
-        <div class="right"><button type="button" class="btn btn-primario btn-sm" data-act="g-pdf">${ICON.download}Descargar PDF</button></div>
+      ${g.tareas.length ? `<div id="g-errores"></div>
+      <div id="g-resumen" class="kpis g-resumen" role="status"></div>
+      <div class="g-lamina-cab">
+        <span class="seccion-titulo">Lámina</span>
+        <div class="g-lamina-ctl">${seg('g-escala', opcEscala, { label: 'Escala de la lámina', data: 'data-g="escala"' }, 'g-escala')}
+          <button type="button" class="btn btn-primario btn-sm" data-act="g-pdf">${ICON.download}Descargar PDF</button></div>
       </div>
-      <div id="g-resumen" class="g-resumen" role="status"></div>
-      <div id="g-errores"></div>
+      <div class="gantt-lienzo" id="g-lienzo"></div>
+      <div class="g-leyenda small" id="g-leyenda">
+        <span><i class="gl-barra"></i>Tarea</span><span><i class="gl-barra gl-critica"></i>Ruta crítica</span>
+        <span><i class="gl-barra gl-avance"></i>Avance</span><span><i class="gl-holgura"></i>Holgura</span>
+        <span><i class="gl-rombo"></i>Hito</span><span><i class="gl-hoy"></i>Hoy</span>
+        <span class="muted gl-nota">Pasa el mouse por una barra para ver el detalle; con un clic vas a su fila.</span>
+      </div>
+      <div class="tbl-toolbar g-toolbar">
+        <div class="left"><span class="seccion-titulo">Tareas <span class="tn">${plural(g.tareas.length, 'fila')}</span></span></div>
+        <div class="right">
+          ${sinPartida ? `<button type="button" class="btn btn-sm" data-act="g-partidas" data-tip="<b>Desde las partidas</b>Agrega una tarea por cada partida que todavía no tiene la suya">${ICON.layers}Desde las partidas (${sinPartida})</button>` : ''}
+          <button type="button" class="btn btn-sm" data-act="g-hito">${ICON.plus}Hito</button>
+          <button type="button" class="btn btn-sm" data-act="g-tarea">${ICON.plus}Tarea</button>
+        </div>
+      </div>
       <div class="tabla-contenedor">
         <table class="tbl tbl-apilable tbl-gantt">
           <colgroup><col class="c-n"><col><col class="c-resp g-opc"><col class="c-dias"><col class="c-pred"><col class="c-nad g-opc"><col class="c-av g-opc"><col class="c-fecha"><col class="c-fecha"><col class="c-acc"></colgroup>
@@ -1668,9 +1681,7 @@
           <tbody>${rows}</tbody>
         </table>
       </div>
-      <div class="g-lamina-cab"><span class="seccion-titulo">Lámina</span><span class="small muted" id="g-leyenda"></span></div>
-      <div class="gantt-lienzo" id="g-lienzo"></div>
-      <p class="small muted g-pie-borrar"><button type="button" class="link-btn" data-act="g-borrar">Borrar la Carta Gantt</button></p>` : vacio}`;
+      <p class="small muted g-pie-borrar"><span>Enter en el nombre baja a la tarea siguiente; en la última, agrega una nueva.</span><button type="button" class="link-btn" data-act="g-borrar">Borrar la Carta Gantt</button></p>` : vacio}`;
   }
 
   /* Lo calculado (fechas, resumen, ruta crítica y la lámina) sin redibujar los campos: se puede
@@ -1680,26 +1691,73 @@
     const g = ganttDe(state.project);
     const res = programaGantt();
     const body = $('#tab-body');
+    const numeros = numerosGantt(g);
+    const porUid = new Map(res.tareas.map((t) => [t.uid, t]));
     res.tareas.forEach((t) => {
       texto($(`[data-gc="ini:${t.uid}"]`, body), fechaG(t.dIni));
       texto($(`[data-gc="fin:${t.uid}"]`, body), fechaG(t.dFin));
       const tr = $(`tr[data-row="${t.uid}"]`, body);
       if (tr) tr.classList.toggle('g-critica', t.critica);
+      // La ayuda de las predecesoras dice a qué tareas apunta lo escrito
+      const inp = $(`[data-g="predecesoras"][data-gt="${t.uid}"]`, body);
+      if (inp) {
+        const ds = (t.predecesoras || []).filter((d) => porUid.has(d.uid));
+        const tip = ds.length
+          ? `<b>Va después de</b>${ds.map((d) => { const x = porUid.get(d.uid); const des = Number(d.desfase) || 0; return `${numeros.get(d.uid)} · ${esc(x.nombre || 'Sin nombre')} (${QG().NOMBRE_TIPO[d.tipo] || QG().NOMBRE_TIPO.FC}${des ? `, ${des > 0 ? '+' : '−'}${Math.abs(des)} d` : ''})`; }).join('<br>')}<div class="tt-hint">2 · 3CC · 4FF · 2+3</div>`
+          : '<b>Predecesoras</b>N° de las tareas que van antes: 2, 3CC, 4+2<div class="tt-hint">Vacío: parte al inicio del proyecto</div>';
+        if (inp.dataset.tip !== tip) inp.dataset.tip = tip;
+      }
     });
     texto($('#res-g-cfg'), resumenCalendario(g));
     const tipoDias = res.calendario.habiles ? 'días hábiles' : 'días corridos';
-    pintar($('#g-resumen'), res.tareas.length ? `<span><b>Inicio</b> ${esc(fechaG(res.inicio))}</span><span><b>Término</b> ${esc(fechaG(res.termino))}</span>
-      <span><b>Plazo</b> ${res.plazoLaborable} ${tipoDias}${res.calendario.habiles ? ` (${res.plazoCorrido} corridos)` : ''}</span>
-      <span class="g-ruta"><span class="g-swatch" aria-hidden="true"></span><b>Ruta crítica</b> ${res.criticas.length ? `${res.criticas.length === 1 ? 'tarea' : 'tareas'} ${res.criticas.join(', ')}` : '—'}</span>` : '');
+    const conDur = res.tareas.filter((t) => !t.hito);
+    const durTotal = conDur.reduce((a, t) => a + t.dur, 0);
+    const avance = durTotal ? Math.round(conDur.reduce((a, t) => a + t.dur * Math.max(0, Math.min(100, Number(t.avance) || 0)), 0) / durTotal) : 0;
+    const crit = res.criticas;
+    pintar($('#g-resumen'), res.tareas.length ? [
+      kpiTop('Inicio', esc(fechaG(res.inicio)), g.inicio ? 'Primer día de trabajo' : 'Sin fecha fija: parte hoy'),
+      kpiTop('Término', esc(fechaG(res.termino)), 'Entrega de la obra', 'accent'),
+      kpiTop('Plazo', `${res.plazoLaborable} <span class="unit">${tipoDias}</span>`, res.calendario.habiles ? `${res.plazoCorrido} días corridos` : 'Todos los días cuentan'),
+      kpiTop('Ruta crítica', `${crit.length} <span class="unit">de ${res.tareas.length}</span>`, crit.length ? `${crit.length === 1 ? 'Tarea' : 'Tareas'} ${crit.join(', ')}` : '—', '', 'Las tareas sin holgura: si una se atrasa, se atrasa el término del proyecto.'),
+      kpiTop('Avance', `${avance} <span class="unit">%</span>`, durTotal ? 'Ponderado por la duración' : 'Solo hitos', avance >= 100 ? 'sem-ok' : '')
+    ].join('') : '');
     pintar($('#g-errores'), res.errores.length ? `<div class="nota" role="alert"><span>${res.errores.map(esc).join('<br>')}</span></div>` : '');
     const cont = $('#g-lienzo');
     if (!cont) return;
     if (!res.tareas.length) { pintar(cont, ''); return; }
     const escala = QG().escalaDe(g, res);
-    texto($('#g-leyenda'), `Escala: ${{ dias: 'días', semanas: 'semanas', meses: 'meses' }[escala]}${(g.escala || 'auto') === 'auto' ? ' (automática)' : ''} · en naranja, la ruta crítica · ◆ hito`);
+    const auto = $('#tab-body input[name="g-escala"][value="auto"]');
+    if (auto) auto.closest('label').dataset.tip = `<b>Escala automática</b>Ahora en ${{ dias: 'días', semanas: 'semanas', meses: 'meses' }[escala]}, según el plazo`;
     const ancho = Math.max(640, Math.floor(cont.clientWidth) - 2);
-    pintar(cont, QG().svg(QG().dibujo(res, res.tareas, { ancho, escala, columnas: false, filaAlto: 22, cabeceraAlto: 34, size: 10 })));
+    const hoy = QG().aDia(S.hoy());
+    const ley = (cls, ver) => { const i = $(`#g-leyenda .${cls}`); if (i) i.parentElement.hidden = !ver; };
+    ley('gl-hoy', hoy >= res.inicio && hoy <= res.termino + 1);
+    ley('gl-holgura', res.tareas.some((t) => !t.hito && !t.critica && t.holgura > 0));
+    ley('gl-avance', conDur.some((t) => Number(t.avance) > 0));
+    ley('gl-rombo', res.tareas.some((t) => t.hito));
+    pintar(cont, QG().svg(QG().dibujo(res, res.tareas, {
+      ancho, escala, columnas: false, filaAlto: 26, cabeceraAlto: 38, size: 11, pantalla: true, etiquetas: true, hoy,
+      nombreAncho: Math.round(Math.max(170, Math.min(280, ancho * 0.24)))
+    })));
+    if (gEnfoque) marcarGantt(gEnfoque);
   }
+  /* Une la fila de la tabla con su barra en la lámina: al pasar el mouse por una se marca la otra */
+  let gEnfoque = null;
+  function marcarGantt(uid) {
+    $$('#tab-body .g-banda.on, #tab-body .tbl-gantt tr.g-par').forEach((x) => x.classList.remove('on', 'g-par'));
+    gEnfoque = uid || null;
+    if (!gEnfoque) return;
+    const b = $(`#g-lienzo .g-banda[data-uid="${gEnfoque}"]`);
+    if (b) b.classList.add('on');
+    const tr = $(`#tab-body .tbl-gantt tr[data-row="${gEnfoque}"]`);
+    if (tr) tr.classList.add('g-par');
+  }
+  document.addEventListener('mouseover', (e) => {
+    if (state.tab !== 'gantt' || !e.target.closest) return;
+    const el = e.target.closest('#g-lienzo [data-uid], .tbl-gantt tr[data-row]');
+    const uid = el ? (el.dataset.uid || el.dataset.row) : null;
+    if (uid !== gEnfoque) marcarGantt(uid);
+  });
   let ganttResize = null;
   window.addEventListener('resize', () => {
     if (state.tab !== 'gantt') return;
@@ -2796,6 +2854,13 @@
     // Filas del listado: Enter abre el proyecto
     if (e.key === 'Enter' && el.matches && el.matches('tr[data-open]')) { location.hash = `#/p/${el.dataset.open}/${el.dataset.destino || 'ficha'}`; return; }
     if ((e.key === 'Enter' || e.key === ' ') && el.matches && el.matches('th[data-sort]')) { e.preventDefault(); sortBy(el.dataset.sort); return; }
+    if (e.key === 'Enter' && el.dataset && el.dataset.g === 'nombre' && el.dataset.gt) {
+      e.preventDefault();
+      const sig = el.closest('tr').nextElementSibling;
+      const n = sig && $('[data-g="nombre"]', sig);
+      if (n) { n.focus(); n.select(); } else agregarTareaGantt(false);
+      return;
+    }
     // Enter: baja a la fila siguiente; en la última fila agrega una nueva (excepto en Resumen)
     if (e.key !== 'Enter' || !el.dataset || !el.dataset.list || el.tagName !== 'INPUT' || el.type === 'radio') return;
     e.preventDefault();
@@ -2918,6 +2983,8 @@
     if (pk) { openPicker(pk); return; }
     const th = e.target.closest('th[data-sort]');
     if (th) { sortBy(th.dataset.sort); return; }
+    const gb = e.target.closest('#g-lienzo [data-uid]');
+    if (gb) { flashRow(gb.dataset.uid); const n = $(`[data-g="nombre"][data-gt="${gb.dataset.uid}"]`); if (n) n.focus({ preventScroll: true }); return; }
     const btn = e.target.closest('[data-act]');
     if (btn && !btn.disabled) { doAct(btn.dataset.act, btn.dataset, btn); return; }
     const tr = e.target.closest('tr[data-open]');

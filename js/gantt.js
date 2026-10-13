@@ -26,9 +26,17 @@
   const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
   const DIAS = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
   const COLOR = {
-    critica: '#ff5100', criticaAvance: '#b23a00', tarea: '#54565a', tareaAvance: '#171513',
+    critica: '#ff5100', criticaAvance: '#b23a00', tarea: '#54565a', tareaAvance: '#1c1a18',
     hito: '#000000', texto: '#171513', suave: '#52514e', muted: '#898781', grilla: '#e1e0d9',
-    base: '#c3c2b7', finde: '#f4f2ee', cabecera: '#f4f2ee', flecha: '#898781', fondo: '#ffffff'
+    base: '#c3c2b7', finde: '#f4f2ee', cabecera: '#f4f2ee', flecha: '#898781', holgura: '#898781',
+    hoy: '#ff5100', fondo: '#ffffff', sobreBarra: '#fffffe' // sobreBarra: blanco también en modo oscuro
+  };
+  /* En pantalla cada color es una variable CSS (con el de papel como respaldo): la lámina sigue el
+     modo oscuro (css/styles.css, .gantt-lienzo). El PDF usa los colores tal cual. */
+  const VARIABLE = {
+    '#ff5100': '--g-critica', '#b23a00': '--g-critica-avance', '#54565a': '--g-tarea', '#1c1a18': '--g-tarea-avance',
+    '#000000': '--g-hito', '#171513': '--g-texto', '#52514e': '--g-suave', '#898781': '--g-muted',
+    '#e1e0d9': '--g-grilla', '#c3c2b7': '--g-base', '#f4f2ee': '--g-finde', '#ffffff': '--g-fondo'
   };
 
   // ---- Fechas (siempre en UTC: 'AAAA-MM-DD' ⇄ número de día) -------------------------------
@@ -221,8 +229,10 @@
 
   /* res: calcular(); filas: las tareas a dibujar (res.tareas o un tramo, para paginar el PDF).
      o: { ancho, escala, columnas: true (N°, duración, fechas) | false (solo N° y nombre), responsable,
-          filaAlto, cabeceraAlto, todas: res.tareas para las flechas entre tramos }
-     Devuelve { ancho, alto, figuras: [...] }. */
+          filaAlto, cabeceraAlto, todas: res.tareas para las flechas entre tramos, nombreAncho,
+          etiquetas: días y avance junto a cada barra, hoy: número de día para la línea «Hoy»,
+          pantalla: franjas por fila, esquinas redondeadas y ayudas (data-uid, data-tip) solo para el SVG }
+     Devuelve { ancho, alto, figuras: [...] }. Las figuras con pantalla: true no van al PDF. */
   function dibujo(res, filas, o) {
     const op = Object.assign({ ancho: 1000, escala: 'semanas', columnas: true, filaAlto: 16, cabeceraAlto: 30, size: 7.5 }, o || {});
     const figs = [];
@@ -233,7 +243,7 @@
     const sz = op.size;
     const conResp = op.columnas && op.responsable && filas.some((t) => String(t.responsable || '').trim());
     // Columnas de la tabla
-    const cols = [{ k: 'n', w: 20, al: 'right', tit: 'N°' }, { k: 'nombre', w: op.columnas ? 170 : 150, al: 'left', tit: 'Tarea' }];
+    const cols = [{ k: 'n', w: 20, al: 'right', tit: 'N°' }, { k: 'nombre', w: op.nombreAncho || (op.columnas ? 170 : 150), al: 'left', tit: 'Tarea' }];
     if (conResp) cols.push({ k: 'responsable', w: 70, al: 'left', tit: 'Responsable' });
     if (op.columnas) cols.push({ k: 'dur', w: 34, al: 'right', tit: 'Días' }, { k: 'dIni', w: 50, al: 'center', tit: 'Inicio' }, { k: 'dFin', w: 50, al: 'center', tit: 'Término' });
     let x = 0;
@@ -308,9 +318,18 @@
     }
     // Filas
     const yDe = new Map();
+    const unidad = cal.habiles ? 'hábiles' : 'corridos';
+    const ayuda = (t) => {
+      const lineas = [t.hito ? `Hito · ${fechaCorta(t.dIni)}` : `${fechaCorta(t.dIni)} → ${fechaCorta(t.dFin)} · ${t.dur} ${t.dur === 1 ? 'día' : 'días'} ${unidad}`];
+      if (!t.hito) lineas.push(`Avance ${Math.max(0, Math.min(100, Number(t.avance) || 0))} %`);
+      lineas.push(t.critica ? 'Ruta crítica: si se atrasa, se atrasa la entrega' : `Holgura: ${t.holgura} ${t.holgura === 1 ? 'día' : 'días'} ${unidad}`);
+      if (String(t.responsable || '').trim()) lineas.push(`Responsable: ${t.responsable}`);
+      return { titulo: `${t.n}. ${String(t.nombre || '').trim() || 'Sin nombre'}`, lineas };
+    };
     filas.forEach((t, i) => {
       const y = H + i * F;
       yDe.set(t.uid, y + F / 2);
+      if (op.pantalla) R(0, y, x1, F, { fill: 'transparent', uid: t.uid, cls: 'g-banda', tip: ayuda(t), pantalla: true });
       L(0, y + F, x1, y + F, { stroke: COLOR.grilla, lw: 0.3 });
       cols.forEach((c) => {
         let v = c.k === 'dur' ? (t.hito ? 'hito' : String(t.dur)) : c.k === 'dIni' ? fechaCorta(t.dIni) : c.k === 'dFin' ? fechaCorta(t.dFin) : c.k === 'n' ? String(t.n) : String(t[c.k] || '');
@@ -319,18 +338,42 @@
         T(xt, y + F / 2 + sz * 0.35, v, { size: sz, bold: c.k === 'nombre' && t.hito, color: c.k === 'nombre' || c.k === 'n' ? COLOR.texto : COLOR.suave, align: c.al, maxW: c.w - 6 });
       });
       const yc = y + F / 2;
+      const marca = op.pantalla ? { uid: t.uid, cls: 'g-barra', tip: ayuda(t) } : {};
       if (t.hito) {
         const xc = xHito(t), r = Math.min(F * 0.32, 5);
-        P([[xc, yc - r], [xc + r, yc], [xc, yc + r], [xc - r, yc]], { fill: t.critica ? COLOR.critica : COLOR.hito });
-        const etiqueta = recortar(t.nombre || '', sz - 0.5, false, Math.max(0, x1 - xc - r - 4));
-        if (etiqueta) T(xc + r + 3, yc + sz * 0.35, etiqueta, { size: sz - 0.5, color: COLOR.suave });
+        P([[xc, yc - r], [xc + r, yc], [xc, yc + r], [xc - r, yc]], Object.assign({ fill: t.critica ? COLOR.critica : COLOR.hito }, marca));
+        // El nombre a la derecha del rombo; si no cabe y a la izquierda hay más lugar, a la izquierda
+        const der = x1 - xc - r - 4, izq = xc - r - 4 - x0;
+        const aLaIzq = medir(t.nombre || '', sz - 0.5, false) > der && izq > der;
+        const etiqueta = recortar(t.nombre || '', sz - 0.5, false, Math.max(0, aLaIzq ? izq : der));
+        if (etiqueta) T(aLaIzq ? xc - r - 3 : xc + r + 3, yc + sz * 0.35, etiqueta, { size: sz - 0.5, color: COLOR.suave, align: aLaIzq ? 'right' : 'left' });
       } else {
         const xa = X(t.dIni), xb = X(t.dFin + 1), hb = F * 0.56;
-        R(xa, yc - hb / 2, Math.max(1.5, xb - xa), hb, { fill: t.critica ? COLOR.critica : COLOR.tarea });
+        // Holgura: hasta dónde puede correrse sin atrasar la entrega (línea fina tras la barra)
+        if (!t.critica && t.holgura > 0) {
+          const xh = Math.min(x1, X(cal.fecha(t.fin + t.holgura - 1) + 1));
+          const yh = yc + hb / 2 - 0.3;
+          if (xh > xb + 1) { L(xb, yh, xh, yh, { stroke: COLOR.holgura, lw: 0.6, dash: [1.5, 1.5] }); L(xh, yh - hb / 3, xh, yh, { stroke: COLOR.holgura, lw: 0.6 }); }
+        }
+        R(xa, yc - hb / 2, Math.max(1.5, xb - xa), hb, Object.assign({ fill: t.critica ? COLOR.critica : COLOR.tarea, r: op.pantalla ? Math.min(3, hb / 3) : 0 }, marca));
         const av = Math.max(0, Math.min(100, Number(t.avance) || 0));
-        if (av > 0) R(xa, yc - hb / 2 + hb * 0.3, Math.max(1, (xb - xa) * av / 100), hb * 0.4, { fill: t.critica ? COLOR.criticaAvance : COLOR.tareaAvance });
+        if (av > 0) R(xa, yc - hb / 2 + hb * 0.3, Math.max(1, (xb - xa) * av / 100), hb * 0.4, Object.assign({ fill: t.critica ? COLOR.criticaAvance : COLOR.tareaAvance }, marca));
+        if (op.etiquetas) {
+          const txt = `${t.dur} d${av > 0 ? ` · ${av} %` : ''}`;
+          const w = medir(txt, sz - 1, false);
+          if (xb + 4 + w <= x1) T(xb + 4, yc + (sz - 1) * 0.35, txt, { size: sz - 1, color: COLOR.suave });
+          else if (xb - xa > w + 8) T(xb - 4, yc + (sz - 1) * 0.35, txt, { size: sz - 1, color: COLOR.sobreBarra, align: 'right' });
+        }
       }
     });
+    // Hoy: línea vertical punteada si cae dentro de la lámina
+    if (op.hoy !== undefined && op.hoy !== null && op.hoy >= d0 && op.hoy < d1) {
+      const xh = X(op.hoy) + (esc === 'dias' ? px / 2 : 0);
+      L(xh, mitad, xh, alto, { stroke: COLOR.hoy, lw: 0.9, dash: [3, 2] });
+      const xp = Math.max(x0, Math.min(xh - 11, x1 - 22));
+      R(xp, mitad + 1, 22, mitad - 3, { fill: COLOR.hoy, r: 2 });
+      T(xp + 11, H - 5.5, 'Hoy', { size: sz - 1.5, bold: true, color: COLOR.sobreBarra, align: 'center' });
+    }
     // Flechas de dependencia (las dos tareas en esta lámina). FC: del fin de la predecesora baja a la
     // barra sucesora; CC: sale por la izquierda; FF: llega por la derecha; un solape (desfase negativo)
     // rodea la barra.
@@ -372,24 +415,29 @@
     return { ancho: x1, alto, figuras: figs };
   }
 
-  /* La lámina como SVG (pantalla). Texto en Helvetica/Arial: mide igual que en el PDF. */
+  /* La lámina como SVG (pantalla). Texto en Helvetica/Arial: mide igual que en el PDF. Los colores van
+     como variables CSS (VARIABLE) para el modo oscuro; las figuras con uid llevan data-uid y su ayuda. */
   function svg(lam) {
     const e = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const r2 = (v) => Math.round(v * 100) / 100;
-    const st = (f) => `${f.fill ? `fill="${f.fill}"` : 'fill="none"'}${f.stroke ? ` stroke="${f.stroke}" stroke-width="${f.lw || 0.5}"` : ''}${f.dash ? ` stroke-dasharray="${f.dash.join(' ')}"` : ''}`;
+    const c = (hex) => (VARIABLE[hex] ? `var(${VARIABLE[hex]}, ${hex})` : hex);
+    const st = (f) => `style="fill:${f.fill ? c(f.fill) : 'none'}${f.stroke ? `;stroke:${c(f.stroke)};stroke-width:${f.lw || 0.5}` : ''}${f.dash ? `;stroke-dasharray:${f.dash.join(' ')}` : ''}"`;
+    const extra = (f) => (f.uid ? ` data-uid="${e(f.uid)}"` : '') + (f.cls ? ` class="${f.cls}"` : '')
+      + (f.tip ? ` data-tip="${e(`<b>${e(f.tip.titulo)}</b>${f.tip.lineas.map(e).join('<br>')}`)}"` : '');
     const out = lam.figuras.map((f) => {
-      if (f.t === 'rect') return `<rect x="${r2(f.x)}" y="${r2(f.y)}" width="${r2(f.w)}" height="${r2(f.h)}" ${st(f)}/>`;
-      if (f.t === 'linea') return `<line x1="${r2(f.x1)}" y1="${r2(f.y1)}" x2="${r2(f.x2)}" y2="${r2(f.y2)}" stroke="${f.stroke || '#000'}" stroke-width="${f.lw || 0.5}"${f.dash ? ` stroke-dasharray="${f.dash.join(' ')}"` : ''}/>`;
-      if (f.t === 'poli') return `<polygon points="${f.pts.map((p) => `${r2(p[0])},${r2(p[1])}`).join(' ')}" ${st(f)}/>`;
+      if (f.t === 'rect') return `<rect x="${r2(f.x)}" y="${r2(f.y)}" width="${r2(f.w)}" height="${r2(f.h)}"${f.r ? ` rx="${r2(f.r)}"` : ''} ${st(f)}${extra(f)}/>`;
+      if (f.t === 'linea') return `<line x1="${r2(f.x1)}" y1="${r2(f.y1)}" x2="${r2(f.x2)}" y2="${r2(f.y2)}" ${st({ stroke: f.stroke || '#000000', lw: f.lw, dash: f.dash })}/>`;
+      if (f.t === 'poli') return `<polygon points="${f.pts.map((p) => `${r2(p[0])},${r2(p[1])}`).join(' ')}" ${st(f)}${extra(f)}/>`;
       const anchor = f.align === 'center' ? 'middle' : f.align === 'right' ? 'end' : 'start';
       const s = f.maxW ? recortar(f.s, f.size, f.bold, f.maxW) : f.s;
-      return `<text x="${r2(f.x)}" y="${r2(f.y)}" font-size="${f.size}" ${f.bold ? 'font-weight="700"' : ''} fill="${f.color || '#000'}" text-anchor="${anchor}">${e(s)}</text>`;
+      return `<text x="${r2(f.x)}" y="${r2(f.y)}" font-size="${f.size}" ${f.bold ? 'font-weight="700"' : ''} style="fill:${c(f.color || '#000000')}" text-anchor="${anchor}">${e(s)}</text>`;
     }).join('');
     return `<svg class="gantt-svg" viewBox="0 0 ${r2(lam.ancho)} ${r2(lam.alto)}" width="${r2(lam.ancho)}" height="${r2(lam.alto)}" font-family="Helvetica, Arial, sans-serif" role="img" aria-label="Carta Gantt">${out}</svg>`;
   }
 
   function pintarEnPdf(doc, lam, dx, dy) {
     lam.figuras.forEach((f) => {
+      if (f.pantalla) return;
       if (f.t === 'rect') doc.rect(f.x + dx, f.y + dy, f.w, f.h, f);
       else if (f.t === 'linea') doc.linea(f.x1 + dx, f.y1 + dy, f.x2 + dx, f.y2 + dy, f);
       else if (f.t === 'poli') doc.poligono(f.pts.map((p) => [p[0] + dx, p[1] + dy]), f);
@@ -413,6 +461,9 @@
     const fecha = ahora || new Date();
     const gen = `${String(fecha.getDate()).padStart(2, '0')}-${String(fecha.getMonth() + 1).padStart(2, '0')}-${fecha.getFullYear()}`;
     const tipoDias = res.calendario.habiles ? 'días hábiles' : 'días corridos';
+    const hoy = Math.round(Date.UTC(fecha.getFullYear(), fecha.getMonth(), fecha.getDate()) / DIA);
+    const conHoy = hoy >= res.inicio && hoy <= res.termino + 1;
+    const conHolgura = res.tareas.some((t) => !t.hito && !t.critica && t.holgura > 0);
     tramos.forEach((filas, k) => {
       doc.pagina();
       // Encabezado: logo, título, proyecto y fechas clave
@@ -430,7 +481,7 @@
       doc.texto(der, M + 26, `Plazo: ${res.plazoLaborable} ${tipoDias}${res.calendario.habiles ? ` (${res.plazoCorrido} corridos)` : ''}`, { size: 8.5, color: '#52514e', align: 'right' });
       doc.rect(M, M + 34, W, 1.6, { fill: '#ff5100' });
       // Lámina
-      const lam = dibujo(res, filas, { ancho: W, escala, filaAlto, cabeceraAlto: 28, columnas: true, responsable: true, todas: res.tareas });
+      const lam = dibujo(res, filas, { ancho: W, escala, filaAlto, cabeceraAlto: 28, columnas: true, responsable: true, todas: res.tareas, hoy });
       pintarEnPdf(doc, lam, M, arriba);
       // Leyenda y pie
       const yl = 595 - abajo + 8;
@@ -441,6 +492,8 @@
       ley((x0, y0) => { doc.rect(x0, y0 - 3, 16, 6, { fill: COLOR.tarea }); doc.rect(x0, y0 - 1.2, 9, 2.4, { fill: COLOR.tareaAvance }); }, 'Avance');
       ley((x0, y0) => doc.poligono([[x0 + 8, y0 - 4], [x0 + 12, y0], [x0 + 8, y0 + 4], [x0 + 4, y0]], { fill: COLOR.hito }), 'Hito');
       ley((x0, y0) => { doc.linea(x0, y0, x0 + 14, y0, { stroke: COLOR.flecha, lw: 0.6 }); doc.poligono([[x0 + 16, y0], [x0 + 12.8, y0 - 2], [x0 + 12.8, y0 + 2]], { fill: COLOR.flecha }); }, 'Dependencia');
+      if (conHolgura) ley((x0, y0) => { doc.linea(x0, y0 + 2, x0 + 16, y0 + 2, { stroke: COLOR.holgura, lw: 0.6, dash: [1.5, 1.5] }); doc.linea(x0 + 16, y0 - 1, x0 + 16, y0 + 2, { stroke: COLOR.holgura, lw: 0.6 }); }, 'Holgura');
+      if (conHoy) ley((x0, y0) => doc.linea(x0 + 8, y0 - 5, x0 + 8, y0 + 5, { stroke: COLOR.hoy, lw: 0.9, dash: [3, 2] }), `Hoy (${gen})`);
       doc.linea(M, 595 - 26, 842 - M, 595 - 26, { stroke: '#e1e0d9', lw: 0.5 });
       doc.texto(M, 595 - 16, `QUEMPIN SpA · Formulación de proyectos · generado el ${gen}`, { size: 7, color: '#898781' });
       doc.texto(842 - M, 595 - 16, `Página ${k + 1} de ${tramos.length}`, { size: 7, color: '#898781', align: 'right' });
