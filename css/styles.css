@@ -131,6 +131,13 @@ a.viz-modnav-tab.is-active:hover { background: none; }
 .en-vivo.err { color: var(--status-bad); font-weight: 700; }
 .en-vivo.err::before { background: var(--status-bad); }
 .en-vivo.saving::before { background: var(--brand-orange); }
+/* Indicador de guardado del editor: ocupa siempre el mismo espacio, sea «Guardando…» o un texto largo,
+   para que la cabecera no cambie de alto ni de ancho en cada tecla y la página no salte. Toma el ancho de
+   los botones sin ensancharlos (width 0 + min-width 100%) y reserva dos líneas; lo que no quepa se corta
+   con «…» y queda completo en el title. */
+#save-state { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; width: 0; min-width: 100%;
+  height: 2.9em; line-height: 1.45; overflow: hidden; overflow-wrap: anywhere; text-align: right; }
+#save-state::before { display: inline-block; margin-right: 6px; vertical-align: 1px; }
 
 /* ---- Botones ------------------------------------------------------------- */
 .btn {
@@ -1137,6 +1144,7 @@ dialog#modal::backdrop { background: rgba(0, 0, 0, .55); }
 @media (max-width: 760px) {
   .campo.doble { grid-column: 1 / -1; }
   .editor-actions { align-items: flex-start; width: 100%; }
+  #save-state { text-align: left; }
   .sens-row { grid-template-columns: 1fr 96px; }
   .sens-row input[type="range"] { grid-column: 1 / -1; grid-row: 2; }
   .pbar { grid-template-columns: minmax(0, 1fr) 96px; gap: 4px 10px; }

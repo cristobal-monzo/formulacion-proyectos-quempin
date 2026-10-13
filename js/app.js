@@ -670,7 +670,7 @@
   let saveTimer = null;
   function setSaveState(text, cls) {
     const el = $('#save-state');
-    if (el) { el.textContent = text; el.className = 'en-vivo ' + (cls || ''); }
+    if (el) { el.textContent = text; el.title = text; el.className = 'en-vivo ' + (cls || ''); }
   }
   /* campo: el campo de texto que se está escribiendo; mientras se siga en él, es un solo paso para
      Deshacer (ver anotarCambio). */
@@ -1297,7 +1297,7 @@
               <button class="btn" data-act="exp-xlsx" data-id="${p.uid}">${ICON.download}Exportar Excel</button>
               <button class="btn" data-menu="editor-more" data-id="${p.uid}" aria-haspopup="menu" aria-expanded="false" aria-label="Más acciones del proyecto">${ICON.more}</button>
             </div>
-            <span class="en-vivo ${textoGuardado()[1]}" id="save-state">${textoGuardado()[0]}</span>
+            <span class="en-vivo ${textoGuardado()[1]}" id="save-state" title="${esc(textoGuardado()[0])}">${esc(textoGuardado()[0])}</span>
           </div>
         </div>
         <div id="ed-recorrido"></div>
@@ -5106,6 +5106,43 @@
   const linea = (html) => `<p class="af-linea">${html}</p>`;
   const acciones = (html) => (html ? `<div class="actions">${html}</div>` : '');
   const chipEstado = (e) => { const x = ESTADO_SISTEMA[e] || ESTADO_SISTEMA.pendiente; return `<span class="chip ${x.cls}">${x.t}</span>`; };
+  /* Lo que dice Mercado Público de la licitación del requerimiento (licitaciones.json, que publica el
+     monitor del procesador, Sistema Intercambio/mercado_publico.py). La carpeta del equipo la puede
+     editar cualquiera con acceso a la biblioteca: todo se escapa y solo se enlaza a mercadopublico.cl. */
+  const RESULTADO_MP = {
+    ganada: { cls: 'ok', t: 'Adjudicada a QUEMPIN' }, perdida: { cls: 'bad', t: 'Adjudicada a otro' },
+    desierta: { cls: 'na', t: 'Desierta' }, revocada: { cls: 'na', t: 'Revocada' }, suspendida: { cls: 'warn', t: 'Suspendida' },
+    abierta: { cls: 'info', t: 'Recibiendo ofertas' }, 'en-evaluacion': { cls: 'warn', t: 'En evaluación' },
+    'compra-agil': { cls: 'info', t: 'Compra Ágil' }, 'no-encontrada': { cls: 'na', t: 'No encontrada' }
+  };
+  const enlaceMP = (url, texto) => (/^https:\/\/www\.mercadopublico\.cl\//.test(String(url || ''))
+    ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(texto)}</a>` : esc(texto));
+  function bloqueMercadoPublico(p, r, fila, lics) {
+    if (!fila) return { html: '', boton: '' };
+    const x = RESULTADO_MP[fila.resultado] || { cls: 'na', t: 'Sin resultado' };
+    const cuando = (f) => esc(fechaCorta(String(f || '').slice(0, 10)));
+    let det = '';
+    if (fila.resultado === 'ganada') {
+      det = `${fila.fechaAdjudicacion ? ` el ${cuando(fila.fechaAdjudicacion)}` : ''}${ok(fila.montoQuempin) ? ` por ${dinero(fila.montoQuempin, 'CLP')} neto` : ''}${Number.isInteger(fila.oferentes) && fila.oferentes > 1 ? `, entre ${fila.oferentes} oferentes` : ''}.`;
+    } else if (fila.resultado === 'perdida') {
+      const g = (fila.adjudicados || [])[0] || {};
+      const propio = r && r.totals ? r.totals.precioNeto : null;
+      const dif = ok(g.montoNeto) && ok(propio) && g.montoNeto > 0 ? (propio - g.montoNeto) / g.montoNeto : null;
+      det = ` Ganó ${esc(g.nombre || g.rut || 'otro proveedor')}${ok(g.montoNeto) ? ` con ${dinero(g.montoNeto, 'CLP')} neto` : ''}${ok(dif) ? ` (esta formulación: ${dif > 0 ? '+' : ''}${pct(dif)})` : ''}.`;
+    } else if (fila.resultado === 'en-evaluacion' && fila.fechaEstimadaAdjudicacion) {
+      det = ` Adjudicación estimada para el ${cuando(fila.fechaEstimadaAdjudicacion)}.`;
+    }
+    const acta = fila.urlActa ? ` · ${enlaceMP(fila.urlActa, 'Acta')}` : '';
+    const html = linea(`<span class="chip ${x.cls}">${x.t}</span> Mercado Público · ${enlaceMP(fila.url, fila.codigo)}${acta}.${det}`)
+      + (lics && lics.consultado ? `<p class="af-nota">Revisado en Mercado Público el ${esc(fechaHora(lics.consultado))}.</p>` : '');
+    // Un clic para dejar la oferta como dice Mercado Público (el estado sigue siendo de quien formula).
+    const cerrada = p.estado === 'Adjudicada' || p.estado === 'Perdida' || p.estado === 'Descartada';
+    const boton = fila.resultado === 'ganada' && p.estado !== 'Adjudicada'
+      ? '<button type="button" class="btn" data-act="sigue" data-accion="marcar-adjudicada">Marcar como Adjudicada</button>'
+      : ['perdida', 'desierta', 'revocada'].includes(fila.resultado) && !cerrada
+        ? '<button type="button" class="btn" data-act="sigue" data-accion="marcar-perdida">Marcar como Perdida</button>' : '';
+    return { html, boton };
+  }
   /* Lo que cada etapa muestra adentro: { etapa: html }, del proyecto abierto. pulso: la línea del procesador. */
   let herrDe = { uid: null, html: {}, aviso: '', pulso: '' };
 
@@ -5231,7 +5268,7 @@
     }
     // Mientras se lee la carpeta, la línea de tiempo ya está y cada etapa dice qué es
     if (herrDe.uid !== p.uid) { herrDe = { uid: p.uid, html: { formulacion: resumenFormulacion + acciones(bFormulacion) }, aviso: '', pulso: '<p class="af-nota herr-pulso">Revisando la carpeta del equipo…</p>' }; pintarRecorrido(recorridoDe(p)); }
-    const [docs, af, folios, reqs, estado] = await Promise.all(['documentos-comerciales', 'analisis-financiero', 'folios', 'requerimientos', 'estado']
+    const [docs, af, folios, reqs, estado, lics] = await Promise.all(['documentos-comerciales', 'analisis-financiero', 'folios', 'requerimientos', 'estado', 'licitaciones']
       .map((n) => (n === 'requerimientos' ? QH().requerimientos() : QH().publicacion(n))));
     if (state.project !== p || !$('#recorrido')) return;
     const cots = QH().cotizacionesDe(p, docs);
@@ -5307,6 +5344,9 @@
           : (avisado ? '' : linea(`Se avisaría a la planilla: <b>${esc(cambios.estado)}</b>${valor ? ` con ${dinero(valor, 'CLP')} (${esc(vi.texto)})` : ''}.`))
             + (ult ? linea(`${chipEstado('pendiente')} Aviso${(ult.cambios || {}).estado ? ` «${esc(ult.cambios.estado)}»` : ''} enviado el ${esc(fechaHora(ult.fecha))}: espera que quien lleva la planilla lo pase.`) : ''));
       if (cambios && !yaEsta && !avisado) bPla = `<button type="button" class="btn" data-act="herr-planilla">${ICON.enviar}Avisar a la Planilla de Ingreso</button>`;
+      const mp = bloqueMercadoPublico(p, r, ((lics && lics.licitaciones) || []).find((x) => String(x.req) === req), lics);
+      tPla += mp.html;
+      bPla = mp.boton + bPla;
     } else tPla += linea('Con el N° de requerimiento, el estado y el valor se avisan a la Planilla de Ingreso en el mismo clic.');
     html.oferta = tPla + acciones(bPla);
 
