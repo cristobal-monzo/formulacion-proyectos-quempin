@@ -76,6 +76,7 @@
 
   const svg = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
   const ICON = {
+    gantt: svg('<path d="M4 6h8M8 12h10M6 18h6"/>'),
     plus: svg('<path d="M12 5v14M5 12h14"/>'),
     upload: svg('<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>'),
     download: svg('<path d="M12 4v12M7 11l5 5 5-5M4 20h16"/>'),
@@ -157,7 +158,9 @@
     { id: 'resumen', label: 'Utilidad y precio', paso: 4 },
     { id: 'evaluacion', label: 'Evaluación', paso: 5 },
     // Después de formular: la cotización, la oferta y la ejecución (2026-10-06)
-    { id: 'seguimiento', label: 'Seguimiento', paso: 6 }
+    { id: 'seguimiento', label: 'Seguimiento', paso: 6 },
+    // Opcional, fuera de los pasos: el programa de trabajo (2026-10-13)
+    { id: 'gantt', label: 'Carta Gantt', paso: 7 }
   ];
   const COSTOS = ['materiales', 'equipos', 'manoObra', 'otros'];
   const PASOS = [
@@ -181,6 +184,7 @@
     otros: 'Traslados, viáticos y otros gastos por unidad de partida.',
     resumen: 'Define la utilidad de cada partida y copia los valores para la cotización.',
     evaluacion: '¿Conviene enviar la oferta? Rentabilidad, riesgo y presupuesto del mandante.',
+    gantt: 'Opcional: el programa de trabajo de la oferta, con tareas desde las partidas o escritas a mano, dependencias, hitos y ruta crítica. Se descarga en PDF y va en el Excel.',
     seguimiento: 'Lo que pasa después de formular: la cotización, el envío al cliente, la adjudicación y la ejecución. Cada etapa dice en qué herramienta se hace, en qué va y qué sigue.'
   };
 
@@ -473,6 +477,7 @@
       const vo = !enSP() && ofertaActiva() ? QO().vinculo(S.get(id)) : undefined;
       items = [
         enEditor ? { icon: ICON.print, title: 'Imprimir resumen', desc: 'Utilidad, precio y evaluación en una página', act: 'imprimir' } : null,
+        enEditor ? { icon: ICON.gantt, title: 'Carta Gantt', desc: ((state.project && state.project.gantt) || { tareas: [] }).tareas.length ? 'Ver, editar o descargar en PDF el programa de trabajo' : 'Opcional: el programa de trabajo de la oferta', act: 'tab', tab: 'gantt' } : null,
         enEditor ? { sep: true } : null,
         enEditor ? null : { icon: ICON.open, title: 'Abrir', act: 'abrir', id },
         ub && ub.webUrl ? { icon: ICON.folder, title: 'Abrir la carpeta en SharePoint', desc: ub.ruta, act: 'abrir-carpeta', id } : null,
@@ -543,6 +548,19 @@
           hayBase ? null : { icon: ICON.archive, title: 'Convertir en partida base', desc: 'Su costo se divide en partes iguales entre las demás partidas', act: 'partida-base', uid },
           { icon: ICON.trash, title: 'Eliminar partida', act: 'del-row', list, uid, danger: true }
         ].filter(Boolean));
+      } else if (list === 'gantt') {
+        const arr = ganttDe(state.project).tareas;
+        const i = arr.findIndex((x) => x.uid === uid);
+        const t = arr[i] || {};
+        items = [
+          { icon: ICON.up, title: 'Subir', act: 'g-mover', uid, dir: '-1', disabled: i <= 0 },
+          { icon: ICON.down, title: 'Bajar', act: 'g-mover', uid, dir: '1', disabled: i >= arr.length - 1 },
+          { sep: true },
+          { icon: ICON.copy, title: 'Duplicar', desc: 'Copia justo debajo, con las mismas predecesoras', act: 'g-duplicar', uid },
+          { icon: ICON.gantt, title: t.hito ? 'Convertir en tarea' : 'Convertir en hito', desc: t.hito ? 'Con duración de 1 día' : 'Un momento clave, sin duración (inicio, entrega…)', act: 'g-tipo', uid },
+          { sep: true },
+          { icon: ICON.trash, title: 'Eliminar', desc: 'Las que dependen de ella pierden esa predecesora', act: 'g-quitar', uid, danger: true }
+        ];
       } else {
         items = [
           { icon: ICON.copy, title: 'Duplicar fila', desc: 'Copia justo debajo, con la misma partida', act: 'dup-row', list, uid },
@@ -872,7 +890,7 @@
     if ($('#modal').open || (P && pop.contains(e.target))) return;
     const t = e.target;
     const campo = t.closest && t.closest('input, textarea, select, [contenteditable="true"]');
-    if (campo && !(app.contains(campo) && (campo.dataset.f || campo.dataset.list || campo.dataset.cat !== undefined))) return;
+    if (campo && !(app.contains(campo) && (campo.dataset.f || campo.dataset.list || campo.dataset.g || campo.dataset.cat !== undefined))) return;
     e.preventDefault();
     if (rehacer) rehacerCambio(); else deshacerCambio();
   });
@@ -1414,7 +1432,7 @@
           aria-label="Paso ${ps.n}: ${esc(ps.label)}${ps.n === 2 ? ` (${plural(ps.cant, 'partida')})` : ps.n === 3 ? ` (${plural(ps.cant, 'costo')})` : ''}, ${EST[ps.est]}">
           <span class="paso-marca" aria-hidden="true">${marca}</span><span class="paso-l">${esc(ps.label)}</span>${ps.n === 2 || ps.n === 3 ? `<span class="count" aria-hidden="true">${ps.cant}</span>` : ''}
         </button>`;
-    }).join('<span class="paso-sep" aria-hidden="true"></span>') + pestanaSeguimiento();
+    }).join('<span class="paso-sep" aria-hidden="true"></span>') + pestanaGantt() + pestanaSeguimiento();
     // Al escribir casi nunca cambia: sin cambios no se toca el DOM ni se mide (medir fuerza el diseño)
     if (!pintar(el, html)) return;
     // En pantallas angostas la barra se desplaza: mantener visible el paso activo
@@ -1424,6 +1442,16 @@
       if (l < el.scrollLeft) el.scrollLeft = l - 12;
       else if (r > el.scrollLeft + el.clientWidth) el.scrollLeft = r - el.clientWidth + 28;
     }
+  }
+
+  /* Pestaña «Carta Gantt», opcional: no es un paso de la formulación */
+  function pestanaGantt() {
+    const on = state.tab === 'gantt';
+    const n = ((state.project && state.project.gantt) || { tareas: [] }).tareas.length;
+    return `<span class="paso-sep paso-sep-seg" aria-hidden="true"></span><button type="button" class="paso-tab paso-seg paso-gantt ${on ? 'active' : ''}" data-act="tab" data-tab="gantt" ${on ? 'aria-current="page"' : ''}
+        aria-label="Carta Gantt, opcional${n ? `: ${plural(n, 'tarea')}` : ''}">
+        <span class="paso-marca" aria-hidden="true">${ICON.gantt}</span><span class="paso-l">Carta Gantt</span><span class="paso-opc" aria-hidden="true">${n || 'opcional'}</span>
+      </button>`;
   }
 
   /* Pestaña «Seguimiento», después de los 5 pasos: lo que sigue con la oferta en las demás herramientas.
@@ -1444,10 +1472,11 @@
   function pasoHead(tab, ayuda, rotulo) {
     const t = tabInfo(tab);
     const titulo = t.paso === 3 ? 'Costos' : tab === 'seguimiento' ? 'Seguimiento del proyecto' : t.label;
+    const rotuloPaso = tab === 'seguimiento' ? 'Después de formular' : tab === 'gantt' ? 'Opcional' : `Paso ${t.paso} de ${PASOS.length}`;
     const k = 'ayuda-' + tab;
     return `<div class="paso-head">
         <div class="paso-head-txt">
-          <h3 class="paso-titulo"><span class="paso-num">${tab === 'seguimiento' ? 'Después de formular' : `Paso ${t.paso} de ${PASOS.length}`}</span>${esc(titulo)}</h3>
+          <h3 class="paso-titulo"><span class="paso-num">${rotuloPaso}</span>${esc(titulo)}</h3>
           <p class="paso-proposito">${esc(PROPOSITO[tab])}</p>
         </div>
         ${ayuda ? `<details class="ayuda no-print" data-open-key="${k}" ${state.abiertos.has(k) ? 'open' : ''}>
@@ -1458,6 +1487,13 @@
 
   /* Pie de cada paso: anterior, lo que falta y siguiente */
   function pasoNav(tab) {
+    if (tab === 'gantt') {
+      return `<nav class="paso-pie no-print" aria-label="Pasos">
+        <button type="button" class="btn btn-ghost" data-act="tab" data-tab="evaluacion">← Evaluación</button>
+        <span class="paso-falta" id="paso-falta" role="status"></span>
+        <button type="button" class="btn btn-sig" data-act="tab" data-tab="seguimiento">Seguimiento${ICON.arrow}</button>
+      </nav>`;
+    }
     const i = ORDEN.indexOf(tab);
     const prev = ORDEN[i - 1], next = ORDEN[i + 1];
     const nombre = (id) => (COSTOS.includes(id) ? (COSTOS.includes(tab) ? DETALLE[id].titulo : `Costos · ${DETALLE[id].titulo}`) : tabInfo(id).label);
@@ -1512,6 +1548,7 @@
     else if (DETALLE[tab]) html = viewDetalle(tab);
     else if (tab === 'resumen') html = viewResumen();
     else if (tab === 'seguimiento') html = viewSeguimiento();
+    else if (tab === 'gantt') html = viewGantt();
     else html = viewEvaluacion();
     body.innerHTML = html + (state.imprimir ? '' : pasoNav(tab));
     history.replaceState(null, '', `#/p/${state.project.uid}/${tab}`);
@@ -1520,6 +1557,7 @@
     pintarAvisoEstado();
     if (tab === 'evaluacion' && !state.imprimir) pintarSesgo();
     if (tab === 'seguimiento') { pintarRecorrido(recorridoDe(state.project)); actualizarEstadoAF(state.project, false); pintarHerramientas(); }
+    if (tab === 'gantt') pintarGantt();
     if (focusKey) {
       const el = $(focusKey, body);
       if (el) { el.focus(); if (el.select && el.type !== 'number' && el.tagName === 'INPUT') el.select(); }
@@ -1548,6 +1586,262 @@
   const plegable = (key, titulo, resumen, cuerpo, cls) => `<details class="panel plegable ${cls || ''}" id="${key}" data-open-key="${key}" ${state.abiertos.has(key) || state.imprimir ? 'open' : ''}>
       <summary><span class="pl-t"><span class="seccion-titulo">${titulo}</span><span class="pl-res" id="res-${key}">${resumen}</span></span><span class="pl-accion" aria-hidden="true"></span></summary>
       <div class="pl-cuerpo">${cuerpo}</div></details>`;
+
+  // ---- Carta Gantt (opcional, 2026-10-13) --------------------------------------------
+  /* El programa de trabajo de la oferta: tareas desde las partidas o escritas a mano, dependencias,
+     hitos y ruta crítica (js/gantt.js), con PDF propio (js/pdf.js) y hoja en el Excel. No es un paso
+     de la formulación: no cuenta para que esté completa. p.gantt se crea con la primera edición. */
+  const QG = () => window.QGantt;
+  const GANTT_VACIO = () => ({ inicio: '', calendario: 'habiles', escala: 'auto', noLaborables: [], tareas: [] });
+  function ganttDe(p, crear) {
+    if (!p.gantt && crear) p.gantt = GANTT_VACIO();
+    return p.gantt || GANTT_VACIO();
+  }
+  const programaGantt = () => QG().calcular(ganttDe(state.project), S.hoy());
+  const numerosGantt = (g) => new Map(g.tareas.map((t, i) => [t.uid, i + 1]));
+  const fechaG = (d) => QG().fechaCorta(d);
+  const nuevaTarea = (o) => Object.assign({ uid: S.uid(), nombre: '', partida: '', responsable: '', duracion: 1, hito: false, avance: 0, noAntesDe: '', predecesoras: [] }, o || {});
+  const listaFechas = (xs) => (xs || []).map((x) => fechaG(QG().aDia(x))).join(', ');
+  const resumenCalendario = (g) => `Inicio ${g.inicio ? fechaG(QG().aDia(g.inicio)) : 'hoy'} · ${(g.calendario || 'habiles') === 'corridos' ? 'días corridos' : 'días hábiles'}${(g.noLaborables || []).length ? ` · ${plural(g.noLaborables.length, 'día no laborable', 'días no laborables')}` : ''}`;
+
+  function viewGantt() {
+    const p = state.project;
+    const g = ganttDe(p);
+    const numeros = numerosGantt(g);
+    const res = programaGantt();
+    const nPart = p.partidas.length;
+    const sinPartida = p.partidas.filter((pt) => !g.tareas.some((t) => t.partida === pt.uid)).length;
+    const ayuda = `<p>La Carta Gantt es <b>opcional</b>: no hace falta para terminar la formulación. Sirve para presentar el programa de trabajo en la oferta y para seguir el avance de la obra.</p>
+      <p><b>Agregar desde las partidas</b> crea una tarea por partida, una tras otra, con la duración que sugiere su mano de obra (días por unidad × cantidad, con una cuadrilla), más un hito de inicio y uno de entrega. Todo se puede cambiar.</p>
+      <p><b>Predecesoras</b>: el N° de las tareas que van antes, separados por coma. <b>2</b> = empieza cuando termina la 2; <b>2CC</b> = empieza cuando empieza la 2; <b>2FF</b> = termina cuando termina la 2. <b>+n</b> o <b>−n</b> suma o resta días: <b>2+3</b> empieza tres días después de que termina la 2.</p>
+      <p><b>No antes de</b> fija la fecha más temprana de una tarea. La <b>ruta crítica</b>, en naranja, son las tareas sin holgura: si una se atrasa, se atrasa el término del proyecto.</p>
+      <p>Los días son <b>hábiles</b> (lunes a viernes, sin los días no laborables que indiques) o <b>corridos</b>, según el calendario.</p>`;
+    const opcCal = [{ v: 'habiles', l: 'Días hábiles', tip: 'Lunes a viernes, sin los días no laborables' }, { v: 'corridos', l: 'Días corridos', tip: 'Todos los días cuentan' }]
+      .map((o) => Object.assign(o, { checked: (g.calendario || 'habiles') === o.v }));
+    const escala = g.escala || 'auto';
+    const cuerpoCfg = `<div class="fila-campos tres">
+        <div class="campo"><label for="g-inicio">Fecha de inicio</label><input class="input" type="date" id="g-inicio" data-g="inicio" value="${esc(g.inicio || '')}">
+          <span class="hint">${g.inicio ? 'El primer día de trabajo.' : `Sin fecha, el programa parte hoy (${esc(fechaG(QG().aDia(S.hoy())))}).`}</span></div>
+        <div class="campo"><span class="lbl" id="g-cal-l">Calendario</span>${seg('g-cal', opcCal, { label: 'Calendario', data: 'data-g="calendario"' })}</div>
+        <div class="campo"><label for="g-escala">Escala de la lámina</label><select class="input" id="g-escala" data-g="escala">
+          ${[['auto', 'Automática'], ['dias', 'Días'], ['semanas', 'Semanas'], ['meses', 'Meses']].map(([v, l]) => `<option value="${v}" ${escala === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      </div>
+      <div class="campo"><label for="g-nolab">Días no laborables <span class="opc">(opcional)</span></label><input class="input" id="g-nolab" data-g="noLaborables" value="${esc(listaFechas(g.noLaborables))}" placeholder="Ej.: 18-09-2026, 19-09-2026" autocomplete="off">
+        <span class="hint">Feriados o días sin faena, separados por coma. Solo cuentan con el calendario de días hábiles.</span></div>`;
+    const rows = g.tareas.map((t, i) => {
+      const n = i + 1;
+      const pc = t.partida ? codP(t.partida) : '';
+      return `<tr data-row="${t.uid}" class="${t.hito ? 'g-hito' : ''}">
+        <td class="code"><span class="g-num">${n}</span></td>
+        <td data-label="Tarea"><div class="g-tarea">${t.hito ? '<span class="g-rombo" aria-hidden="true"></span>' : ''}<input class="ci desc" data-g="nombre" data-gt="${t.uid}" value="${esc(t.nombre || '')}" aria-label="Nombre de la tarea ${n}" placeholder="${t.hito ? 'Ej.: Entrega de la obra' : 'Ej.: Montaje de la caldera'}">${pc ? `<span class="pcode" data-tip="<b>Desde la partida ${esc(pc)}</b>${esc(((p.partidas.find((x) => x.uid === t.partida) || {}).descripcion) || '')}">${esc(pc)}</span>` : ''}</div></td>
+        <td data-label="Responsable" class="g-opc"><input class="ci" data-g="responsable" data-gt="${t.uid}" value="${esc(t.responsable || '')}" aria-label="Responsable de la tarea ${n}"></td>
+        <td data-label="Días" class="num tercio">${t.hito ? '<span class="g-es-hito">hito</span>' : `<input class="ci num w-xs" type="number" min="1" step="1" inputmode="numeric" data-t="num" data-g="duracion" data-gt="${t.uid}" value="${esc(t.duracion)}" aria-label="Duración de la tarea ${n}, en días">`}</td>
+        <td data-label="Predecesoras" class="tercio"><input class="ci w-sm" data-g="predecesoras" data-gt="${t.uid}" value="${esc(QG().textoPredecesoras(t, numeros))}" placeholder="—" autocomplete="off" aria-label="Predecesoras de la tarea ${n}" data-tip="<b>Predecesoras</b>N° de las tareas que van antes: 2, 3CC, 4+2"></td>
+        <td data-label="No antes de" class="g-opc tercio"><input class="ci" type="date" data-g="noAntesDe" data-gt="${t.uid}" value="${esc(t.noAntesDe || '')}" aria-label="Fecha más temprana de la tarea ${n}"></td>
+        <td data-label="Avance %" class="num g-opc tercio">${t.hito ? '' : `<input class="ci num w-xs" type="number" min="0" max="100" step="5" inputmode="numeric" data-t="num" data-g="avance" data-gt="${t.uid}" value="${esc(t.avance || 0)}" aria-label="Avance de la tarea ${n}, en porcentaje">`}</td>
+        <td data-label="Inicio" class="calc tercio" data-gc="ini:${t.uid}"></td>
+        <td data-label="Término" class="calc tercio" data-gc="fin:${t.uid}"></td>
+        <td class="cell-actions">${btnFila('gantt', t.uid, `la tarea ${n}`)}</td>
+      </tr>`;
+    }).join('');
+    const vacio = `<div class="g-vacio">
+        <p><b>Todavía no hay tareas.</b> ${nPart ? `Puedes partir de las ${plural(nPart, 'partida')} del proyecto o escribir las tareas a mano.` : 'Escribe las tareas a mano, o agrega primero las partidas en el paso 2 para crearlas desde ahí.'}</p>
+        <div class="actions">${nPart ? `<button type="button" class="btn btn-primario" data-act="g-partidas">${ICON.layers}Crear desde las partidas</button>` : ''}
+          <button type="button" class="btn" data-act="g-tarea">${ICON.plus}Agregar una tarea</button></div>
+      </div>`;
+    return `${pasoHead('gantt', ayuda)}
+      ${plegable('g-cfg', 'Calendario', esc(resumenCalendario(g)), cuerpoCfg)}
+      ${g.tareas.length ? `<div class="tbl-toolbar g-toolbar">
+        <div class="left">
+          <button type="button" class="btn btn-sm" data-act="g-tarea">${ICON.plus}Tarea</button>
+          <button type="button" class="btn btn-sm" data-act="g-hito">${ICON.plus}Hito</button>
+          ${sinPartida ? `<button type="button" class="btn btn-sm" data-act="g-partidas" data-tip="<b>Desde las partidas</b>Agrega una tarea por cada partida que todavía no tiene la suya">${ICON.layers}Desde las partidas (${sinPartida})</button>` : ''}
+        </div>
+        <div class="right"><button type="button" class="btn btn-primario btn-sm" data-act="g-pdf">${ICON.download}Descargar PDF</button></div>
+      </div>
+      <div id="g-resumen" class="g-resumen" role="status"></div>
+      <div id="g-errores"></div>
+      <div class="tabla-contenedor">
+        <table class="tbl tbl-apilable tbl-gantt">
+          <colgroup><col class="c-n"><col><col class="c-resp g-opc"><col class="c-dias"><col class="c-pred"><col class="c-nad g-opc"><col class="c-av g-opc"><col class="c-fecha"><col class="c-fecha"><col class="c-acc"></colgroup>
+          <thead><tr><th>N°</th><th>Tarea</th><th class="g-opc">Responsable</th><th class="num">Días</th><th>Predecesoras</th><th class="g-opc">No antes de</th><th class="num g-opc">Avance</th><th>Inicio</th><th>Término</th><th><span class="visualmente-oculto">Acciones</span></th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div class="g-lamina-cab"><span class="seccion-titulo">Lámina</span><span class="small muted" id="g-leyenda"></span></div>
+      <div class="gantt-lienzo" id="g-lienzo"></div>
+      <p class="small muted g-pie-borrar"><button type="button" class="link-btn" data-act="g-borrar">Borrar la Carta Gantt</button></p>` : vacio}`;
+  }
+
+  /* Lo calculado (fechas, resumen, ruta crítica y la lámina) sin redibujar los campos: se puede
+     seguir escribiendo. */
+  function pintarGantt() {
+    if (state.tab !== 'gantt' || !state.project) return;
+    const g = ganttDe(state.project);
+    const res = programaGantt();
+    const body = $('#tab-body');
+    res.tareas.forEach((t) => {
+      texto($(`[data-gc="ini:${t.uid}"]`, body), fechaG(t.dIni));
+      texto($(`[data-gc="fin:${t.uid}"]`, body), fechaG(t.dFin));
+      const tr = $(`tr[data-row="${t.uid}"]`, body);
+      if (tr) tr.classList.toggle('g-critica', t.critica);
+    });
+    texto($('#res-g-cfg'), resumenCalendario(g));
+    const tipoDias = res.calendario.habiles ? 'días hábiles' : 'días corridos';
+    pintar($('#g-resumen'), res.tareas.length ? `<span><b>Inicio</b> ${esc(fechaG(res.inicio))}</span><span><b>Término</b> ${esc(fechaG(res.termino))}</span>
+      <span><b>Plazo</b> ${res.plazoLaborable} ${tipoDias}${res.calendario.habiles ? ` (${res.plazoCorrido} corridos)` : ''}</span>
+      <span class="g-ruta"><span class="g-swatch" aria-hidden="true"></span><b>Ruta crítica</b> ${res.criticas.length ? `${res.criticas.length === 1 ? 'tarea' : 'tareas'} ${res.criticas.join(', ')}` : '—'}</span>` : '');
+    pintar($('#g-errores'), res.errores.length ? `<div class="nota" role="alert"><span>${res.errores.map(esc).join('<br>')}</span></div>` : '');
+    const cont = $('#g-lienzo');
+    if (!cont) return;
+    if (!res.tareas.length) { pintar(cont, ''); return; }
+    const escala = QG().escalaDe(g, res);
+    texto($('#g-leyenda'), `Escala: ${{ dias: 'días', semanas: 'semanas', meses: 'meses' }[escala]}${(g.escala || 'auto') === 'auto' ? ' (automática)' : ''} · en naranja, la ruta crítica · ◆ hito`);
+    const ancho = Math.max(640, Math.floor(cont.clientWidth) - 2);
+    pintar(cont, QG().svg(QG().dibujo(res, res.tareas, { ancho, escala, columnas: false, filaAlto: 22, cabeceraAlto: 34, size: 10 })));
+  }
+  let ganttResize = null;
+  window.addEventListener('resize', () => {
+    if (state.tab !== 'gantt') return;
+    clearTimeout(ganttResize);
+    ganttResize = setTimeout(pintarGantt, 120);
+  });
+
+  /* Edición de un campo de la Carta Gantt. Devuelve true si cambió algo. */
+  function editarGantt(el, e) {
+    const p = state.project;
+    const k = el.dataset.g, uid = el.dataset.gt;
+    if (!uid) {
+      if (k === 'noLaborables') {
+        if (e.type !== 'change') return false;
+        const g = ganttDe(p, true);
+        const fechas = [], malas = [];
+        el.value.split(/[,;\s]+/).filter(Boolean).forEach((x) => { const f = QG().leerFecha(x); if (f) fechas.push(f); else malas.push(x); });
+        const nuevas = [...new Set(fechas)].sort();
+        if (malas.length) toast(`No se entiende ${malas.map((x) => `«${x}»`).join(', ')}: escribe las fechas como 18-09-2026.`, true);
+        el.value = listaFechas(nuevas);
+        if (JSON.stringify(nuevas) === JSON.stringify(g.noLaborables || [])) return false;
+        g.noLaborables = nuevas;
+        return true;
+      }
+      const g = ganttDe(p, true);
+      const v = k === 'calendario' ? (el.value === 'corridos' ? 'corridos' : 'habiles') : el.value || '';
+      if (k === 'escala' && !['auto', 'dias', 'semanas', 'meses'].includes(v)) return false;
+      if (!['inicio', 'calendario', 'escala'].includes(k) || g[k] === v) return false;
+      g[k] = v;
+      return true;
+    }
+    const g = ganttDe(p, true);
+    const tarea = g.tareas.find((x) => x.uid === uid);
+    if (!tarea) return false;
+    if (k === 'predecesoras') {
+      if (e.type !== 'change') return false;
+      const r = QG().leerPredecesoras(el.value, g.tareas, uid);
+      if (r.errores.length) toast(r.errores.join(' '), true);
+      const antes = JSON.stringify(tarea.predecesoras || []);
+      tarea.predecesoras = r.lista;
+      el.value = QG().textoPredecesoras(tarea, numerosGantt(g));
+      return antes !== JSON.stringify(r.lista);
+    }
+    if (k === 'duracion' || k === 'avance') {
+      const x = parseFloat(el.value);
+      const valido = k === 'duracion' ? x >= 1 : Number.isFinite(x);
+      if (!valido) { if (e.type === 'change') el.value = tarea[k] || (k === 'duracion' ? 1 : 0); return false; }
+      const v = k === 'duracion' ? Math.min(3650, Math.round(x)) : Math.max(0, Math.min(100, Math.round(x)));
+      if (e.type === 'change' && String(v) !== el.value) el.value = v;
+      if (tarea[k] === v) return false;
+      tarea[k] = v;
+      return true;
+    }
+    if (!['nombre', 'responsable', 'noAntesDe'].includes(k) || tarea[k] === el.value) return false;
+    tarea[k] = el.value;
+    return true;
+  }
+
+  /* Una tarea por partida que todavía no tiene la suya, una tras otra, con hito de inicio y de entrega */
+  function ganttDesdePartidas() {
+    const p = state.project;
+    const g = ganttDe(p, true);
+    const con = new Set(g.tareas.map((t) => t.partida).filter(Boolean));
+    const nuevas = p.partidas.filter((pt) => !con.has(pt.uid));
+    if (!nuevas.length) { toast('Todas las partidas ya tienen su tarea.'); return; }
+    const ts = g.tareas;
+    const esEntrega = (t) => t.hito && /entrega|t[ée]rmino|recepci/i.test(t.nombre || '');
+    if (!ts.length) ts.push(nuevaTarea({ nombre: 'Inicio de obras', hito: true }));
+    const iEntrega = ts.findIndex(esEntrega);
+    const antes = iEntrega >= 0 ? ts.slice(0, iEntrega) : ts;
+    let previa = [...antes].reverse().find((t) => !t.hito) || [...antes].reverse()[0] || null;
+    const agregadas = nuevas.map((pt) => {
+      const t = nuevaTarea({
+        nombre: pt.descripcion || (pt.base ? 'Partida base' : codP(pt.uid)), partida: pt.uid,
+        duracion: QG().duracionSugerida(pt, p.manoObra),
+        predecesoras: previa ? [{ uid: previa.uid, tipo: 'FC', desfase: 0 }] : []
+      });
+      previa = t;
+      return t;
+    });
+    if (iEntrega >= 0) {
+      ts.splice(iEntrega, 0, ...agregadas);
+      ts[iEntrega + agregadas.length].predecesoras = [{ uid: previa.uid, tipo: 'FC', desfase: 0 }];
+    } else {
+      ts.push(...agregadas, nuevaTarea({ nombre: 'Entrega y recepción', hito: true, predecesoras: [{ uid: previa.uid, tipo: 'FC', desfase: 0 }] }));
+    }
+    renderTab();
+    updateTabs();
+    scheduleSave();
+    toast(`${plural(agregadas.length, 'tarea')} desde las partidas, una tras otra, con la duración que sugiere su mano de obra. Ajusta lo que haga falta.`);
+  }
+
+  function agregarTareaGantt(hito) {
+    const g = ganttDe(state.project, true);
+    const ultima = g.tareas[g.tareas.length - 1];
+    const t = nuevaTarea({ hito: !!hito, predecesoras: ultima ? [{ uid: ultima.uid, tipo: 'FC', desfase: 0 }] : [] });
+    g.tareas.push(t);
+    renderTab(`[data-g="nombre"][data-gt="${t.uid}"]`);
+    updateTabs();
+    flashRow(t.uid);
+    scheduleSave();
+  }
+
+  /* El logo oficial en JPEG con fondo blanco (el PDF lo incrusta tal cual) */
+  function logoJpeg() {
+    const L = window.QLogo;
+    if (!L || !L.png) return Promise.resolve(null);
+    return new Promise((listo) => {
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const f = Math.min(1, 480 / img.naturalWidth);
+          const c = document.createElement('canvas');
+          c.width = Math.round(img.naturalWidth * f); c.height = Math.round(img.naturalHeight * f);
+          const x = c.getContext('2d');
+          x.fillStyle = '#ffffff'; x.fillRect(0, 0, c.width, c.height);
+          x.drawImage(img, 0, 0, c.width, c.height);
+          const bin = atob(c.toDataURL('image/jpeg', 0.92).split(',')[1]);
+          const u = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+          listo({ jpeg: u, px: c.width, py: c.height });
+        } catch (e) { listo(null); }
+      };
+      img.onerror = () => listo(null);
+      img.src = 'data:image/png;base64,' + L.png;
+    });
+  }
+
+  async function ganttPdf() {
+    const p = state.project;
+    const res = programaGantt();
+    if (!res.tareas.length) { toast('Agrega al menos una tarea antes de descargar el PDF.', true); return; }
+    if (saveTimer) saveNow();
+    const bytes = QG().pdf(p, res, await logoJpeg(), new Date());
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+    a.download = `Carta Gantt ${X.fileBase(p)}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    toast('Carta Gantt descargada en PDF');
+  }
 
   // ---- Paso 1: datos del proyecto ------------------------------------------------
   const resumenPrecio = (par) => `IVA ${nf(num(par.iva))} % · gastos generales ${nf(num(par.gastosGenerales))} % · imprevistos ${nf(num(par.imprevistos))} % · día-hombre ${dinero(num(par.tarifaN1))} / ${dinero(num(par.tarifaN2))} / ${dinero(num(par.tarifaN3))}`;
@@ -2400,6 +2694,7 @@
     if (!el || !el.dataset) return null;
     if (el.dataset.list && el.dataset.uid) return `[data-list="${el.dataset.list}"][data-uid="${el.dataset.uid}"][data-k="${el.dataset.k}"]${el.type === 'radio' ? ':checked' : ''}`;
     if (el.dataset.f) return `[data-f="${el.dataset.f}"]`;
+    if (el.dataset.g) return `[data-g="${el.dataset.g}"]${el.dataset.gt ? `[data-gt="${el.dataset.gt}"]` : ''}${el.type === 'radio' ? ':checked' : ''}`;
     if (el.dataset.cat !== undefined && el.dataset.k) return `[data-cat="${el.dataset.cat}"][data-k="${el.dataset.k}"]`;
     return null;
   }
@@ -2422,6 +2717,13 @@
     if (e.type === 'change') hist.grupo = null; // al salir del campo, lo que se escriba después es otro paso de Deshacer
     if (el.id === 'f-req') {
       if (e.type === 'change') fijarRequerimiento(el.value);
+      return;
+    }
+    if (el.dataset.g) {
+      if (!editarGantt(el, e)) return;
+      pintarGantt();
+      updateTabs();
+      scheduleSave(e.type === 'input' && escribible(el) ? focusKeyOf(el) : null);
       return;
     }
     let touched = false;
@@ -2656,6 +2958,47 @@
           break;
         }
         case 'importar': if (await exigirCarpeta()) $('#file-import').click(); break;
+        case 'g-partidas': ganttDesdePartidas(); break;
+        case 'g-tarea': agregarTareaGantt(false); break;
+        case 'g-hito': agregarTareaGantt(true); break;
+        case 'g-pdf': await ganttPdf(); break;
+        case 'g-mover': case 'g-duplicar': case 'g-tipo': case 'g-quitar': {
+          const g = ganttDe(p, true);
+          const i = g.tareas.findIndex((x) => x.uid === d.uid);
+          if (i < 0) break;
+          const t = g.tareas[i];
+          let foco = null;
+          if (act === 'g-mover') {
+            const j = i + (+d.dir || 0);
+            if (j < 0 || j >= g.tareas.length) break;
+            g.tareas.splice(j, 0, g.tareas.splice(i, 1)[0]);
+          } else if (act === 'g-duplicar') {
+            const c = nuevaTarea(Object.assign(JSON.parse(JSON.stringify(t)), { uid: S.uid(), nombre: `${t.nombre || 'Tarea'} (copia)`, partida: '' }));
+            g.tareas.splice(i + 1, 0, c);
+            foco = `[data-g="nombre"][data-gt="${c.uid}"]`;
+          } else if (act === 'g-tipo') {
+            t.hito = !t.hito;
+            if (!t.hito && !(t.duracion >= 1)) t.duracion = 1;
+          } else {
+            g.tareas.splice(i, 1);
+            g.tareas.forEach((x) => { x.predecesoras = (x.predecesoras || []).filter((dd) => dd.uid !== t.uid); });
+            toast(`Tarea ${i + 1} eliminada · Ctrl+Z la recupera`);
+          }
+          renderTab(foco);
+          updateTabs();
+          if (act !== 'g-quitar') flashRow(foco ? g.tareas[i + 1].uid : t.uid);
+          scheduleSave();
+          break;
+        }
+        case 'g-borrar': {
+          const v = await ask({ title: 'Borrar la Carta Gantt', body: '<p>Se borran todas las tareas, hitos y el calendario de este proyecto. La formulación no cambia.</p><p>Ctrl+Z lo deshace.</p>', buttons: [{ label: 'Cancelar', value: '' }, { label: 'Borrar', value: 'si', danger: true }] });
+          if (v !== 'si') break;
+          delete p.gantt;
+          renderTab();
+          updateTabs();
+          scheduleSave();
+          break;
+        }
         case 'abrir': { const x = S.get(id); goProject(x, destinoDe(x)); break; }
         case 'exp-xlsx': {
           if (saveTimer) saveNow();

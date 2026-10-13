@@ -320,6 +320,19 @@
     ['partidas', 'materiales', 'equipos', 'manoObra', 'otros'].forEach((k) => {
       out[k] = Array.isArray(out[k]) ? out[k].map((it) => Object.assign({}, it, { uid: it.uid || uid() })) : [];
     });
+    // Carta Gantt (opcional, 2026-10-13): solo si el proyecto la tiene; se completa lo que falte
+    if (out.gantt && typeof out.gantt === 'object') {
+      const g = out.gantt;
+      out.gantt = {
+        inicio: typeof g.inicio === 'string' ? g.inicio : '',
+        calendario: g.calendario === 'corridos' ? 'corridos' : 'habiles',
+        escala: ['dias', 'semanas', 'meses'].includes(g.escala) ? g.escala : 'auto',
+        noLaborables: Array.isArray(g.noLaborables) ? g.noLaborables.filter((x) => typeof x === 'string') : [],
+        tareas: (Array.isArray(g.tareas) ? g.tareas : []).filter((t) => t && typeof t === 'object').map((t) => Object.assign(
+          { nombre: '', partida: '', responsable: '', duracion: 1, hito: false, avance: 0, noAntesDe: '' }, t,
+          { uid: t.uid || uid(), predecesoras: Array.isArray(t.predecesoras) ? t.predecesoras.filter((d) => d && d.uid) : [] }))
+      };
+    } else delete out.gantt;
     // Una sola partida base, siempre la primera de la lista
     const iBase = out.partidas.findIndex((pt) => pt.base);
     out.partidas.forEach((pt, i) => { if (pt.base && i !== iBase) delete pt.base; });
@@ -345,6 +358,7 @@
     ['materiales', 'equipos', 'manoObra', 'otros'].forEach((k) => {
       c[k].forEach((it) => { it.uid = uid(); it.partida = map[it.partida] || ''; });
     });
+    if (c.gantt) c.gantt.tareas.forEach((t) => { t.partida = map[t.partida] || ''; });
     c.creado = new Date().toISOString();
     ['creadoPor', 'modificadoPor', 'eliminado', 'eliminadoEn', 'eliminadoPor'].forEach((k) => { delete c[k]; });
     return Object.assign(c, overrides || {});

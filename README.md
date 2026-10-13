@@ -98,6 +98,8 @@ Los valores con que parten los proyectos nuevos (IVA, tarifas y metas, y en modo
 
 Proyectos grandes: una pestaña de costos con más de 300 filas usa columnas de ancho fijo, para que escribir siga siendo inmediato (con 1.500 materiales, cada tecla pasó de ~0,5 s a ~0,08 s el 2026-10-08).
 
+**Carta Gantt (opcional, 2026-10-13).** La pestaña *Carta Gantt*, junto a *Seguimiento*, arma el programa de trabajo de la oferta. No es un paso de la formulación: no cuenta para que esté completa. *Crear desde las partidas* agrega un hito de inicio, una tarea por partida (una tras otra, con la duración que sugiere su mano de obra: días por unidad × cantidad, una cuadrilla) y un hito de entrega; también se agregan tareas e hitos a mano. Cada tarea lleva responsable, duración, predecesoras (`2`, `2CC`, `2FF`, `2+3`), fecha «no antes de» y avance. El calendario es de días hábiles (con días no laborables) o corridos. La ruta crítica va en naranja. *Descargar PDF* genera la lámina en A4 horizontal con el logo (varias páginas si hace falta), y el Excel del proyecto suma la hoja *Carta Gantt* con la grilla pintada por día o por semana. Se guarda en `p.gantt` y entra en Ctrl+Z.
+
 Atajos: en el proyecto abierto, **Ctrl+Z** deshace el último cambio y **Ctrl+Y** (o Ctrl+Shift+Z) lo rehace, hasta 100 pasos; también con las flechas junto a *Exportar Excel* (2026-10-09). Lo escrito seguido en un mismo campo es un paso, y cada acción (agregar o eliminar una fila, aplicar la utilidad) es otro; al deshacer, la herramienta vuelve a la pestaña donde se hizo el cambio y lo marca. No retira lo ya enviado a otras herramientas (Análisis Financiero, Sistema QUEMPIN, carpeta de la oferta). En las tablas, **Enter** baja a la fila siguiente (en la última fila agrega una nueva). En la columna de unidad, **↓** abre la lista de unidades. Duplicar, mover o eliminar una fila está en su menú **⋯**. En el listado, **/** enfoca el buscador. Los menús y selectores se manejan con flechas, **Enter** y **Esc**. En el teléfono las tablas se muestran como tarjetas.
 
 ## Estructura
@@ -121,6 +123,9 @@ js/pulso.js             Pulso del procesador del intercambio: cuándo avisar que
 js/busqueda.js          Buscador de precios (copia textual del de Cotizador Historico/Visualizador Web/busqueda.js)
 js/compartida.js        Proyectos compartidos con el equipo por esa carpeta (modo local)
 js/oferta.js            Copia en Excel de cada presupuesto en la carpeta de su oferta (modo local)
+js/gantt.js             Carta Gantt: calendario, dependencias, hitos, ruta crítica, lámina (SVG y PDF)
+js/pdf.js               PDF vectorial mínimo, sin librerías (lo usa la Carta Gantt)
+js/candado.js           Verificación de la contraseña (copia textual de Finanzas QUEMPIN/Visualizador Web/candado.js)
 js/app.js               Interfaz
 js/logo-data.js         Logo oficial embebido para el Excel exportado
 vendor/exceljs.min.js   Librería ExcelJS 4.4.0 (licencia MIT, ver vendor/exceljs.LICENSE)
