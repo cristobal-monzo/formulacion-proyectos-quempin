@@ -45,8 +45,12 @@
     { descripcion: 'Almuerzo por persona diario', unidad: 'día', costoUnitario: 10000 }
   ];
 
+  /* Desde el 2026-10-13 todo código parte con QMPN, tenga o no N° de requerimiento. «QPN» era el
+     prefijo por defecto anterior: guardado en la configuración (del equipo o del navegador) se lee
+     como el nuevo, y los códigos QPN ya creados no cambian. */
+  const PREFIJO_ANTIGUO = 'QPN';
   const DEFAULT_CONFIG = {
-    prefijo: 'QPN',
+    prefijo: 'QMPN',
     responsable: '',
     parametros: DEFAULT_PARAMETROS,
     catalogoOtros: DEFAULT_CATALOGO
@@ -96,8 +100,9 @@
   function getConfig() {
     const local = lsGet(LS_CONFIG, null) || {};
     const c = mode === 'nube' ? (sharedConfig || {}) : local;
+    const prefijo = String(c.prefijo || '').trim();
     return {
-      prefijo: c.prefijo || DEFAULT_CONFIG.prefijo,
+      prefijo: prefijo && prefijo.toUpperCase() !== PREFIJO_ANTIGUO ? prefijo : DEFAULT_CONFIG.prefijo,
       responsable: local.responsable || (usuario && usuario.nombre) || '',
       parametros: Object.assign(clone(DEFAULT_PARAMETROS), c.parametros || {}),
       catalogoOtros: Array.isArray(c.catalogoOtros) ? c.catalogoOtros : clone(DEFAULT_CATALOGO)
@@ -252,12 +257,16 @@
   const getMode = () => mode;
   const getUser = () => usuario;
 
+  /* El correlativo de los proyectos sin N° de requerimiento. No cuenta los códigos que son
+     prefijo-año-N° de requerimiento (QMPN-2026-280): si contaran, el siguiente sería el 281, que es
+     el código que le toca al requerimiento 281. */
   function nextCodigo(prefijo, anio) {
     const re = new RegExp('^' + prefijo.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&') + '-' + anio + '-(\\d+)$');
     let max = 0;
     full().forEach((p) => {
       const m = re.exec(p.codigo || '');
-      if (m) max = Math.max(max, parseInt(m[1], 10));
+      const req = p.vinculos && p.vinculos.requerimiento && p.vinculos.requerimiento.numero;
+      if (m && !(req && String(req) === m[1])) max = Math.max(max, parseInt(m[1], 10));
     });
     return `${prefijo}-${anio}-${String(max + 1).padStart(3, '0')}`;
   }

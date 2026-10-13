@@ -3220,7 +3220,7 @@
     $('#cfg-moneda').addEventListener('change', (e) => { $$('#modal .cfg-simbolo').forEach((a) => { a.textContent = MONEDAS[e.target.value].simbolo; }); });
     const v = await promesaCfg;
     if (v === 'save') {
-      if ($('#cfg-prefijo')) cfg.prefijo = ($('#cfg-prefijo').value || 'QPN').trim().toUpperCase();
+      if ($('#cfg-prefijo')) cfg.prefijo = ($('#cfg-prefijo').value || 'QMPN').trim().toUpperCase();
       cfg.responsable = $('#cfg-resp').value.trim();
       if (puede) {
         const leer = (id) => { const n = parseFloat($('#cfg-' + id).value); return Number.isFinite(n) ? n : 0; };
@@ -4276,7 +4276,7 @@
   }
   function codigoAutomatico(codigo) {
     const c = String(codigo || '').trim();
-    const prefijos = [PREFIJO_REQ, S.getConfig().prefijo].filter(Boolean).map(escRe).join('|');
+    const prefijos = [PREFIJO_REQ, S.getConfig().prefijo, 'QPN'].filter(Boolean).map(escRe).join('|');
     return !c || new RegExp(`^(${prefijos})-\\d{4}-\\d+$`, 'i').test(c);
   }
   /* Deja el código QMPN-año-N° si el actual es automático (en SharePoint el código ya es el N°).
