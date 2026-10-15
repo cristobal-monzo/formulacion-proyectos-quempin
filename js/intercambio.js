@@ -235,6 +235,25 @@
     await escribirJSON(buzon, nombreArchivo(m), m);
     return nombreArchivo(m);
   }
+  /* Los mensajes que esperan en el buzón, de cualquier herramienta, para mostrar lo pendiente
+     (js/pendientes.js). Solo lee: atenderlos es de su destinatario. filtro: { tipos: [...], destino } */
+  async function leerBuzon(filtro) {
+    const f = filtro || {};
+    const h = await cargar();
+    const buzon = h && await sub(h, 'buzon');
+    if (!buzon) return [];
+    const out = [];
+    try {
+      for await (const [nombre, fh] of buzon.entries()) {
+        if (fh.kind !== 'file' || !/\.json$/i.test(nombre)) continue;
+        // El tipo va en el nombre (nombreArchivo): se descarta sin abrir lo que no interesa
+        if (f.tipos && !f.tipos.some((t) => nombre.indexOf(`_${t}_`) >= 0)) continue;
+        const m = await leerJSON(buzon, nombre);
+        if (m && (!f.destino || m.destino === f.destino) && (!f.tipos || f.tipos.includes(m.tipo))) out.push(m);
+      }
+    } catch (e) { /* sin permiso o la carpeta cambió: lo leído hasta ahí */ }
+    return out;
+  }
   /* ¿Sigue el mensaje en el buzón? (todavía no lo atiende su destinatario) */
   async function enBuzon(id) {
     const h = await cargar();
@@ -300,6 +319,6 @@
   root.QIntercambio = {
     ESQUEMA, CATEGORIAS_AF, BIBLIOTECA, CARPETA_HERRAMIENTAS, disponible, estado, conectar, permitir, desconectar, onCambio,
     carpeta: carpetaConPermiso, biblioteca: bibliotecaConPermiso, estadoBiblioteca,
-    leerCatalogoAF, leerPublicacion, leerRaiz, enviar, enBuzon, descargar, mensajePresupuesto, costosAF, nombreArchivo, nuevoId, isoLocal
+    leerCatalogoAF, leerPublicacion, leerRaiz, enviar, enBuzon, leerBuzon, descargar, mensajePresupuesto, costosAF, nombreArchivo, nuevoId, isoLocal
   };
 })(window);

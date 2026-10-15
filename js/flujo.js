@@ -68,7 +68,9 @@
         emitida: !!folio || estBorr === 'aplicado' || estBorr === 'sin-cambios',
         folio,
         enEspera: !!borr && !folio && (estBorr === 'pendiente' || !estBorr),
-        descartada: !folio && (estBorr === 'descartado' || estBorr === 'rechazado')
+        descartada: !folio && (estBorr === 'descartado' || estBorr === 'rechazado'),
+        // Por qué no se emitió, si quien la descartó en Sistema QUEMPIN lo dijo (2026-10-14)
+        motivo: !folio && estBorr === 'descartado' ? String(ctx.motivoBorrador || (borr && borr.motivo) || '').trim() : ''
       },
       planilla: { esperado: enPlanilla, avisada },
       af: {
@@ -123,7 +125,7 @@
       return { etapa: 'cotizacion', accion: 'herr-cotizacion', boton: c.descartada ? 'Preparar la cotización de nuevo' : 'Preparar la cotización', corto: 'Preparar la cotización',
         alternativas: [yaEnviada],
         texto: c.descartada
-          ? 'Sistema QUEMPIN no emitió el borrador anterior. Revisa los valores y prepara la cotización otra vez.'
+          ? `Sistema QUEMPIN no emitió el borrador anterior${c.motivo ? ` (motivo: ${c.motivo.replace(/\.$/, '')})` : ''}. Revisa los valores y prepara la cotización otra vez.`
           : 'La formulación está lista. Prepara la cotización con los valores por partida del paso 4: llega a Sistema QUEMPIN, donde se revisa y se emite con su número.' };
     }
     if (h.estado === 'Enviada') {

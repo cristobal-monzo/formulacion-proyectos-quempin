@@ -266,6 +266,51 @@ select.is-set { border-color: var(--brand-orange) !important; box-shadow: inset 
 .chip.solo-aqui { display: inline-block; margin-top: 4px; font-size: 11px; }
 #ed-compartida .nota { margin: 0 0 12px; }
 
+/* Pendientes del equipo (js/pendientes.js, 2026-10-14): por ofertar, pasar a la Planilla y borradores
+   en Sistema QUEMPIN, arriba de la lista de proyectos */
+.pend { margin: 0 0 18px; }
+.pend-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; margin: 0 0 10px; }
+.pend-head .seccion-titulo { margin: 0; }
+.pend-head p { margin: 0; font-size: 12.5px; color: var(--text-muted); }
+.pend-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 12px; align-items: start; }
+.pend-b { background: var(--surface-card); border: 1px solid var(--border-hairline); border-top: 3px solid var(--brand-orange); border-radius: 10px; padding: 12px 14px 10px; min-width: 0; }
+.pend-b-h { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+.pend-b-h h4 { margin: 0; font-size: 14px; font-weight: 900; color: var(--text-primary); }
+.pend-n { min-width: 22px; padding: 0 7px; border-radius: 999px; background: var(--orange-soft); color: var(--brand-orange-ink); font-size: 12px; font-weight: 900; line-height: 20px; text-align: center; font-variant-numeric: tabular-nums; }
+.pend-acc-h { margin-left: auto; }
+.pend-b-d { margin: 4px 0 6px; font-size: 12px; line-height: 1.4; color: var(--text-muted); }
+.pend-lista { list-style: none; margin: 0; padding: 0; }
+.pend-fila { display: flex; align-items: flex-start; gap: 6px 10px; padding: 9px 0; border-top: 1px solid var(--gridline); }
+.pend-t { flex: 1 1 auto; min-width: 0; font-size: 13px; line-height: 1.35; color: var(--text-secondary); overflow-wrap: anywhere; }
+.pend-t > .chip-plazo { margin: 0 6px 2px 0; vertical-align: 1px; }
+.pend-t b { color: var(--text-primary); }
+.pend-sub { display: block; margin-top: 1px; font-size: 12px; color: var(--text-muted); }
+.pend-acc { flex: 0 0 auto; display: flex; gap: 6px; }
+.pend-campos { list-style: none; margin: 5px 0 0; padding: 0; display: grid; gap: 4px; }
+.pend-campos li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 12.5px; }
+.pc-l { color: var(--text-secondary); }
+.pc-hoy { font-size: 12px; color: var(--text-muted); }
+.pend-fuente { display: block; margin-top: 4px; font-size: 11.5px; line-height: 1.35; color: var(--text-muted); }
+.pend-mas { margin-top: 6px; font-size: 12.5px; }
+.pend-nota { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--gridline); font-size: 12px; line-height: 1.4; color: var(--text-muted); }
+.btn-acento { border-color: var(--brand-orange); color: var(--brand-orange-ink); font-weight: 700; }
+.btn-acento:hover { background-image: linear-gradient(var(--orange-soft), var(--orange-soft)); }
+/* «Pegar desde Excel» en las tablas de costos (js/pegar.js): el texto pegado y su vista previa */
+.pg-texto { width: 100%; min-height: 120px; font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; font-size: 12.5px; white-space: pre; overflow-x: auto; resize: vertical; }
+.pg-opciones { align-items: end; margin-top: 10px; }
+.pg-iva { align-self: center; font-size: 13px; }
+.pg-previa:empty { display: none; }
+.pg-previa { margin-top: 10px; }
+.pg-res { margin: 0 0 6px; font-size: 13px; color: var(--text-secondary); }
+.pg-aviso { margin: 0; font-size: 13px; color: var(--status-warning); }
+.pg-tabla { font-size: 12.5px; }
+.pg-tabla td, .pg-tabla th { padding: 6px 10px; }
+/* Aviso de cierre de la licitación (fecha de cierre de la Planilla): lista, encabezado del proyecto y pendientes */
+.chip-plazo svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+.chip-plazo.info { font-weight: 700; }
+td .chip-plazo { display: inline-flex; margin-top: 4px; }
+#ed-meta .chip-plazo { margin-left: 2px; }
+
 /* ---- KPIs (tarjetas de Análisis Financiero / Centro de Costos) -------------- */
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 12px; margin-bottom: 8px; }
 @media (max-width: 600px) { .kpi-value { font-size: 19px; } .kpi-card { padding: 11px 12px 12px; } }
@@ -395,7 +440,27 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
 .editor-title h2.sin-titulo { color: var(--text-muted); }
 .editor-title .meta { display: flex; gap: 6px 10px; align-items: center; flex-wrap: wrap; color: var(--text-secondary); font-size: 12.5px; }
 .editor-title .meta .sep { color: var(--baseline); }
+.editor-title .meta .m-opc { display: contents; }   /* cliente, responsable y fecha: en el teléfono no van (ver abajo) */
 .editor-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+/* Teléfono (2026-10-14): el encabezado del proyecto ocupaba ~540 px antes del primer campo. Cliente,
+   responsable y fecha quedan en «Datos»; deshacer y rehacer pasan al menú «⋯»; «Exportar Excel» queda
+   como ícono, y el aviso de guardado comparte la fila con los botones, en una línea. */
+@media (max-width: 600px) {
+  .editor-title { gap: 4px; }
+  .editor-title h2 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+  .editor-title .meta { gap: 4px 8px; }
+  .editor-title .meta .m-opc, .editor-title .meta .sep:has(+ .meta-carpeta) { display: none; }
+  .editor-title .meta .meta-carpeta { max-width: 100%; min-width: 0; }
+  .editor-title .meta .meta-carpeta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .editor-head .editor-actions { flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 8px; width: 100%; }
+  .editor-head .editor-actions .actions { order: 2; flex: 0 0 auto; flex-wrap: nowrap; gap: 6px; }
+  #ed-deshacer, #ed-rehacer { display: none; }
+  #ed-excel { width: 44px; padding: 0; justify-content: center; }
+  #ed-excel .bt-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #save-state { order: 1; flex: 1 1 auto; width: auto; min-width: 0; height: 1.45em; -webkit-line-clamp: 1; align-self: center; font-size: 12px; }
+  .rc-nav { margin-bottom: 8px; }
+  .lectura { padding-top: 4px; }
+}
 
 /* ---- Tablas (viz-table de los tableros) ------------------------------------- */
 .tabla-contenedor { position: relative; overflow-x: auto; border: 1px solid var(--border-hairline); border-radius: 10px; background: var(--surface-card); }

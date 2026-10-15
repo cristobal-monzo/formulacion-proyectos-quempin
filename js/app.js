@@ -113,6 +113,7 @@
     rehacer: svg('<path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>'),
     enviar: svg('<path d="M21 3L3 10.5l7 3 3 7.5z"/><path d="M21 3L10 13.5"/>'),
     chart: svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),
+    reloj: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
     monitor: svg('<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 16v4"/>')
   };
 
@@ -139,6 +140,9 @@
   };
   /* Modo nube: activa = hay configuración de SharePoint; lista = sesión iniciada y proyectos cargados. */
   const nube = { activa: false, lista: false, ultimo: '' };
+  /* Pendientes del equipo (ver pintarPendientes): lo último leído de la Planilla y del buzón.
+     porNumero: filas de la Planilla por N° (los avisos «Cierra en N días» de la lista y del editor). */
+  const pend = { html: '', t: 0, enCurso: null, crudo: null, datos: null, porNumero: null, firma: '', abiertos: new Set() };
 
   const DETALLE = {
     materiales: { titulo: 'Materiales', singular: 'material', total: 'mat', factory: S.newMaterial, cat: 'cat-mat' },
@@ -475,7 +479,12 @@
       const enEditor = key === 'editor-more';
       const ub = enSP() ? window.QCloud.ubicacion(id) : null;
       const vo = !enSP() && ofertaActiva() ? QO().vinculo(S.get(id)) : undefined;
+      // En el teléfono, deshacer y rehacer viven en este menú: el encabezado deja sitio al contenido (2026-10-14)
+      const telefono = enEditor && window.matchMedia && window.matchMedia('(max-width: 600px)').matches;
       items = [
+        telefono ? { icon: ICON.deshacer, title: 'Deshacer', desc: hist.undo.length ? 'Vuelve atrás el último cambio' : 'Nada que deshacer todavía', act: 'deshacer', disabled: !hist.undo.length } : null,
+        telefono ? { icon: ICON.rehacer, title: 'Rehacer', desc: hist.redo.length ? 'Vuelve a hacer lo deshecho' : 'Nada que rehacer', act: 'rehacer', disabled: !hist.redo.length } : null,
+        telefono ? { sep: true } : null,
         enEditor ? { icon: ICON.print, title: 'Imprimir resumen', desc: 'Utilidad, precio y evaluación en una página', act: 'imprimir' } : null,
         enEditor ? { icon: ICON.gantt, title: 'Carta Gantt', desc: ((state.project && state.project.gantt) || { tareas: [] }).tareas.length ? 'Ver, editar o descargar en PDF el programa de trabajo' : 'Opcional: el programa de trabajo de la oferta', act: 'tab', tab: 'gantt' } : null,
         enEditor ? { sep: true } : null,
@@ -501,6 +510,8 @@
       const vAF = p ? vinculoAF(p) : null;
       items = [
         { head: 'El recorrido de un proyecto' },
+        // Donde nace un requerimiento: el tablero de licitaciones evaluadas (2026-10-13), primera tarjeta del índice
+        { icon: ICON.target, title: 'Oportunidades en Mercado Público', desc: 'Etapa 1 · licitaciones del rubro, las más relevantes primero', act: 'abrir-url', url: TABLEROS + 'oportunidades/' },
         web ? { icon: ICON.sheet, title: 'Planilla de Ingreso', desc: 'Etapa 1 · el N° de cada requerimiento (Excel para la web)', act: 'abrir-url', url: web } : null,
         { icon: ICON.layers, title: 'Formulador', desc: p ? `Etapas 2 y 4 · ${p.codigo || 'este proyecto'} v${p.version}` : 'Etapas 2 y 4 · formulación y seguimiento', right: 'Estás aquí', disabled: true, actual: true, cls: 'actual' },
         { icon: ICON.monitor, title: 'Sistema QUEMPIN', desc: 'Etapa 3 · emite la cotización (programa del computador)', act: 'info-sistema' },
@@ -1056,6 +1067,7 @@
       </div>
       ${avisoEnlace()}
       <div id="compartida"></div>
+      <div id="pendientes">${pend.html}</div>
       ${all.length ? `
         <div class="kpis" id="list-kpis"></div>
         <div class="viz-filterbar">
@@ -1085,6 +1097,7 @@
     </div>`;
     if (all.length) refreshList();
     pintarCompartida();
+    pintarPendientes();
   }
 
   function emptyHub() {
@@ -1166,8 +1179,9 @@
     const semM = margen === null ? '' : margen >= mObj ? 'sem-ok' : margen >= mMin ? 'sem-warn' : 'sem-bad';
     const conErr = list.filter((p) => rs.get(p.uid).warnings.some((w) => w.level === 'error')).length;
     const cerradas = adj.length + perd.length;
+    const enviadas = enCurso.filter((p) => p.estado === 'Enviada').length;
     el.innerHTML = [
-      kpiTop('Ofertas en curso', sumaPorMoneda(enCurso, precio, true), `${plural(enCurso.length, 'oferta')} sin cerrar · precio neto`, 'accent', 'Suma del precio de venta neto (sin IVA) de los proyectos en estado Borrador, En revisión o Enviada.'),
+      kpiTop('Ofertas en curso', sumaPorMoneda(enCurso, precio, true), enCurso.length ? `${enCurso.length - enviadas} en formulación · ${plural(enviadas, 'enviada')} · precio neto` : 'Ninguna oferta sin cerrar', 'accent', 'Suma del precio de venta neto (sin IVA) de los proyectos de este Formulador en Borrador o En revisión (en formulación) y Enviada (esperando respuesta). Lo que espera en la Planilla está en «Pendientes del equipo».'),
       kpiTop('Adjudicado', sumaPorMoneda(adj, precio, true), cerradas ? `Tasa de adjudicación ${pct(adj.length / cerradas)} (${adj.length} de ${cerradas} cerradas)` : 'Sin ofertas cerradas aún', '', 'Precio neto de los proyectos adjudicados. La tasa compara adjudicadas contra adjudicadas + perdidas.'),
       kpiTop('Margen ponderado', pct(margen), `Objetivo ${pct(mObj)} · mínimo ${pct(mMin)}`, semM, `Utilidad total ÷ precio neto total, sin contar proyectos perdidos ni descartados${variasMonedas ? '; como hay proyectos en otras monedas, solo cuentan los en pesos chilenos' : ''}. Las metas son las predeterminadas de Configuración.`),
       kpiTop('Con errores', String(conErr), conErr ? 'Revísalos antes de exportar' : 'Todos pasan la validación', conErr ? 'sem-bad' : 'sem-ok')
@@ -1254,7 +1268,7 @@
           <div class="proj-sub en-linea l1">${esc(p.responsable ? `Responsable: ${p.responsable}` : 'Sin responsable')}<span class="en-linea l2"> · ${esc(fechaCorta(p.fecha))}</span></div>${carpetaCorta(p)}${aqui.has(p.uid) ? '<span class="chip warn solo-aqui" title="No está en la carpeta del equipo">Solo en este navegador</span>' : ''}</td>
         <td class="col-resp" data-label="Responsable">${esc(p.responsable || '—')}</td>
         <td class="nowrap col-fecha" data-label="Fecha">${esc(fechaCorta(p.fecha))}</td>
-        <td data-label="Estado"><span class="estado" data-e="${esc(p.estado)}">${esc(p.estado)}</span>${s ? `<span class="sigue-corto ${s.espera ? 'espera' : s.fin ? 'fin' : ''}" title="${esc(s.texto)}">${s.espera || s.fin ? '' : '→ '}${esc(s.corto)}</span>` : ''}</td>
+        <td data-label="Estado"><span class="estado" data-e="${esc(p.estado)}">${esc(p.estado)}</span>${s ? `<span class="sigue-corto ${s.espera ? 'espera' : s.fin ? 'fin' : ''}" title="${esc(s.texto)}">${s.espera || s.fin ? '' : '→ '}${esc(s.corto)}</span>` : ''}${chipPlazo(p)}</td>
         <td class="num" data-label="Precio neto"><b>${dinero(r.totals.precioNeto, monedaDe(p))}</b></td>
         <td class="num" data-label="Margen"><span class="dot ${r.status.margen}" aria-hidden="true"></span>${pct(r.kpis.margen)}${ok(r.kpis.rentDH) ? `<div class="sub-celda en-linea l1" title="Utilidad por día-hombre">${dinero(r.kpis.rentDH, monedaDe(p))} por día-hombre</div>` : ''}</td>
         <td class="num col-dh" data-label="Utilidad por día-hombre">${dinero(r.kpis.rentDH, monedaDe(p))}</td>
@@ -1294,7 +1308,7 @@
             <div class="actions">
               <button type="button" class="btn" id="ed-deshacer" data-act="deshacer" aria-label="Deshacer (Ctrl+Z)" aria-keyshortcuts="Control+Z">${ICON.deshacer}</button>
               <button type="button" class="btn" id="ed-rehacer" data-act="rehacer" aria-label="Rehacer (Ctrl+Y)" aria-keyshortcuts="Control+Y">${ICON.rehacer}</button>
-              <button class="btn" data-act="exp-xlsx" data-id="${p.uid}">${ICON.download}Exportar Excel</button>
+              <button class="btn" id="ed-excel" data-act="exp-xlsx" data-id="${p.uid}" aria-label="Exportar Excel">${ICON.download}<span class="bt-t">Exportar Excel</span></button>
               <button class="btn" data-menu="editor-more" data-id="${p.uid}" aria-haspopup="menu" aria-expanded="false" aria-label="Más acciones del proyecto">${ICON.more}</button>
             </div>
             <span class="en-vivo ${textoGuardado()[1]}" id="save-state" title="${esc(textoGuardado()[0])}">${esc(textoGuardado()[0])}</span>
@@ -1316,6 +1330,7 @@
     pintarEditorCompartida();
     pintarEditorOferta();
     pintarHistorial();
+    if (!pend.t) pintarPendientes();   // la fecha de cierre de la Planilla, para el aviso del encabezado
   }
 
   function metaCarpeta(p, sep) {
@@ -1355,8 +1370,8 @@
     t.classList.toggle('sin-titulo', !p.titulo);
     const sep = '<span class="sep" aria-hidden="true">·</span>';
     pintar($('#ed-meta'), `<span class="code-badge">${esc(p.codigo || 'SIN CÓDIGO')}</span><span>versión ${esc(p.version)}</span>
-      <button type="button" class="estado" data-e="${esc(p.estado)}" data-picker="estado" aria-haspopup="listbox" aria-expanded="false" aria-label="Estado: ${esc(p.estado)}. Cambiar el estado">${esc(p.estado)}${svg('<path d="M6 9l6 6 6-6"/>')}</button>
-      ${p.cliente ? `${sep}<span>${esc(p.cliente)}</span>` : ''}${p.responsable ? `${sep}<span>${esc(p.responsable)}</span>` : ''}${p.fecha ? `${sep}<span>${esc(fechaCorta(p.fecha))}</span>` : ''}${metaCarpeta(p, sep)}`);
+      <button type="button" class="estado" data-e="${esc(p.estado)}" data-picker="estado" aria-haspopup="listbox" aria-expanded="false" aria-label="Estado: ${esc(p.estado)}. Cambiar el estado">${esc(p.estado)}${svg('<path d="M6 9l6 6 6-6"/>')}</button>${chipPlazo(p)}
+      ${p.cliente ? `<span class="m-opc">${sep}<span>${esc(p.cliente)}</span></span>` : ''}${p.responsable ? `<span class="m-opc">${sep}<span>${esc(p.responsable)}</span></span>` : ''}${p.fecha ? `<span class="m-opc">${sep}<span>${esc(fechaCorta(p.fecha))}</span></span>` : ''}${metaCarpeta(p, sep)}`);
     const titulo = `${p.codigo || ''} ${p.titulo || 'Proyecto'} — Formulación QUEMPIN`;
     if (document.title !== titulo) document.title = titulo;
     texto($('#hdr-sub'), SUBTITULO);
@@ -2086,6 +2101,7 @@
       <div class="left">
         <button type="button" class="btn btn-primario btn-sm" data-act="add-row" data-list="${key}">${ICON.plus}Agregar ${cfg.singular}</button>
         ${key === 'otros' ? `<button type="button" class="btn btn-sm" data-menu="catalogo" data-align="left" aria-haspopup="menu" aria-expanded="false">Agregar desde catálogo${ICON.caret}</button>` : ''}
+        ${key !== 'manoObra' && window.QPegar ? `<button type="button" class="btn btn-sm" data-act="pegar-filas" data-list="${key}" data-tip="<b>Pegar desde Excel</b>Filas copiadas de una planilla de formulación, de cualquier Excel o de la cotización del Cotizador Histórico: descripción, unidad, cantidad y costo unitario.">${ICON.sheet}Pegar desde Excel</button>` : ''}
       </div>
       ${p.partidas.length > 1 ? `<div class="right">
         <div class="filtro"><label for="filtro-${key}">Mostrar</label>
@@ -2911,6 +2927,71 @@
     scheduleSave();
   }
 
+  /* «Pegar desde Excel» (js/pegar.js, 2026-10-14): filas de una planilla de formulación antigua, de
+     cualquier Excel o de la cotización del tablero del Cotizador Histórico, con vista previa. Todas van a
+     la partida que se elija; la cantidad es por una unidad de la partida, como en la tabla. */
+  async function pegarFilas(list) {
+    const p = state.project;
+    const cfg = DETALLE[list];
+    if (!p || !cfg || !window.QPegar) return;
+    const f = state.filtro[list];
+    const porOmision = f && f !== '__none__' ? f : (p.partidas.length ? p.partidas[0].uid : '');
+    const iva = num(p.parametros.iva);
+    let leido = { filas: [] };
+    const prom = ask({
+      title: `Pegar ${cfg.titulo.toLowerCase()} desde Excel`,
+      wide: true,
+      body: `<p>Copia las filas en Excel (una planilla de formulación, una lista de materiales o la cotización del Cotizador Histórico) y pégalas aquí. Se reconocen descripción, unidad, cantidad y costo unitario, con o sin encabezados.</p>
+        <div class="campo"><label for="pg-texto">Filas copiadas</label>
+          <textarea class="textarea pg-texto" id="pg-texto" rows="6" spellcheck="false" placeholder="Pega aquí (Ctrl+V)"></textarea></div>
+        <div class="fila-campos pg-opciones">
+          <div class="campo"><label for="pg-partida">Partida</label>
+            <select class="select" id="pg-partida">${p.partidas.map((pt) => `<option value="${pt.uid}" ${pt.uid === porOmision ? 'selected' : ''}>${codP(pt.uid)} · ${esc(pt.descripcion || 'Sin descripción')}</option>`).join('')}<option value="" ${porOmision ? '' : 'selected'}>Sin partida (elegirla después)</option></select></div>
+          <label class="check-l pg-iva"><input type="checkbox" id="pg-iva"> Los costos incluyen IVA: dejarlos netos (÷ ${nf(1 + iva / 100)})</label>
+        </div>
+        <p class="hint">La cantidad es por una unidad de la partida, como en la tabla: la herramienta la multiplica por la cantidad de la partida.</p>
+        <div class="pg-previa" id="pg-previa" aria-live="polite"></div>`,
+      buttons: [{ label: 'Cancelar' }, { label: 'Agregar las filas', value: 'ok', primary: true }]
+    });
+    const ta = $('#pg-texto'), previa = $('#pg-previa'), chkIva = $('#pg-iva');
+    const boton = $('#modal .modal-foot .btn-primario');
+    let ivaTocado = false;
+    const pintarPrevia = () => {
+      leido = window.QPegar.interpretar(ta.value);
+      if (!ivaTocado && leido.conIva !== null) chkIva.checked = leido.conIva;
+      const n = leido.filas.length;
+      boton.disabled = !n;
+      boton.textContent = n ? `Agregar ${plural(n, 'fila')}` : 'Agregar las filas';
+      if (!ta.value.trim()) { previa.innerHTML = ''; return; }
+      if (!n) { previa.innerHTML = '<p class="pg-aviso">No se reconoció ninguna fila: copia celdas con al menos la descripción.</p>'; return; }
+      const div = chkIva.checked ? 1 + iva / 100 : 1;
+      const muestra = leido.filas.slice(0, 8);
+      previa.innerHTML = `<p class="pg-res"><b>${plural(n, 'fila')}</b> para agregar${leido.omitidas ? ` · ${plural(leido.omitidas, 'fila omitida', 'filas omitidas')} (totales o sin descripción)` : ''}${leido.encabezado ? ' · con encabezados' : ''}</p>
+        <div class="tabla-contenedor"><table class="tbl pg-tabla"><thead><tr><th>Descripción</th><th>Unidad</th><th class="num">Cantidad</th><th class="num">Costo unitario${div > 1 ? ' neto' : ''}</th></tr></thead>
+        <tbody>${muestra.map((x) => `<tr><td>${esc(x.descripcion)}</td><td>${esc(x.unidad || 'Un.')}</td><td class="num">${nf(x.cantidad)}</td><td class="num">${dinero(x.costoUnitario / div)}</td></tr>`).join('')}</tbody></table></div>
+        ${n > muestra.length ? `<p class="hint">…y ${plural(n - muestra.length, 'fila')} más.</p>` : ''}`;
+    };
+    ta.addEventListener('input', pintarPrevia);
+    chkIva.addEventListener('change', () => { ivaTocado = true; pintarPrevia(); });
+    pintarPrevia();
+    ta.focus();
+    const v = await prom;
+    if (v !== 'ok' || !leido.filas.length) return;
+    const sel = $('#pg-partida');
+    const partida = sel ? sel.value : porOmision;
+    const div = chkIva.checked ? 1 + iva / 100 : 1;
+    const nuevas = leido.filas.map((x) => Object.assign(cfg.factory(partida), {
+      descripcion: x.descripcion, unidad: x.unidad || cfg.factory('').unidad, cantidad: x.cantidad,
+      costoUnitario: redondear(x.costoUnitario / div, monedaDe(p))
+    }));
+    p[list].push(...nuevas);
+    recalc();
+    renderTab();
+    nuevas.forEach((it) => flashRow(it.uid));
+    scheduleSave();
+    toast(`${plural(nuevas.length, 'fila agregada', 'filas agregadas')} a ${cfg.titulo.toLowerCase()}${partida ? ` (${codP(partida)})` : ', sin partida: elígela en cada fila'}.`);
+  }
+
   function addFromCatalog(i) {
     const c = state.project.catalogoOtros[i];
     if (!c) return;
@@ -3002,7 +3083,7 @@
           // Con la biblioteca conectada: ¿de qué oferta? (ahí queda la copia en Excel); si la carpeta
           // todavía no existe, se crea en el mismo formulario
           const sel = await elegirOfertaLocal({
-            titulo: 'Nuevo proyecto', buscar: d.buscar || '',
+            titulo: 'Nuevo proyecto', buscar: d.buscar || '', porNumero: d.numero || '',
             texto: 'Elige la carpeta de la oferta, o créala aquí si todavía no existe. Ahí queda el Excel de la formulación, al día con cada cambio, y su N° une el proyecto con la Planilla de Ingreso y las demás herramientas.',
             confirmar: 'Crear proyecto', completar: true
           });
@@ -3253,6 +3334,7 @@
           }
           await pintarCompartida();
           pintarEditorCompartida();
+          pintarPendientes(true);
           if ($('#cfg-af')) await pintarCfgAF();
           break;
         }
@@ -3340,6 +3422,7 @@
           break;
         }
         case 'add-row': addRow(d.list); break;
+        case 'pegar-filas': await pegarFilas(d.list); break;
         case 'add-base': {
           // Una sola partida base, siempre la primera de la lista
           if (p.partidas.some((x) => x.base)) break;
@@ -3450,6 +3533,13 @@
           if (!(await copiarTexto(d.v))) { toast('No se pudo copiar. Selecciona el valor y usa Ctrl+C.', true); break; }
           marcarCopiado(btn);
           toast(`Copiado: ${d.v} (${d.lbl})`);
+          break;
+        }
+        case 'pend-ver': {   // Pendientes del equipo: ver todas las filas de un bloque, o menos
+          if (pend.abiertos.has(d.b)) pend.abiertos.delete(d.b); else pend.abiertos.add(d.b);
+          repintarPendientes();
+          const b = $(`#pendientes [data-act="pend-ver"][data-b="${d.b}"]`);
+          if (b) b.focus({ preventScroll: true });
           break;
         }
         case 'copiar-tabla': {
@@ -3745,7 +3835,7 @@
       if (state.project && ev.ids.includes(state.project.uid)) { updateHeader(); pintarEditorOferta(); }
       return;
     }
-    if (ev.type === 'sync') { showSyncState(); if (nube.activa) pintarCuenta(window.QCloud.info()); else { pintarCompartida(); if (state.project) pintarEditorOferta(); } return; }
+    if (ev.type === 'sync') { showSyncState(); if (nube.activa) pintarCuenta(window.QCloud.info()); else { pintarCompartida(); pintarPendientes(); if (state.project) pintarEditorOferta(); } return; }
     if (ev.type === 'remote' && ev.conflicto) { alConflicto(ev); return; }
     if (ev.type === 'carpetas') { // una carpeta de oferta se movió o cambió de nombre en SharePoint
       if (!nube.lista) return;
@@ -4131,6 +4221,7 @@
 
     // ---- Crear una carpeta nueva sin salir del formulario ----
     let abrirPanel = () => {};
+    let alCargarPlanilla = () => {};   // el título de la planilla llega después de abrir el panel
     if (opts.crear) {
       const btnNueva = $('#cp-nueva-btn');
       const num = $('#cp-num'), tit = $('#cp-tit'), previaEl = $('#cp-previa'), btnCrear = $('#cp-crear');
@@ -4172,6 +4263,7 @@
         pintarBoton();
         (num.value ? tit : num).focus();
       };
+      alCargarPlanilla = () => { if (panelAbierto() && num.value) { desdePlanilla(); previa(false); } };
       const cerrarPanel = (foco) => {
         panel.hidden = true;
         btnNueva.hidden = false;
@@ -4275,13 +4367,20 @@
 
     filtrar();
     resumen();
+    // Desde «Formular» de Pendientes del equipo (opts.porNumero, el N° de la planilla): la carpeta de ese
+    // N° queda elegida y, si todavía no existe, se abre «Nueva carpeta» con el N° y el título de la planilla
+    if (opts.porNumero && !elegida) {
+      const c = lista.find((x) => String(x.numero || '') === String(opts.porNumero));
+      if (c) elegir(c);
+      else if (opts.crear) abrirPanel(String(opts.porNumero));
+    }
     if (elegida) {
       const fila = Array.from(dlg.querySelectorAll('.cp-fila')).find((b) => b.dataset.id === elegida.id);
       if (fila) fila.scrollIntoView({ block: 'nearest' });
     }
     cargaPlanilla.then((m) => {
       pl = m;
-      if (m && dlg.open && $('#cp-lista')) { caja.innerHTML = filas(); filtrar(); resumen(); }
+      if (m && dlg.open && $('#cp-lista')) { caja.innerHTML = filas(); filtrar(); resumen(); alCargarPlanilla(); }
     });
     const v = await prom;
     if (v === 'ninguna') return { ninguna: true };
@@ -4896,6 +4995,13 @@
   }
   let publicadoDe = { uid: null, datos: null };   // lo último leído de la carpeta para el proyecto abierto
   let refinadoUid = null;
+  /* Motivo con que se descartó un borrador en Sistema QUEMPIN (lo elige quien lo descarta, desde la
+     versión 1.3.7); el texto por omisión de las versiones anteriores no es un motivo. */
+  function motivoDescarte(eb) {
+    if (!eb || eb.estado !== 'descartado') return '';
+    const t = (eb.detalle || []).join(' ').replace(/\s+/g, ' ').trim();
+    return /^Descartado en Sistema QUEMPIN/i.test(t) ? '' : t.replace(/^Motivo:\s*/i, '');
+  }
   function recorridoDe(p, r, publicado) {
     if (!QF() || !p) return null;
     const abierto = !!state.project && state.project.uid === p.uid;
@@ -4916,6 +5022,7 @@
     const datos = {
       cotizaciones: QH().cotizacionesDe(p, docs),
       estadoBorrador: eb ? eb.estado : undefined,
+      motivoBorrador: motivoDescarte(eb),
       filaPlanilla: req ? ((reqs && reqs.requerimientos) || []).find((x) => String(x.numero) === req) || null : null,
       proyectoAF: vAF ? ((af && af.proyectos) || []).find((x) => x.tag === vAF.tag) || null : null
     };
@@ -5091,7 +5198,9 @@
   function pieSigue(s) {
     const tab = state.tab;
     if (tab === 'seguimiento') {
-      if (s) return `<button type="button" class="btn btn-primario" data-act="sigue" data-accion="${esc(s.accion)}">${esc(s.boton.replace(/…$/, ''))}${s.accion === 'abrir-af' ? ICON.open : ICON.arrow}</button>`;
+      // El botón principal ya está en la etapa actual, arriba: al pie va la misma acción como secundaria,
+      // para no tener dos botones naranjos iguales en la vista (2026-10-14)
+      if (s) return `<button type="button" class="btn" data-act="sigue" data-accion="${esc(s.accion)}">${esc(s.boton.replace(/…$/, ''))}${s.accion === 'abrir-af' ? ICON.open : ICON.arrow}</button>`;
       return '<a class="btn" href="#/">Volver a Proyectos</a>';
     }
     if (!s) return `<button type="button" class="btn btn-primario" data-act="tab" data-tab="seguimiento">Siguiente: Seguimiento${ICON.arrow}</button>`;
@@ -5378,19 +5487,23 @@
     // 3. Cotización en Sistema QUEMPIN
     const borr = (v.sistemaQuempin || {}).ultimoBorrador;
     const eb = borr ? QH().estadoEnSistema(docs, borr.id) : null;
-    if (borr && eb && (eb.estado !== borr.estado || (eb.folio && eb.folio !== borr.folio))) {
+    const motivo = motivoDescarte(eb);
+    if (borr && eb && (eb.estado !== borr.estado || (eb.folio && eb.folio !== borr.folio) || (motivo && motivo !== borr.motivo))) {
       // Lo que respondió Sistema QUEMPIN queda en el proyecto: la lista y la barra del recorrido lo
       // muestran sin leer la carpeta.
       borr.estado = eb.estado;
       if (eb.folio) borr.folio = eb.folio;
+      if (motivo) borr.motivo = motivo;
       scheduleSave();
     }
-    let tCot = linea('Con los valores por partida del paso 4 se prepara la cotización: llega a <b>Borradores del Formulador</b> en Sistema QUEMPIN, donde se revisa y se emite con su número.');
+    // Si la cotización es lo que sigue, el recuadro «Siguiente» de la etapa ya lo explica: no se repite
+    const cotizarSigue = !borr && ((recorridoDe(p) || {}).siguiente || {}).etapa === 'cotizacion';
+    let tCot = cotizarSigue ? '' : linea('Con los valores por partida del paso 4 se prepara la cotización: llega a <b>Borradores del Formulador</b> en Sistema QUEMPIN, donde se revisa y se emite con su número.');
     if (borr) {
       const espera = !(eb && (eb.estado === 'aplicado' || eb.estado === 'rechazado' || eb.estado === 'descartado'));
       const det = eb && eb.estado === 'aplicado' && eb.folio ? `Emitida como cotización <b>${esc(eb.folio)}</b>.`
         : eb && eb.estado === 'rechazado' ? esc((eb.detalle || []).join(' '))
-          : eb && eb.estado === 'descartado' ? 'Se descartó en Sistema QUEMPIN.' : 'Espera en Sistema QUEMPIN a que alguien la revise y la emita.';
+          : eb && eb.estado === 'descartado' ? `Se descartó en Sistema QUEMPIN${motivo ? `. Motivo: <b>${esc(motivo.replace(/\.$/, ''))}</b>` : ''}.` : 'Espera en Sistema QUEMPIN a que alguien la revise y la emita.';
       tCot = linea(`${chipEstado(eb ? eb.estado : 'pendiente')} Versión ${esc(borr.version)} enviada el ${esc(fechaHora(borr.fecha))}. ${det}`)
         + (espera ? `<ol class="rcl-pasos"><li>Abre <b>Sistema QUEMPIN</b> en tu computador.</li><li>En <b>Nueva Cotización</b>, usa el botón <b>Borradores del Formulador</b> y carga esta cotización.</li><li>Revísala y emítela: este proyecto verá su número solo.</li></ol>` : '');
     }
@@ -5714,6 +5827,166 @@
     if (caja.innerHTML !== html) caja.innerHTML = html;
     linea.hidden = !txt;
     if (linea.innerHTML !== txt) linea.innerHTML = txt;
+  }
+
+  // ---------------------------------------------------------------------------
+  //  PENDIENTES DEL EQUIPO (js/pendientes.js): lo que espera a una persona, arriba de la lista de
+  //  proyectos (pedido del usuario, 2026-10-14). Hasta hoy lo veía solo Claude, en la bandeja de
+  //  /Actualizar_Finanzas: el 14-10 había 23 sugerencias para la Planilla esperando desde el 05-10.
+  //  Solo lee la Planilla y el buzón; nunca escribe la Planilla ni atiende mensajes de otros.
+  // ---------------------------------------------------------------------------
+  const QP = () => window.QPendientes;
+  const PEND_CADA_MS = 60 * 1000;   // la carpeta se vuelve a leer a lo más una vez por minuto
+  const PEND_MAX = 3;               // filas por bloque antes de «Ver todas»
+
+  /* Lo leído (pend.crudo) cruzado con los proyectos de este navegador: se recalcula en cada pintada,
+     así un proyecto recién creado deja de aparecer «sin formular» sin volver a leer la carpeta. */
+  function repintarPendientes() {
+    const c = pend.crudo;
+    pend.datos = c ? {
+      ofertar: QP().porOfertar(c.reqs, (n) => proyectosPor('req', n)),
+      sugerencias: QP().sugerencias(c.buzon.filter((m) => m.destino === 'planilla-requerimientos'), (n) => pend.porNumero.get(Number(n)) || null),
+      borradores: QP().borradores(c.buzon),
+      planillaOrigen: c.origen
+    } : null;
+    pend.html = htmlPendientes(pend.datos);
+    const caja = $('#pendientes');
+    if (caja && caja.innerHTML !== pend.html) caja.innerHTML = pend.html;
+  }
+
+  /* Lee la Planilla y el buzón, y repinta la sección (si la lista está a la vista) y los avisos de
+     cierre. Con la carpeta del equipo sin conectar no muestra nada: la lista ya pide conectarla.
+     forzar: sin esperar el minuto. */
+  function pintarPendientes(forzar) {
+    if (nube.activa || !QP() || !QI() || !QH()) return Promise.resolve();
+    repintarPendientes();   // lo último leído, al instante
+    if (pend.enCurso) return pend.enCurso;
+    if (!forzar && pend.t && Date.now() - pend.t < PEND_CADA_MS) return Promise.resolve();
+    pend.enCurso = (async () => {
+      try {
+        const e = await QI().estado();
+        if (!e.conectada || e.permiso !== 'granted') { pend.crudo = null; pend.porNumero = null; return; }
+        const [pl, buzon] = await Promise.all([
+          QH().requerimientos().catch(() => null),
+          QI().leerBuzon({ tipos: ['actualizar-requerimiento', 'borrador-cotizacion'] }).catch(() => [])
+        ]);
+        const reqs = (pl && pl.requerimientos) || [];
+        const firma = `${pl ? pl.actualizado : ''}|${reqs.length}`;
+        const cambioPlanilla = firma !== pend.firma;
+        pend.porNumero = new Map(reqs.map((r) => [Number(r.numero), r]));
+        pend.firma = firma;
+        pend.crudo = { reqs, buzon, origen: pl ? pl.origen : '' };
+        pend.t = Date.now();
+        // Los avisos «Cierra en N días» dependen de la Planilla
+        if (cambioPlanilla) {
+          if (state.project) updateHeader();
+          else if ($('#list-body')) refreshList();
+        }
+      } catch (err) {
+        console.warn('Pendientes del equipo:', err);
+      } finally {
+        pend.enCurso = null;
+        repintarPendientes();
+      }
+    })();
+    return pend.enCurso;
+  }
+
+  /* Aviso «Cierra en N días» de un proyecto que todavía se formula: la fecha de cierre de su N° en la
+     Planilla. Ya enviado (o sin N°, o sin fecha) no lleva aviso. */
+  function plazoDe(p) {
+    if (!pend.porNumero || !QP() || !QH() || !EN_FORMULACION.includes(p.estado)) return null;
+    const req = QH().reqDe(p);
+    const r = req ? pend.porNumero.get(Number(req)) : null;
+    const dias = r ? QP().diasHasta(r.cierre) : null;
+    if (dias === null || dias < -7 || dias > 21) return null;
+    return { dias, texto: QP().textoPlazo(dias), nivel: QP().nivelPlazo(dias), fecha: QP().fechaCierre(r.cierre) };
+  }
+  const chipPlazo = (p) => {
+    const z = plazoDe(p);
+    return z ? `<span class="chip ${z.nivel} chip-plazo" title="Cierre de la licitación según la Planilla de Ingreso: ${esc(z.fecha)}">${ICON.reloj}${esc(z.texto)}</span>` : '';
+  };
+
+  function htmlPendientes(d) {
+    if (!d) return '';
+    const P = QP();
+    const bloques = [];
+    const lista = (id, filas) => {
+      const abiertas = pend.abiertos.has(id);
+      const vis = abiertas ? filas : filas.slice(0, PEND_MAX);
+      return `<ul class="pend-lista">${vis.join('')}</ul>${filas.length > PEND_MAX
+        ? `<button type="button" class="link-btn pend-mas" data-act="pend-ver" data-b="${id}" aria-expanded="${abiertas}">${abiertas ? 'Ver menos' : `Ver ${filas.length === PEND_MAX + 1 ? 'la otra' : `las otras ${filas.length - PEND_MAX}`}`}</button>` : ''}`;
+    };
+    const bloque = (id, titulo, n, desc, cuerpo, accion, pie) => `<section class="pend-b" data-b="${id}" aria-labelledby="pend-${id}">
+        <div class="pend-b-h"><h4 id="pend-${id}">${titulo}</h4><span class="pend-n" aria-label="${n} pendientes">${n}</span>${accion ? `<span class="pend-acc-h">${accion}</span>` : ''}</div>
+        <p class="pend-b-d">${desc}</p>${cuerpo}${pie ? `<p class="pend-nota">${pie}</p>` : ''}</section>`;
+
+    // 1. Por ofertar: requerimientos «En evaluación», del cierre más próximo
+    if (d.ofertar.length) {
+      const filas = d.ofertar.map((x) => {
+        const ps = x.proyectos || [];
+        const pr = ps[0];
+        const acc = pr
+          ? `<a class="btn btn-sm" href="#/p/${esc(pr.uid)}/${destinoDe(pr)}" aria-label="Abrir ${esc(pr.codigo)}">Abrir</a>`
+          : `<button type="button" class="btn btn-sm btn-acento" data-act="nuevo" data-buscar="${esc(x.numero)}" data-numero="${esc(x.numero)}">${ICON.plus}Formular</button>`;
+        const sub = [x.fechaCierre ? `cierre ${x.fechaCierre}` : 'sin fecha de cierre en la planilla', x.ubicacion,
+          pr ? `en el Formulador: ${pr.codigo} v${pr.version} · ${pr.estado}${ps.length > 1 ? ` (+${ps.length - 1})` : ''}` : 'sin formular'].filter(Boolean).join(' · ');
+        return `<li class="pend-fila">
+            <div class="pend-t">${x.dias !== null ? `<span class="chip ${x.nivel} chip-plazo">${ICON.reloj}${esc(x.plazo)}</span>` : ''}<b>N° ${esc(x.numero)}</b> · ${esc(x.titulo || 'Sin título')}<span class="pend-sub">${esc(sub)}</span></div>
+            <div class="pend-acc">${acc}</div></li>`;
+      });
+      bloques.push(bloque('ofertar', 'Por ofertar', d.ofertar.length,
+        'Requerimientos «En evaluación» en la Planilla de Ingreso, del cierre más próximo al más lejano.', lista('ofertar', filas)));
+    }
+
+    // 2. Pasar a la Planilla: lo que falta escribir, por N°
+    const porEscribir = d.sugerencias.filter((g) => !g.alDia);
+    if (porEscribir.length) {
+      const planillaWeb = (window.QPN_M365 || {}).planillaWeb;
+      const actual = (c) => (c.actual === null || c.actual === undefined || c.actual === '' ? 'vacío'
+        : typeof c.actual === 'number' ? dinero(c.actual, 'CLP') : `«${c.actual}»`);
+      const filas = porEscribir.map((g) => {
+        const campos = g.campos.map((c) => {
+          const v = P.valorParaCopiar(c);
+          const ver = typeof c.valor === 'number' ? dinero(c.valor, 'CLP') : c.valor;
+          return `<li><span class="pc-l">${esc(c.titulo)}:</span>
+            <button type="button" class="copiar-txt" data-act="copiar" data-v="${esc(v)}" data-lbl="N° ${esc(g.numero)} · ${esc(c.titulo)}" data-tip="<b>Copiar ${esc(c.titulo)}</b>Se copia ${typeof c.valor === 'number' ? 'como número sin formato' : 'tal cual'}: ${esc(v)}">${esc(ver)}</button>
+            <span class="pc-hoy">hoy ${esc(actual(c))}</span></li>`;
+        }).join('');
+        const fuentes = Array.from(new Map(g.campos.map((c) => [c.fuente.herramienta + c.fuente.motivo, c.fuente])).values());
+        const deDonde = fuentes.map((f) => (f.herramienta === 'mercado-publico'
+          ? (f.motivo || 'Monitor de Mercado Público')
+          : `Formulador${f.codigo ? ` (${f.codigo})` : ''}${f.usuario ? `, ${f.usuario}` : ''}`) + ` · ${P.hace(P.diasDesde(f.enviado))}`).join(' · ');
+        return `<li class="pend-fila">
+            <div class="pend-t"><b>N° ${esc(g.numero)}</b>${g.titulo ? ` · ${esc(g.titulo)}` : ''}<span class="pend-sub">${g.enPlanilla ? `Planilla: ${esc(g.estadoPlanilla || 'sin estado')}` : '▲ Ese N° no está en la planilla: revisa si está bien escrito.'}</span>
+              <ul class="pend-campos">${campos}</ul>
+              <span class="pend-fuente">${esc(deDonde)}</span></div></li>`;
+      });
+      bloques.push(bloque('planilla', 'Pasar a la Planilla', porEscribir.length,
+        'Estados y valores que las herramientas sugieren. Escríbelos en la Planilla de Ingreso: el aviso se cierra solo cuando la planilla los muestra.',
+        lista('planilla', filas),
+        planillaWeb ? `<a class="btn btn-sm" href="${esc(planillaWeb)}" target="_blank" rel="noopener">${ICON.open}Abrir la planilla</a>` : '',
+        d.planillaOrigen === 'publicado' ? 'Comparado con la copia de la planilla que publica el procesador (cada 2 horas).' : ''));
+    }
+
+    // 3. Borradores que esperan en Sistema QUEMPIN
+    if (d.borradores.length) {
+      const filas = d.borradores.map((b) => {
+        const aqui = b.uid && S.get(b.uid);
+        const sub = [`enviado ${P.hace(P.diasDesde(b.enviado))}${b.usuario ? ` por ${b.usuario}` : ''}`, b.cliente].filter(Boolean).join(' · ');
+        return `<li class="pend-fila">
+            <div class="pend-t"><b>${esc(b.codigo || 'Cotización')}${b.version ? ` v${esc(b.version)}` : ''}</b>${b.titulo ? ` · ${esc(b.titulo)}` : ''}<span class="pend-sub">${esc(sub)}</span></div>
+            ${aqui && !aqui.eliminado ? `<div class="pend-acc"><a class="btn btn-sm" href="#/p/${esc(b.uid)}/seguimiento">Ver</a></div>` : ''}</li>`;
+      });
+      bloques.push(bloque('sistema', 'En Sistema QUEMPIN', d.borradores.length,
+        'Cotizaciones preparadas en el Formulador que nadie ha emitido.', lista('sistema', filas), '',
+        'Se emiten en Sistema QUEMPIN: <b>Nueva Cotización › Borradores del Formulador</b>. El Formulador recibe el N° solo.'));
+    }
+    if (!bloques.length) return '';
+    return `<section class="pend" aria-labelledby="pend-t">
+        <div class="pend-head"><h3 class="seccion-titulo" id="pend-t">Pendientes del equipo</h3>
+          <p>Lo que espera a alguien, según la Planilla de Ingreso y la carpeta de intercambio.</p></div>
+        <div class="pend-grid">${bloques.join('')}</div></section>`;
   }
 
   /* Editor: aviso si el presupuesto abierto está solo en este navegador. */

@@ -43,6 +43,13 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
 - **Conecta las herramientas en las dos direcciones** (2026-10-06):
   - Menú **Herramientas** (cabecera): las herramientas del recorrido por etapa; dentro de un proyecto, el Análisis Financiero abre la ficha de ese proyecto.
   - Enlaces de entrada: `#/req/<N°>` y `#/tag/<TAG>` abren el proyecto donde está lo que sigue (los usan el tablero de Análisis Financiero y Sistema QUEMPIN); `#/p/<id>/seguimiento` abre su seguimiento.
+- **Muestra lo pendiente del equipo** (2026-10-14, `js/pendientes.js`). Arriba de la lista de proyectos, con la biblioteca conectada, la sección **Pendientes del equipo** lee la Planilla y el buzón de la carpeta de intercambio (solo lectura):
+  - **Por ofertar**: los requerimientos «En evaluación» de la Planilla, del cierre más próximo al más lejano, con un aviso «Cierra mañana / en N días» (rojo hasta 2 días, ámbar hasta 5). Si ya tienen proyecto, **Abrir**; si no, **Formular** abre *Nuevo proyecto* con la carpeta de ese N° elegida, o con «Nueva carpeta» lista si todavía no existe.
+  - **Pasar a la Planilla**: las sugerencias del Formulador y del monitor de Mercado Público que esperan, agrupadas por N° y solo con lo que falta escribir (la más nueva de cada columna; lo que la planilla ya muestra no se pide), con el valor para copiar, lo que dice hoy la planilla y de dónde viene. El procesador las cierra solas cuando la planilla las muestra.
+  - **En Sistema QUEMPIN**: las cotizaciones preparadas que nadie ha emitido.
+  - El mismo aviso de cierre va junto al estado en la lista y en el encabezado de cada proyecto en formulación.
+- **Pega filas desde Excel** en materiales, equipos y otros (2026-10-14, `js/pegar.js`): de una planilla de formulación antigua, de cualquier Excel o de la cotización del tablero del Cotizador Histórico («Copiar para el Formulador»). Reconoce descripción, unidad, cantidad y costo unitario con o sin encabezados, números escritos como en Chile y unidades comunes; muestra una vista previa, deja los costos con IVA en neto si se marca, y agrega todas las filas a la partida elegida.
+- **Muestra por qué no se emitió una cotización**: si se descartó en Sistema QUEMPIN (1.3.7 o posterior), el motivo aparece en el *Seguimiento* y en lo que sigue.
 
 ## Publicación y actualización
 
