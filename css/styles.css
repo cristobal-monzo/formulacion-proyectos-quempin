@@ -267,11 +267,23 @@ select.is-set { border-color: var(--brand-orange) !important; box-shadow: inset 
 #ed-compartida .nota { margin: 0 0 12px; }
 
 /* Pendientes del equipo (js/pendientes.js, 2026-10-14): por ofertar, pasar a la Planilla y borradores
-   en Sistema QUEMPIN, arriba de la lista de proyectos */
+   en Sistema QUEMPIN, arriba de la lista de proyectos. Desplegable (2026-10-15): plegada es una línea
+   con las cantidades y el cierre más próximo */
 .pend { margin: 0 0 18px; }
-.pend-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 14px; margin: 0 0 10px; }
-.pend-head .seccion-titulo { margin: 0; }
-.pend-head p { margin: 0; font-size: 12.5px; color: var(--text-muted); }
+.pend-sum {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 14px;
+  min-height: 46px; padding: 8px 14px; cursor: pointer; list-style: none;
+  background: var(--surface-card); border: 1px solid var(--border-hairline); border-left: 3px solid var(--brand-orange); border-radius: 8px;
+}
+.pend-sum::-webkit-details-marker { display: none; }
+.pend-sum:hover .pl-accion { text-decoration: underline; }
+.pend-sum-t { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; min-width: 0; }
+.pend-res { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 12.5px; color: var(--text-secondary); }
+.pend-cnt b { color: var(--text-primary); font-weight: 900; font-variant-numeric: tabular-nums; }
+.pend .pl-accion::before { content: 'Ver'; }
+.pend[open] .pl-accion::before { content: 'Ocultar'; }
+.pend[open] .pl-accion::after { transform: rotate(-135deg) translateY(-1px); }
+.pend-desc { margin: 10px 0; font-size: 12.5px; color: var(--text-muted); }
 .pend-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 12px; align-items: start; }
 .pend-b { background: var(--surface-card); border: 1px solid var(--border-hairline); border-top: 3px solid var(--brand-orange); border-radius: 10px; padding: 12px 14px 10px; min-width: 0; }
 .pend-b-h { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }

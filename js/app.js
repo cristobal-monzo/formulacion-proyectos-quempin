@@ -141,8 +141,12 @@
   /* Modo nube: activa = hay configuración de SharePoint; lista = sesión iniciada y proyectos cargados. */
   const nube = { activa: false, lista: false, ultimo: '' };
   /* Pendientes del equipo (ver pintarPendientes): lo último leído de la Planilla y del buzón.
-     porNumero: filas de la Planilla por N° (los avisos «Cierra en N días» de la lista y del editor). */
-  const pend = { html: '', t: 0, enCurso: null, crudo: null, datos: null, porNumero: null, firma: '', abiertos: new Set() };
+     porNumero: filas de la Planilla por N° (los avisos «Cierra en N días» de la lista y del editor).
+     abierta: la sección desplegada. Parte plegada (ocupaba mucho, pedido del 2026-10-15) y este
+     navegador recuerda cómo la dejó la persona. */
+  const CLAVE_PEND_ABIERTA = 'quempin_fp_pendientes_abierta';
+  const pend = { html: '', t: 0, enCurso: null, crudo: null, datos: null, porNumero: null, firma: '', abiertos: new Set(),
+    abierta: (() => { try { return localStorage.getItem(CLAVE_PEND_ABIERTA) === '1'; } catch (e) { return false; } })() };
 
   const DETALLE = {
     materiales: { titulo: 'Materiales', singular: 'material', total: 'mat', factory: S.newMaterial, cat: 'cat-mat' },
@@ -2852,6 +2856,11 @@
   app.addEventListener('toggle', (e) => {
     const d = e.target;
     if (!d.dataset) return;
+    if (d.id === 'pend-sec') {   // Pendientes del equipo: abierta o plegada, recordada en este navegador
+      pend.abierta = d.open;
+      try { localStorage.setItem(CLAVE_PEND_ABIERTA, d.open ? '1' : '0'); } catch (err) { /* solo esta vez */ }
+      return;
+    }
     const set = d.dataset.kpi ? state.kpiOpen : d.dataset.openKey ? state.abiertos : null;
     const key = d.dataset.kpi || d.dataset.openKey;
     if (!set) return;
@@ -5983,10 +5992,15 @@
         'Se emiten en Sistema QUEMPIN: <b>Nueva Cotización › Borradores del Formulador</b>. El Formulador recibe el N° solo.'));
     }
     if (!bloques.length) return '';
-    return `<section class="pend" aria-labelledby="pend-t">
-        <div class="pend-head"><h3 class="seccion-titulo" id="pend-t">Pendientes del equipo</h3>
-          <p>Lo que espera a alguien, según la Planilla de Ingreso y la carpeta de intercambio.</p></div>
-        <div class="pend-grid">${bloques.join('')}</div></section>`;
+    // Plegada queda en una línea: cuántos hay de cada cosa y el cierre más próximo, si es de esta semana
+    const cuenta = (n, txt) => (n ? `<span class="pend-cnt"><b>${n}</b> ${txt}</span>` : '');
+    const urge = d.ofertar.find((x) => x.nivel === 'bad' || x.nivel === 'warn');
+    return `<details class="pend" id="pend-sec"${pend.abierta ? ' open' : ''}>
+        <summary class="pend-sum"><span class="pend-sum-t"><span class="seccion-titulo">Pendientes del equipo</span>
+          <span class="pend-res">${cuenta(d.ofertar.length, 'por ofertar')}${cuenta(porEscribir.length, 'para la Planilla')}${cuenta(d.borradores.length, 'en Sistema QUEMPIN')}${urge
+            ? `<span class="chip ${urge.nivel} chip-plazo">${ICON.reloj}${esc(urge.plazo)} · N° ${esc(urge.numero)}</span>` : ''}</span></span><span class="pl-accion" aria-hidden="true"></span></summary>
+        <div class="pend-cuerpo"><p class="pend-desc">Lo que espera a alguien, según la Planilla de Ingreso y la carpeta de intercambio.</p>
+          <div class="pend-grid">${bloques.join('')}</div></div></details>`;
   }
 
   /* Editor: aviso si el presupuesto abierto está solo en este navegador. */
