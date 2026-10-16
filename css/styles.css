@@ -83,6 +83,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 /* ---- Cabecera: complementos a brand.css --------------------------------- */
 .viz-logo { text-decoration: none; }
+@media (max-width: 600px) { .viz-logo img { display: none; } }   /* el título ya se corta en el teléfono */
 .viz-titleblock p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .viz-titleblock p strong { color: #ffffff; font-weight: 700; }
 /* Navegación de secciones: mismo componente que el menú entre tableros de Finanzas */
@@ -261,6 +262,13 @@ select.is-set { border-color: var(--brand-orange) !important; box-shadow: inset 
 .nota.compartida-nota { align-items: center; }
 .nota.pulso-detenido { border-left-color: var(--status-bad); }   /* procesador del intercambio detenido (js/pulso.js) */
 .nota > .actions { flex: 0 1 auto; }
+/* Teléfono (2026-10-16): los dos botones del aviso de la carpeta van lado a lado; uno por fila, el
+   aviso medía 167 px y es el que más se ve en el teléfono, que no puede conectar la carpeta. */
+@media (max-width: 600px) {
+  .nota.compartida-nota > .actions { display: flex; flex-wrap: nowrap; gap: 8px; width: 100%; }
+  .nota.compartida-nota > .actions .btn { flex: 1 1 0; min-width: 0; justify-content: center; padding-left: 8px; padding-right: 8px; white-space: normal; text-align: center; line-height: 1.2; }
+  .nota.compartida-nota > .actions .btn svg { display: none; }
+}
 .compartida-linea { display: flex; align-items: center; flex-wrap: wrap; gap: 0 4px; margin: 4px 0 0; font-size: 12.5px; color: var(--text-muted); }
 .compartida-linea[hidden] { display: none; }
 .chip.solo-aqui { display: inline-block; margin-top: 4px; font-size: 11px; }
@@ -444,6 +452,15 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
   .lectura { order: -1; width: 100%; padding-top: 10px; }
   .lectura-item { flex: 1 1 0; }
 }
+/* Pasos y lectura en una sola fila en el escritorio (2026-10-16): a 1366 px la lectura (precio, margen,
+   alertas) bajaba a una segunda fila y la barra medía 102 px, con el contenido empezando a 494 px. */
+@media (min-width: 1061px) {
+  .barra-pestanas-interior { flex-wrap: nowrap; }
+  .paso-tab { padding-left: 8px; padding-right: 8px; gap: 7px; }
+  .paso-sep { flex-basis: 10px; }
+  .lectura-item { padding: 0 10px; }
+}
+@media (min-width: 1061px) and (max-width: 1440px) { .paso-opc { display: none; } }
 
 /* ---- Encabezado del editor ------------------------------------------------ */
 .editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; margin: 2px 0 16px; }
@@ -1466,7 +1483,7 @@ button.meta-carpeta .dot { margin: 0 0 0 2px; flex: 0 0 auto; }
    plegada en una línea (lo principal son los pasos de la formulación) y en el seguimiento solo la etapa
    actual va abierta. */
 #ed-recorrido:empty { display: none; }
-.rc-nav { margin: 0 0 12px; }
+.rc-nav { margin: 4px 0 0; }   /* dentro de .editor-title, bajo los datos del proyecto */
 .rc-barra { border: 1px solid var(--border-hairline); border-radius: 10px; }
 .rc-barra[open] { background: var(--surface-card); }
 .rcb-resumen {

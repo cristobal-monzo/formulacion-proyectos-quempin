@@ -127,6 +127,9 @@
   }
   .viz-header .viz-container { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   .viz-logo { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; }
+  /* El isotipo junto a la palabra, igual que en los tableros (2026-10-16) */
+  .viz-logo img { height: 42px; width: auto; display: block; flex-shrink: 0; }
+  @media (max-width: 640px) { .viz-logo img { height: 34px; } }
   .viz-wordmark { font-size: 21px; font-weight: 900; letter-spacing: 0.02em; line-height: 1; color: #ffffff; }
   .viz-wordmark .in { color: #ff5100; }
   .viz-titleblock { flex: 1 1 auto; min-width: 200px; }

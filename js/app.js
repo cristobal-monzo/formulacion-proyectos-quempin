@@ -1307,6 +1307,8 @@
           <div class="editor-title">
             <h2 id="ed-title"></h2>
             <div class="meta" id="ed-meta"></div>
+            <!-- En el bloque del título (2026-10-16): era una franja propia de 38 px más sus márgenes -->
+            <div id="ed-recorrido"></div>
           </div>
           <div class="editor-actions">
             <div class="actions">
@@ -1318,7 +1320,6 @@
             <span class="en-vivo ${textoGuardado()[1]}" id="save-state" title="${esc(textoGuardado()[0])}">${esc(textoGuardado()[0])}</span>
           </div>
         </div>
-        <div id="ed-recorrido"></div>
         <div id="ed-estado"></div>
         <div id="ed-compartida"></div>
         <div id="ed-oferta"></div>
