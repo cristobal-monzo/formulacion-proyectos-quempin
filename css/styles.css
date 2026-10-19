@@ -1763,3 +1763,35 @@ button.meta-carpeta .dot { margin: 0 0 0 2px; flex: 0 0 auto; }
    el mouse) para no desbordar */
 .tbl-lista td.code .code-badge { max-width: 15ch; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
 #ed-meta .code-badge { max-width: 30ch; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+
+/* ---- Diálogos y listas: alineación y acabado común (2026-10-19) -------------------
+   · En una fila de campos sin ayudas, los rótulos de distinta largura ya no descuadran
+     las casillas: se alinean por abajo.
+   · El título de un recuadro (fieldset) va dentro del recuadro, no cortando el borde.
+   · Pie del diálogo separado con una línea; cuerpo con scroll propio si es alto. */
+.fila-campos:not(:has(.hint)) { align-items: end; }
+.np-campos { grid-template-columns: minmax(200px, 250px) minmax(0, 1fr); align-items: end; }
+.np-campos .campo > label { line-height: 1.35; }
+.np-campos .input { height: 42px; }
+.np-codigo { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: -2px; }
+.modal-body fieldset { min-width: 0; }
+.np-carpeta, .af-extra { padding: 12px 14px 12px; }
+.np-carpeta legend, .af-extra legend { float: left; width: 100%; margin: 0 0 6px; padding: 0; }
+.np-carpeta legend + *, .af-extra legend + * { clear: both; }
+.np-op { padding: 8px 10px; margin: 0 -6px; align-items: center; }
+.np-op:not(.dis):hover { background: var(--chip-hover); }
+.np-op input { margin: 0; }
+.np-op:has(input:checked) span { color: var(--text-primary); }
+#np-opciones > .np-pl, #np-opciones > .np-nota { margin: 4px 0 0 29px; }
+#np-opciones > .np-elegir { margin: 12px 0 0 0; padding-top: 10px; border-top: 1px solid var(--border-hairline); width: 100%; }
+dialog#modal { overflow: hidden; display: flex; flex-direction: column; max-height: calc(100vh - 32px); }
+dialog#modal:not([open]) { display: none; }
+dialog#modal > form, dialog#modal > div { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+.modal-body { overflow-y: auto; min-height: 0; padding-bottom: 14px; }
+.modal-foot { border-top: 1px solid var(--border-hairline); padding-top: 14px; flex: 0 0 auto; }
+.modal-head { flex: 0 0 auto; }
+.modal-foot .btn { min-width: 108px; justify-content: center; }
+.pop { animation: pop-in .12s ease-out; }
+@keyframes pop-in { from { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .pop { animation: none; } }
+@media (max-width: 520px) { .np-campos { grid-template-columns: 1fr; } .modal-foot .btn { flex: 1 1 auto; } }
