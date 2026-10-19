@@ -529,13 +529,16 @@
         enEditor ? null : { icon: ICON.open, title: 'Abrir', act: 'abrir', id },
         ub && ub.webUrl ? { icon: ICON.folder, title: 'Abrir la carpeta en SharePoint', desc: ub.ruta, act: 'abrir-carpeta', id } : null,
         ub ? { icon: ICON.sheet, title: 'Guardar Excel en la carpeta', desc: 'Copia para ver o imprimir desde SharePoint', act: 'excel-carpeta', id } : null,
-        vo ? { icon: ICON.sheet, title: 'Guardar Excel en la carpeta de la oferta', desc: vo.nombre, act: 'oferta-guardar', id } : null,
+        vo ? { icon: ICON.folder, title: 'Abrir la carpeta en el Explorador', desc: `Formulación de proyectos · ${vo.nombre}`, act: 'oferta-abrir', id } : null,
+        vo && QO().copiaEnGestion(vo) ? { icon: ICON.folder, title: 'Abrir la de Gestión de Proyectos', desc: 'La copia donde sigue la ejecución', act: 'oferta-abrir-gestion', id } : null,
+        vo && QO().escribible(vo) ? { icon: ICON.sheet, title: 'Guardar Excel en la carpeta de la oferta', desc: vo.nombre, act: 'oferta-guardar', id } : null,
+        vo && QO().escribible(vo) && !(QO().copiaEnGestion(vo) || {}).copiada && (S.get(id) || {}).estado === 'Adjudicada' ? { icon: ICON.folder, title: 'Copiar la carpeta a Gestión de Proyectos', desc: 'El original pasa a 0 OFERTAS ADJUDICADAS', act: 'oferta-trasladar', id } : null,
         vo === null ? { icon: ICON.folder, title: 'Elegir la carpeta de la oferta', desc: 'Para dejar ahí una copia en Excel, al día', act: 'oferta-elegir', id } : null,
         enEditor ? null : { icon: ICON.download, title: 'Exportar a Excel', desc: 'Planilla con fórmulas vivas y ficha de KPI', act: 'exp-xlsx', id },
         { icon: ICON.file, title: 'Exportar a JSON', desc: 'Para respaldar o compartir y volver a importar', act: 'exp-json', id },
         { icon: ICON.enviar, title: 'Enviar costos al Análisis Financiero', desc: 'Como costos proyectados del proyecto adjudicado', act: 'enviar-af', id },
         { sep: true },
-        { icon: ICON.layers, title: 'Duplicar como proyecto nuevo', desc: enSP() ? 'En la carpeta de otra oferta, versión 1' : 'Nuevo código correlativo, versión 1', act: 'duplicar', id },
+        { icon: ICON.layers, title: 'Duplicar como proyecto nuevo', desc: enSP() ? 'En la carpeta de otra oferta, versión 1' : 'En otra oferta: su carpeta le da el código', act: 'duplicar', id },
         { icon: ICON.version, title: 'Crear nueva versión', desc: 'Mismo código para una revisión de la oferta', act: 'version', id },
         { sep: true },
         { icon: ICON.trash, title: enEditor ? 'Eliminar proyecto' : 'Eliminar', act: 'eliminar', id, danger: true }
@@ -1334,7 +1337,7 @@
       const s = (recorridoDe(p, r) || {}).siguiente;
       const chipAlertas = nAlert ? `<span class="chip ${nErr ? 'bad' : 'warn'}" title="${plural(nAlert, 'alerta')}">${nErr ? '✖' : '▲'} ${nAlert}</span>` : '';
       return `<tr class="clickable" data-open="${p.uid}" data-destino="${destinoDe(p, r)}" tabindex="0" aria-label="Abrir ${esc(p.codigo)} ${esc(p.titulo || 'Sin título')}${s ? `. ${esc(s.corto)}` : ''}">
-        <td class="nowrap code"><span class="code-badge">${esc(p.codigo || '—')}</span><span class="ver">v${esc(p.version)}</span>${chipAlertas ? `<div class="en-linea l2">${chipAlertas}</div>` : ''}</td>
+        <td class="nowrap code"><span class="code-badge" title="${esc(p.codigo || '')}">${esc(p.codigo || '—')}</span><span class="ver">v${esc(p.version)}</span>${chipAlertas ? `<div class="en-linea l2">${chipAlertas}</div>` : ''}</td>
         <td class="col-titulo"><div class="proj-title">${esc(p.titulo || 'Sin título')}</div><div class="proj-sub">${esc([p.cliente, p.ubicacion].filter(Boolean).join(' · ') || '—')}</div>
           <div class="proj-sub en-linea l1">${esc(p.responsable ? `Responsable: ${p.responsable}` : 'Sin responsable')}<span class="en-linea l2"> · ${esc(fechaCorta(p.fecha))}</span></div>${carpetaCorta(p)}${aqui.has(p.uid) ? '<span class="chip warn solo-aqui" title="No está en la carpeta del equipo">Solo en este navegador</span>' : ''}</td>
         <td class="col-resp" data-label="Responsable">${esc(p.responsable || '—')}</td>
@@ -1411,7 +1414,7 @@
       const v = ofertaActiva() ? QO().vinculo(p) : null;
       if (!v) return '';
       const i = QO().info(p);
-      const dot = { guardado: 'ok', guardando: 'warn', pendiente: 'warn', error: 'bad' }[i.estado] || '';
+      const dot = { guardado: 'ok', guardando: 'warn', pendiente: 'warn', error: 'bad', trasladando: 'warn' }[i.estado] || '';
       const tip = textoEstadoOferta(i);
       return `${sep}<button type="button" class="meta-carpeta" data-act="oferta-info" title="${esc(tip)}" aria-label="Carpeta de la oferta: ${esc(v.nombre)}. ${esc(tip)}">${ICON.folder}<span>${esc(v.nombre)}</span>${dot ? `<span class="dot ${dot}" aria-hidden="true"></span>` : ''}</button>`;
     }
@@ -1441,7 +1444,7 @@
     texto(t, p.titulo || 'Proyecto sin título');
     t.classList.toggle('sin-titulo', !p.titulo);
     const sep = '<span class="sep" aria-hidden="true">·</span>';
-    pintar($('#ed-meta'), `<span class="code-badge">${esc(p.codigo || 'SIN CÓDIGO')}</span><span>versión ${esc(p.version)}</span>
+    pintar($('#ed-meta'), `<span class="code-badge" title="${esc(p.codigo || '')}">${esc(p.codigo || 'SIN CÓDIGO')}</span><span>versión ${esc(p.version)}</span>
       <button type="button" class="estado" data-e="${esc(p.estado)}" data-picker="estado" aria-haspopup="listbox" aria-expanded="false" aria-label="Estado: ${esc(p.estado)}. Cambiar el estado">${esc(p.estado)}${svg('<path d="M6 9l6 6 6-6"/>')}</button>${chipPlazo(p)}
       ${p.cliente ? `<span class="m-opc">${sep}<span>${esc(p.cliente)}</span></span>` : ''}${p.responsable ? `<span class="m-opc">${sep}<span>${esc(p.responsable)}</span></span>` : ''}${p.fecha ? `<span class="m-opc">${sep}<span>${esc(fechaCorta(p.fecha))}</span></span>` : ''}${metaCarpeta(p, sep)}`);
     const titulo = `${p.codigo || ''} ${p.titulo || 'Proyecto'} — Formulación QUEMPIN`;
@@ -2100,12 +2103,14 @@
     if (!el) return;
     const p = state.project;
     const dup = S.all().find((x) => x.uid !== p.uid && x.codigo === p.codigo && String(x.version) === String(p.version));
-    const req = QH() && QH().reqDe(p);
+    const v = QO() && QO().vinculo(p);
+    const propuesto = codigoPropuesto(p);
     el.textContent = dup ? `⚠ Ya existe otro proyecto ${p.codigo} v${p.version} («${String(dup.titulo || '').slice(0, 40)}»).`
       : enSP() ? 'N° de la oferta en la planilla de ingreso.'
-        : !codigoAutomatico(p.codigo) ? 'Escrito a mano: «Completar desde la planilla» no lo cambia.'
-          : req && p.codigo === codigoDeReq(p, req) ? 'QMPN, año y N° de requerimiento; puedes editarlo.'
-            : `Al completar desde la planilla queda ${codigoDeReq(p, req || 'N°')}; puedes editarlo.`;
+        : !codigoAutomatico(p.codigo, p) ? 'Escrito a mano: no cambia al elegir la carpeta ni al completar desde la planilla.'
+          : v && p.codigo === v.nombre ? 'El nombre de la carpeta de la oferta; puedes editarlo.'
+            : propuesto && p.codigo === propuesto ? 'N° y nombre, como la carpeta de la oferta; puedes editarlo.'
+              : `Al elegir la carpeta o completar desde la planilla queda «${propuesto || 'N°. Nombre'}»; puedes editarlo.`;
     el.style.color = dup ? 'var(--status-bad)' : '';
   }
 
@@ -3170,22 +3175,9 @@
         case 'nuevo': {
           if (enSP()) { await nuevoEnSharePoint(); break; }
           if (!(await exigirCarpeta())) break;
-          // Con la biblioteca conectada: ¿de qué oferta? (ahí queda la copia en Excel); si la carpeta
-          // todavía no existe, se crea en el mismo formulario
-          const sel = await elegirOfertaLocal({
-            titulo: 'Nuevo proyecto', buscar: d.buscar || '', porNumero: d.numero || '',
-            texto: 'Elige la carpeta de la oferta, o créala aquí si todavía no existe. Ahí queda el Excel de la formulación, al día con cada cambio, y su N° une el proyecto con la Planilla de Ingreso y las demás herramientas.',
-            confirmar: 'Crear proyecto', completar: true
-          });
-          if (!sel) break;
-          const np = S.newProject();
-          if (sel.carpeta) enOfertaLocal(np, sel, { datosOferta: true });
-          S.upsert(np);
-          if (sel.carpeta) guardarExcelOferta(np.uid, true);
-          goProject(np, 'ficha');
-          if (sel.carpeta) registrarAlElegirCarpeta(np.uid, `Proyecto creado en «${sel.carpeta.nombre}».`);
-          else toast('Proyecto creado. Cuando tengas la carpeta de su oferta, elígela desde el aviso de arriba.');
-          setTimeout(() => { const t = $('[data-f="titulo"]'); if (t) t.focus(); }, 60);
+          // El N° y el nombre forman el código «N°. Nombre», y se pregunta si se crea la carpeta de la oferta
+          // con ese mismo nombre (2026-10-19). «Formular» de Pendientes del equipo trae el N° (d.numero).
+          await crearProyectoLocal({ numero: d.numero || (/^\d{1,6}$/.test(d.buscar || '') ? d.buscar : '') });
           break;
         }
         case 'nuevo-op': await nuevoDesdeOportunidad(); break;
@@ -3446,6 +3438,10 @@
           break;
         }
         case 'oferta-omitir': if (p) { ofertaOmitida.add(p.uid); pintarEditorOferta(); } break;
+        case 'oferta-abrir': abrirCarpetaOferta(id || (p && p.uid)); break;
+        case 'oferta-abrir-gestion': abrirCarpetaOferta(id || (p && p.uid), true); break;
+        case 'oferta-trasladar': await ofrecerTraslado(id || (p && p.uid), true); break;
+        case 'oferta-traslado-cancelar': cancelarTraslado(id || (p && p.uid)); break;
         case 'oferta-guardar': {
           const uid = id || (p && p.uid);
           if (p && p.uid === uid && saveTimer) saveNow();
@@ -4881,25 +4877,31 @@
   const REQ_RECIENTES = 20;
   let reqLista = [];   // la planilla completa, del N° más alto (el último ingresado) al más bajo
   const enLaPlanilla = (datos) => (datos && datos.origen === 'planilla' ? 'la planilla de ingreso' : 'la planilla de ingreso publicada');
-  /* Código del proyecto con N° de requerimiento: QMPN-<año de la formulación>-<N°>. Reemplaza al
-     correlativo automático (o a un QMPN de otro N°), nunca a un código escrito a mano. */
+  /* Código del proyecto (pedido del usuario, 2026-10-19): «N° de proyecto + nombre», igual al nombre de la
+     carpeta de su oferta («312. Gimnasio municipal»). Con carpeta, su nombre; sin ella, el que tendría con el N°
+     de requerimiento y el título. Reemplaza a un código automático (vacío, el correlativo QMPN-año-N, el
+     QMPN-año-N° de antes del 2026-10-19 o uno «N°. …»), nunca a uno escrito a mano. */
   const PREFIJO_REQ = 'QMPN';
   const escRe = (t) => String(t).replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-  function codigoDeReq(p, req) {
-    const anio = /^\d{4}-/.test(String(p.fecha || '')) ? String(p.fecha).slice(0, 4) : String(new Date().getFullYear());
-    return `${PREFIJO_REQ}-${anio}-${req}`;
+  function codigoPropuesto(p, req) {
+    const v = QO() && QO().vinculo(p);
+    if (v) return v.nombre;
+    return QO() ? QO().nombreOferta(req || (QH() && QH().reqDe(p)) || '', p.titulo) : '';
   }
-  function codigoAutomatico(codigo) {
+  function codigoAutomatico(codigo, p) {
     const c = String(codigo || '').trim();
     const prefijos = [PREFIJO_REQ, S.getConfig().prefijo, 'QPN'].filter(Boolean).map(escRe).join('|');
-    return !c || new RegExp(`^(${prefijos})-\\d{4}-\\d+$`, 'i').test(c);
+    if (!c || new RegExp(`^(${prefijos})-\\d{4}-\\d+$`, 'i').test(c) || /^\d{1,6}\.\s/.test(c)) return true;
+    const v = p && QO() && QO().vinculo(p);
+    return !!p && ((!!v && c === v.nombre) || (!!QO() && c === QO().nombreOferta('', p.titulo)));
   }
-  /* Deja el código QMPN-año-N° si el actual es automático (en SharePoint el código ya es el N°).
-     Si otra formulación de la misma oferta ya tiene esa versión, esta pasa a la siguiente. true = cambió. */
-  function codigoDesdeReq(p, req) {
-    if (!req || enSP() || !codigoAutomatico(p.codigo)) return false;
-    const c = codigoDeReq(p, req);
-    if (c === p.codigo) return false;
+  /* Deja como código el nombre de la carpeta (o «N°. Nombre») si el actual es automático (en SharePoint el
+     código ya es el N°). Si otra formulación de la misma oferta ya tiene esa versión, esta pasa a la
+     siguiente. true = cambió. */
+  function ajustarCodigo(p, req) {
+    if (enSP() || !codigoAutomatico(p.codigo, p)) return false;
+    const c = codigoPropuesto(p, req);
+    if (!c || c === p.codigo) return false;
     p.codigo = c;
     const mismas = S.all().filter((x) => x.uid !== p.uid && x.codigo === c);
     if (mismas.some((x) => String(x.version) === String(p.version))) p.version = mismas.reduce((a, x) => Math.max(a, parseInt(x.version, 10) || 1), 1) + 1;
@@ -4928,7 +4930,7 @@
     const planillaWeb = (window.QPN_M365 || {}).planillaWeb;
     return `<div class="campo ancho"><label for="f-req">N° de requerimiento <span class="opc">(Planilla de Ingreso)</span></label>
         <div class="req-fila"><div class="combo"><input class="input" id="f-req" inputmode="numeric" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" value="${esc(v && v.numero ? v.numero : '')}" placeholder="${enCodigo ? `${esc(enCodigo)} (el código)` : 'Ej.: 280'}"><button type="button" class="combo-btn" data-picker="combo" tabindex="-1" aria-label="Ver los requerimientos">${ICON.caret}</button></div>
-          <button type="button" class="btn btn-sm" data-act="req-completar" data-tip="<b>Completar desde la planilla</b>Trae el título, la ubicación, el ID de licitación y el presupuesto del requerimiento a los campos que estén vacíos, y deja el código ${esc(codigoDeReq(p, 'N°'))}.">Completar desde la planilla</button>
+          <button type="button" class="btn btn-sm" data-act="req-completar" data-tip="<b>Completar desde la planilla</b>Trae el título, la ubicación, el ID de licitación y el presupuesto del requerimiento a los campos que estén vacíos, y deja como código «N°. Nombre», igual que el nombre de la carpeta de la oferta.">Completar desde la planilla</button>
           ${planillaWeb ? `<a class="link-btn req-abrir" href="${esc(planillaWeb)}" target="_blank" rel="noopener" data-tip="<b>Abrir la planilla de ingreso</b>Se abre en Excel para la web, en otra pestaña, para buscar o verificar el N°.">${ICON.open}Abrir la planilla</a>` : ''}</div>
         <span class="hint" id="req-hint">El N° con que se registró el requerimiento: une este proyecto con su cotización, el Análisis Financiero y el Flujo de Caja. La lista muestra los ${REQ_RECIENTES} últimos ingresados; para uno anterior, escribe su N° o parte del título.</span></div>`;
   }
@@ -4976,8 +4978,8 @@
       hechos.push('presupuesto (con IVA)');
     }
     const version = p.version;
-    if (codigoDesdeReq(p, req)) hechos.push(`código ${p.codigo}${p.version !== version ? ` v${p.version}` : ''}`);
     p.vinculos = Object.assign({}, p.vinculos, { requerimiento: { numero: req, titulo: r.titulo || '' } });
+    if (ajustarCodigo(p, req)) hechos.push(`código ${p.codigo}${p.version !== version ? ` v${p.version}` : ''}`);
     recalc();
     renderTab('#f-req');
     updateHeader();
@@ -5331,6 +5333,9 @@
         : s.espera ? ` Ahora: ${min(s.corto)}.`
           : ` Siguiente: ${min(s.boton ? s.boton.replace(/…$/, '') : s.corto)}.`;
     toast(`Oferta ${p.estado}${avisada ? ', con aviso a la Planilla de Ingreso' : ''}.${que}`, false, 6000);
+    // Adjudicada: ¿la carpeta de la oferta se copia a Gestión de Proyectos? (2026-10-19). Después del cambio de
+    // pestaña de «Marcar como Adjudicada», que cerraría el diálogo.
+    if (p.estado === 'Adjudicada') setTimeout(() => { if (state.project && state.project.uid === p.uid) ofrecerTraslado(p.uid); }, 800);
   }
   /* Cambia el estado desde el recorrido. Enviada, Perdida y Descartada avisan a la Planilla de Ingreso
      en el mismo clic (el recorrido lo dice); la adjudicación viaja con «Pasar a ejecución». */
@@ -5653,6 +5658,19 @@
     }
     const abrirAF = vAF ? `<a class="btn" href="${esc(enlaceAF(p))}" target="_blank" rel="noopener">${ICON.open}Ver la ficha en Análisis Financiero</a>` : '';
     html.ejecucion = bloqueAF(tVenta || bVenta || abrirAF ? `<div class="herr-cuerpo herr-venta">${tVenta}${acciones(bVenta + abrirAF)}</div>` : '');
+    // La carpeta de la oferta: al adjudicarse, su copia en Gestión de Proyectos y el original en Adjudicadas (2026-10-19)
+    const vCarpeta = p.estado === 'Adjudicada' && !enSP() && ofertaActiva() ? QO().vinculo(p) : null;
+    if (vCarpeta) {
+      const copia = QO().copiaEnGestion(vCarpeta);
+      const abrirO = `<button type="button" class="btn" data-act="oferta-abrir">${ICON.folder}Abrir ${copia ? 'el original' : 'la carpeta'}</button>`;
+      const copiar = `<button type="button" class="btn" data-act="oferta-trasladar">${ICON.folder}Copiar a Gestión de Proyectos…</button>`;
+      html.ejecucion += `<div class="herr-cuerpo herr-carpeta">${copia
+        ? linea(`${copia.copiada ? '<span class="chip ok">Al día</span> ' : ''}La carpeta <b>«${esc(vCarpeta.nombre)}»</b> tiene su copia en Gestión de Proyectos (${copia.copiada ? `copiada el ${esc(fechaHora(copia.copiada))}` : `pedida a QUEMPIN.exe el ${esc(fechaHora(copia.pedida))}`}); el original quedó en Formulación › ${esc(QO().grupoDeRuta(vCarpeta.ruta))}.`)
+          + acciones(`<button type="button" class="btn" data-act="oferta-abrir-gestion">${ICON.folder}Abrir la de Gestión de Proyectos</button>${abrirO}${copia.copiada ? '' : copiar}`)
+        : QO().trasladoPedido(vCarpeta)
+          ? linea(`${chipEstado('pendiente')} Copia de <b>«${esc(vCarpeta.nombre)}»</b> a Gestión de Proyectos pedida el ${esc(fechaHora(vCarpeta.traslado.pedido))}: se confirma en QUEMPIN.exe.`) + acciones(abrirO + '<button type="button" class="btn btn-ghost" data-act="oferta-traslado-cancelar">Dejarlo así</button>')
+          : linea(`Adjudicada la oferta, su carpeta <b>«${esc(vCarpeta.nombre)}»</b> se copia a Gestión de Proyectos, donde sigue la ejecución, y el original pasa a 0 OFERTAS ADJUDICADAS.`) + acciones(copiar + abrirO)}</div>`;
+    }
 
     // 6. Cierre
     const qAF = vAF ? ((af && af.proyectos) || []).find((x) => x.tag === vAF.tag) : null;
@@ -6153,7 +6171,8 @@
   function carpetaCorta(p) {
     if (!enSP()) {
       const v = QO() && QO().vinculo(p);
-      return v ? `<div class="proj-carpeta" title="Excel en la carpeta de la oferta: ${esc(v.ruta.join(' › '))}">${ICON.folder}<span>${esc(QO().grupoDeRuta(v.ruta))} · ${esc(v.nombre)}</span></div>` : '';
+      const copia = v && QO().copiaEnGestion(v) ? ' · copia en Gestión' : '';
+      return v ? `<div class="proj-carpeta" title="Excel en la carpeta de la oferta: ${esc(v.ruta.join(' › '))}${copia ? '. La ejecución sigue en su copia de Gestión de Proyectos' : ''}">${ICON.folder}<span>${esc(QO().grupoDeRuta(v.ruta))} · ${esc(v.nombre)}${copia}</span></div>` : '';
     }
     const u = window.QCloud.ubicacion(p.uid);
     return u ? `<div class="proj-carpeta" title="${esc(u.grupo)} · ${esc(u.carpeta)}">${ICON.folder}<span>${esc(u.grupo)} · ${esc(u.carpeta)}</span></div>` : '';
@@ -6199,11 +6218,198 @@
     }, opts));
   }
 
+  /* «Nuevo proyecto» (pedido del usuario, 2026-10-19): primero el N° de requerimiento y el nombre, que forman
+     el código «N°. Nombre», y la pregunta de si se crea la carpeta de la oferta con ese mismo nombre en la
+     biblioteca «Formulación de proyectos - Documentos». Si ya hay una carpeta con ese N° o ese nombre, se
+     propone usarla. «Elegir otra carpeta…» lleva al selector de siempre (elegirOfertaLocal).
+     o: encabezado (título del diálogo), texto, numero y nombre (con qué abre). Devuelve { crear, carpeta,
+     numero, titulo, req, iniciales }, { elegir: true, numero, titulo } o null (canceló). */
+  async function dialogoNuevo(o) {
+    let lista = null;     // carpetas de oferta de la biblioteca; null = sin biblioteca con permiso
+    let sinNavegador = !ofertaActiva();
+    if (!sinNavegador) {
+      try {
+        const e = await QI().estadoBiblioteca();
+        if (e.recordada && e.permiso !== 'granted') await QI().permitir();
+        lista = await QO().carpetas(true);
+      } catch (err) { console.warn('Carpetas de oferta:', err); lista = null; }
+    }
+    let pl = null;
+    const cargaPlanilla = planillaPublicada().catch(() => null);
+    const pedirIniciales = !yo();
+    let opcion = '';      // la opción elegida a mano ('crear' | 'usar' | 'ninguna'); '' = la propuesta
+    let autoTit = '';
+    const prom = ask({
+      title: o.encabezado || 'Nuevo proyecto',
+      wide: true,
+      body: `<p>${o.texto || 'El N° de requerimiento y el nombre forman el código del proyecto, «N°. Nombre», igual al nombre de la carpeta de su oferta.'}</p>
+        <div class="fila-campos np-campos">
+          <div class="campo"><label for="np-num">N° de requerimiento <span class="opc">(Planilla de Ingreso)</span></label>
+            <div class="combo"><input class="input" id="np-num" inputmode="numeric" maxlength="6" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" placeholder="Ej.: 312" value="${esc(o.numero || '')}"><button type="button" class="combo-btn" data-picker="combo" tabindex="-1" aria-label="Ver los requerimientos de la planilla">${ICON.caret}</button></div></div>
+          <div class="campo"><label for="np-tit">Nombre del proyecto</label>
+            <input class="input" id="np-tit" maxlength="100" autocomplete="off" placeholder="Ej.: Calefacción gimnasio municipal" value="${esc(o.nombre || '')}"></div>
+        </div>
+        <p class="np-codigo" id="np-codigo" aria-live="polite"></p>
+        <fieldset class="np-carpeta" id="np-carpeta"><legend>¿Crear la carpeta de la oferta?</legend><div id="np-opciones"></div></fieldset>
+        ${pedirIniciales ? `<div class="campo cp-ini"><label for="cp-ini">¿Quién eres?</label>
+          <select class="input" id="cp-ini" aria-describedby="cp-ini-hint">${opcionesUsuario('', 'Elige tus iniciales')}</select>
+          <span class="hint" id="cp-ini-hint">Quedas como responsable del proyecto y con tus iniciales se registra la evaluación de costos en el Control de Documentos. Se piden una sola vez en este navegador (después se cambian arriba, en tu usuario).</span></div>` : ''}`,
+      buttons: [{ label: 'Cancelar' }, { label: 'Crear proyecto', value: 'ok', primary: true }]
+    });
+    const num = $('#np-num'), tit = $('#np-tit'), cod = $('#np-codigo'), ops = $('#np-opciones');
+    const boton = $('#modal .modal-foot .btn-primario');
+    const iniEl = $('#cp-ini');
+    // Lo que se haría con lo escrito: el nombre (y código), la carpeta que ya existe y si se puede crear
+    const estado = () => {
+      const n = num.value.trim(), t = tit.value;
+      const nombre = QO() ? QO().nombreOferta(n, t) : String(t || '').trim();
+      const k = nfcLower(nombre);
+      const existente = (lista || []).find((c) => n && c.numero === n) || (k ? (lista || []).find((c) => nfcLower(c.nombre) === k) : null) || null;
+      let error = '';
+      if (!existente && t.trim() && lista) { try { QO().nombreCarpetaNueva(n, t, lista); } catch (err) { error = err.message; } }
+      const r = pl && n ? pl.get(String(parseInt(n, 10))) || null : null;
+      return { n, t: String(t || '').replace(/\s+/g, ' ').trim(), nombre, existente, error, r };
+    };
+    const radio = (valor, sel, html, dis) => `<label class="np-op${dis ? ' dis' : ''}"><input type="radio" name="np-op" value="${valor}" ${sel ? 'checked' : ''} ${dis ? 'disabled' : ''}><span>${html}</span></label>`;
+    const pintar = () => {
+      const e = estado();
+      const codigo = e.existente ? e.existente.nombre : e.nombre;
+      cod.innerHTML = codigo ? `Código del proyecto: <b class="code-badge">${esc(codigo)}</b>${e.existente ? ' <span class="muted">· el nombre de la carpeta que ya existe</span>' : ''}`
+        : '<span class="muted">Escribe el nombre: con el N°, el código queda «N°. Nombre».</span>';
+      const planilla = e.n && pl ? (e.r ? `<span class="np-pl">Planilla de Ingreso, N° ${esc(e.n)}: ${esc(e.r.titulo || 'sin título')}${e.r.estado ? ` · ${esc(e.r.estado)}` : ''}</span>` : `<span class="np-pl err">El N° ${esc(e.n)} no está en la Planilla de Ingreso.</span>`) : '';
+      let html;
+      if (sinNavegador) {
+        html = `<p class="np-nota">Este navegador no puede crear carpetas: usa Chrome o Edge de escritorio. El proyecto se crea sin carpeta y la eliges después.</p>`;
+        opcion = 'ninguna';
+      } else if (e.existente) {
+        const usar = opcion !== 'ninguna';
+        html = radio('usar', usar, `Usar la carpeta que ya existe: <b>«${esc(e.existente.nombre)}»</b> <span class="muted">(${esc(e.existente.grupo)})</span>`)
+          + radio('ninguna', !usar, 'Sin carpeta por ahora');
+      } else {
+        const puede = !!e.t && !e.error;
+        // Sin la biblioteca conectada («Trabajar sin la carpeta») se propone seguir sin carpeta
+        const crear = puede && (opcion === 'crear' || (!opcion && !!lista));
+        html = radio('crear', crear, puede ? `Sí, crear <b>«${esc(e.nombre)}»</b> en la biblioteca <b>Formulación de proyectos</b>, junto a las ofertas en curso` : 'Sí, crear la carpeta con el N° y el nombre', !puede)
+          + radio('ninguna', !crear, 'No, sin carpeta por ahora')
+          + (e.error ? `<p class="np-nota err">${esc(e.error)}</p>` : '')
+          + (!lista ? '<p class="np-nota">Al crear el proyecto se pide conectar la biblioteca <b>Formulación de proyectos - Documentos</b> (una vez por navegador).</p>' : '');
+      }
+      ops.innerHTML = html + planilla + (sinNavegador ? '' : `<button class="link-btn np-elegir" value="elegir">${ICON.folder}Elegir otra carpeta que ya existe…</button>`);
+    };
+    const desdePlanilla = () => {
+      const r = pl && num.value ? pl.get(String(parseInt(num.value, 10))) : null;
+      if (r && r.titulo && (!tit.value.trim() || tit.value === autoTit)) { autoTit = String(r.titulo).slice(0, 100); tit.value = autoTit; }
+    };
+    combos['np-num'] = {
+      label: 'N° de requerimiento', minWidth: 360, vacio: 'La planilla de ingreso aún no está disponible',
+      items(texto, actual) {
+        if (!pl) return [];
+        const q = norm(String(texto || '').trim());
+        const usados = new Set((lista || []).map((c) => String(c.numero || '')).filter(Boolean));
+        const todos = Array.from(pl.values()).sort((a, b) => Number(b.numero) - Number(a.numero));
+        const calza = (r) => !q || String(r.numero).startsWith(q) || norm(r.titulo).includes(q);
+        const item = (r) => ({ value: String(r.numero), selected: String(r.numero) === actual, lead: `<span class="pcode">${esc(r.numero)}</span>`, title: r.titulo || 'Sin título', right: usados.has(String(r.numero)) ? 'ya tiene carpeta' : (r.estado || '') });
+        const sin = todos.filter((r) => !usados.has(String(r.numero)) && calza(r)).slice(0, 12).map(item);
+        const out = sin.length ? [{ head: 'Sin carpeta todavía' }].concat(sin) : [];
+        if (q) {
+          const con = todos.filter((r) => usados.has(String(r.numero)) && calza(r)).slice(0, 6).map(item);
+          if (con.length) out.push(...(out.length ? [{ sep: true }] : []), { head: 'Ya tienen carpeta' }, ...con);
+        }
+        return out;
+      }
+    };
+    num.addEventListener('input', () => { num.value = num.value.replace(/\D/g, ''); opcion = ''; desdePlanilla(); pintar(); });
+    tit.addEventListener('input', () => { pintar(); });
+    ops.addEventListener('change', (ev) => { if (ev.target.name === 'np-op') opcion = ev.target.value; });
+    // Enter crea el proyecto (sin él, el formulario lo tomaría como el primer botón: cerrar)
+    $('#modal .modal-body').addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter' || ev.target.tagName !== 'INPUT' || (P && pop.contains(document.activeElement))) return;
+      ev.preventDefault();
+      if (!boton.disabled) boton.click();
+    });
+    // Las iniciales hacen falta con carpeta: con ellas se registra la evaluación en el Control de Documentos
+    boton.addEventListener('click', (ev) => {
+      const conCarpeta = ['crear', 'usar'].includes((ops.querySelector('input[name="np-op"]:checked') || {}).value);
+      if (pedirIniciales && conCarpeta && !(QU() && QU().valido(iniEl.value))) {
+        ev.preventDefault();
+        iniEl.setAttribute('aria-invalid', 'true');
+        $('#cp-ini-hint').textContent = 'Elige tus iniciales: con ellas se registra la evaluación de costos en el Control de Documentos.';
+        $('#cp-ini-hint').classList.add('err');
+        iniEl.focus();
+      }
+    });
+    pintar();
+    (num.value ? tit : num).focus();
+    cargaPlanilla.then((m) => { pl = m; if (m && $('#np-num') === num) { desdePlanilla(); pintar(); } });
+    const v = await prom;
+    const e = estado();
+    delete combos['np-num'];
+    if (v === 'elegir') return { elegir: true, numero: e.n, titulo: e.t };
+    if (v !== 'ok') return null;
+    pl = pl || await cargaPlanilla;
+    const r = pl && e.n ? pl.get(String(parseInt(e.n, 10))) || null : null;
+    const iniciales = pedirIniciales && QU() ? QU().valido(iniEl.value) : '';
+    if (iniciales) QU().elegir(iniciales);
+    const marcada = (ops.querySelector('input[name="np-op"]:checked') || {}).value || 'ninguna';
+    return {
+      crear: !e.existente && marcada === 'crear' && !!e.t && !e.error,
+      carpeta: e.existente && marcada === 'usar' ? e.existente : null,
+      numero: e.n, titulo: e.t, req: r, iniciales
+    };
+  }
+  const nfcLower = (s) => String(s || '').normalize('NFC').toLowerCase();
+
+  /* Crea el proyecto nuevo del modo local: «Nuevo proyecto», «Formular» de Pendientes del equipo y «Crear el
+     proyecto» de una oportunidad de Mercado Público (op). Con la carpeta creada o elegida queda su Excel y el
+     registro en el Control de Documentos, como siempre. */
+  async function crearProyectoLocal(o) {
+    const op = o.op || null;
+    let d = await dialogoNuevo(o);
+    if (!d) return;
+    let sel;
+    if (d.elegir) {
+      // El selector de siempre, con lo que ya se escribió
+      sel = await elegirOfertaLocal(Object.assign({
+        titulo: o.encabezado || 'Nuevo proyecto', buscar: d.numero || '', porNumero: d.numero || '',
+        texto: 'Elige la carpeta de la oferta, o créala aquí si todavía no existe. Ahí queda el Excel de la formulación, al día con cada cambio, y su N° une el proyecto con la Planilla de Ingreso y las demás herramientas.',
+        confirmar: 'Crear proyecto', completar: true
+      }, op ? opcionesOportunidad(op) : {}));
+      if (!sel) return;
+      d = { numero: sel.req ? String(sel.req.numero) : sel.carpeta ? '' : d.numero, titulo: sel.carpeta ? '' : d.titulo, req: sel.req || null };
+    } else {
+      let carpeta = d.carpeta;
+      if (d.crear) {
+        // La carpeta «N°. Nombre» en la raíz de la biblioteca (js/oferta.js crearCarpeta: nunca toca otra)
+        if (await asegurarBiblioteca()) {
+          try { carpeta = Object.assign(await QO().crearCarpeta(d.numero, d.titulo), { nueva: true }); } catch (err) {
+            toast(`No se pudo crear la carpeta: ${(err && err.message) || err}. El proyecto queda sin carpeta: elígela desde el aviso de arriba.`, true, 8000);
+          }
+        }
+      }
+      sel = { carpeta: carpeta || null, req: d.req };
+    }
+    const np = S.newProject();
+    if (d.titulo) np.titulo = d.titulo;
+    // El N° escrito une el proyecto con la planilla aunque no tenga carpeta
+    if (d.numero && /^\d{1,6}$/.test(d.numero)) np.vinculos = Object.assign({}, np.vinculos, { requerimiento: { numero: d.numero, titulo: (d.req && d.req.titulo) || '' } });
+    enOfertaLocal(np, sel, { datosOferta: true });
+    const hechos = op ? QOp().aplicar(np, op, monedaDe(np)) : [];
+    if (op) ajustarCodigo(np, d.numero);
+    S.upsert(np);
+    if (sel.carpeta) guardarExcelOferta(np.uid, true);
+    goProject(np, 'ficha');
+    const extra = op ? ` ${textoDesdeOportunidad(hechos)}` : '';
+    if (sel.carpeta) registrarAlElegirCarpeta(np.uid, `Proyecto ${np.codigo} creado ${sel.carpeta.nueva ? 'con su carpeta nueva' : 'en la carpeta'} «${sel.carpeta.nombre}».${extra}`);
+    else toast(`Proyecto ${np.codigo} creado.${extra} Cuando tengas la carpeta de su oferta, elígela desde el aviso de arriba.`, false, 6000);
+    setTimeout(() => { const t = $('[data-f="titulo"]'); if (t && !np.titulo) t.focus(); }, 60);
+  }
+
   /* Deja el presupuesto unido a la carpeta elegida. Con datosOferta (presupuesto nuevo), trae
      además de la planilla el título, la ubicación y el presupuesto si están vacíos. */
   function enOfertaLocal(p, sel, opts) {
     const c = sel.carpeta, r = sel.req;
-    const v = Object.assign({}, p.vinculos, { carpetaOferta: QO().nuevoVinculo(c) });
+    // Sin carpeta («Nuevo proyecto» → «Sin carpeta por ahora») quedan igual el N° y los datos de la planilla
+    const v = Object.assign({}, p.vinculos, c ? { carpetaOferta: QO().nuevoVinculo(c) } : {});
     // La planilla confirma que es la misma oferta: su N° pasa a ser el N° de requerimiento
     if (r && !(v.requerimiento && v.requerimiento.numero)) v.requerimiento = { numero: r.numero, titulo: r.titulo || '' };
     p.vinculos = v;
@@ -6212,10 +6418,9 @@
       // queda el usuario con que se creó (2026-10-16)
       const ev = r && QU() ? QU().valido(r.evaluador) : '';
       if (ev) p.responsable = ev;
-      if (!String(p.titulo || '').trim()) p.titulo = (r && r.titulo) || c.titulo || '';
+      if (!String(p.titulo || '').trim()) p.titulo = (r && r.titulo) || (c && c.titulo) || '';
       if (r && r.ubicacion && !String(p.ubicacion || '').trim()) p.ubicacion = r.ubicacion;
       if (r && r.referencia && !String(p.idLicitacion || '').trim()) p.idLicitacion = String(r.referencia);
-      if (r) codigoDesdeReq(p, r.numero);
       if (r && r.presupuesto && !(num(p.parametros.presupuestoMaximo) > 0)) {
         p.parametros.presupuestoMaximo = r.presupuesto;
         p.parametros.presupuestoIncluyeIva = true;
@@ -6225,6 +6430,8 @@
         if (partes.length) p.descripcion = partes.join(' · ') + '.';
       }
     }
+    // El código queda igual al nombre de la carpeta (2026-10-19), si no se escribió a mano
+    ajustarCodigo(p, r && r.numero);
     return p;
   }
 
@@ -6235,6 +6442,7 @@
       case 'guardando': return 'Guardando el Excel en la carpeta de la oferta…';
       case 'pendiente': return 'El Excel de la carpeta de la oferta se actualiza en unos segundos.';
       case 'error': return `No se pudo guardar el Excel: ${i.error}`;
+      case 'trasladando': return 'La carpeta se está copiando a Gestión de Proyectos: el Excel se actualiza al terminar.';
       default: return 'El Excel de la carpeta de la oferta se actualiza cada vez que se cambia el proyecto.';
     }
   }
@@ -6341,6 +6549,16 @@
           (una ? `<button type="button" class="btn btn-primario btn-sm" data-act="oferta-usar" data-ruta="${esc(una.id)}">${ICON.folder}Usar esa carpeta</button><button type="button" class="btn btn-sm" data-act="oferta-elegir">Elegir otra</button>`
             : `<button type="button" class="btn btn-primario btn-sm" data-act="oferta-elegir">${ICON.folder}Elegir carpeta</button>`) + omitir);
         }
+      } else if (v && QO().trasladoPedido(v)) {
+        // Copia a Gestión de Proyectos pedida a QUEMPIN.exe: ¿terminó?
+        const e = eb.permiso === 'granted' ? await estadoTraslado(v) : { estado: null };
+        if (state.project !== p) return;
+        if (e.estado === 'hecho' || e.estado === 'pedida') { cerrarTraslado(v.nombre, e.ruta, e.estado === 'hecho'); return; }
+        const dejar = '<button type="button" class="btn btn-ghost btn-sm" data-act="oferta-traslado-cancelar">Dejarlo así</button>';
+        html = e.estado === 'no-se-hizo'
+          ? notaOferta(`<strong>La carpeta «${esc(v.nombre)}» no pasó a Gestión de Proyectos.</strong> Sigue donde estaba: ¿se canceló en QUEMPIN.exe, o falta abrir una vez la versión 1.3.10 en este computador?`,
+            `<button type="button" class="btn btn-primario btn-sm" data-act="oferta-trasladar">${ICON.folder}Intentar de nuevo</button>${dejar}`)
+          : notaOferta(`<strong>Copiando «${esc(v.nombre)}» a Gestión de Proyectos.</strong> Confirma en la ventana de QUEMPIN.exe; mientras tanto el Excel de la formulación espera.`, dejar);
       } else if (v) {
         const i = QO().info(p);
         if (i.estado === 'error') {
@@ -6357,25 +6575,35 @@
 
   /* Detalle del Excel de la carpeta de la oferta (botón de la carpeta en el encabezado). */
   async function dialogoOferta(uid) {
-    const p = (state.project && state.project.uid === uid) ? state.project : S.get(uid);
+    const p = proyectoDe(uid);
     const v = p && QO().vinculo(p);
     if (!v) { await elegirOfertaPara(uid); return; }
     const i = QO().info(p);
+    const trasladando = QO().trasladoPedido(v);
+    const copia = QO().copiaEnGestion(v);
     const eb = await QI().estadoBiblioteca();
-    const falta = !eb.recordada ? 'Para guardarlo desde este navegador, conecta la biblioteca completa («Guardar ahora» la pide).'
+    const falta = trasladando ? '' : !eb.recordada ? 'Para guardarlo desde este navegador, conecta la biblioteca completa («Guardar ahora» la pide).'
       : eb.permiso !== 'granted' ? 'Falta el permiso de esta sesión para la biblioteca: se guarda al darlo («Guardar ahora» lo pide).' : '';
     const r = await ask({
       title: 'Excel en la carpeta de la oferta',
       body: `<p>Una copia en Excel de este proyecto queda en la carpeta de su oferta, junto a sus antecedentes, y se actualiza sola cada vez que se cambia.</p>
         <dl class="oferta-dl">
           <dt>Carpeta</dt><dd>Formulación de proyectos › ${esc(i.ruta.join(' › '))}</dd>
+          ${copia ? `<dt>Ejecución</dt><dd>Gestión de Proyectos › ${esc(v.nombre)} <span class="muted">(${copia.copiada ? `copiada el ${esc(fechaHora(copia.copiada))}` : `copia pedida el ${esc(fechaHora(copia.pedida))}`})</span></dd>` : ''}
           <dt>Archivo</dt><dd>${esc(i.archivo)}</dd>
           <dt>Estado</dt><dd>${esc(falta || textoEstadoOferta(i))}</dd>
         </dl>
+        <p class="oferta-acc"><button class="btn btn-sm" value="abrir">${ICON.folder}Abrir en el Explorador</button>${copia ? `<button class="btn btn-sm" value="abrir-gestion">${ICON.folder}Abrir la de Gestión de Proyectos</button>` : ''}${trasladando
+          ? '<button class="btn btn-sm" value="no-trasladar">Dejarlo así</button>'
+          : copia && copia.copiada ? '' : '<button class="btn btn-sm" value="trasladar">Copiar a Gestión de Proyectos…</button>'}</p>
         <p class="small muted">El Excel es para consultar o imprimir: lo que se cambie en él se reemplaza en la siguiente actualización. El proyecto completo, el que se vuelve a abrir aquí, queda en el repositorio del equipo (.Herramientas formulación › Intercambio › publicado › formulador).</p>`,
-      buttons: [{ label: 'Dejar de guardarlo aquí', value: 'quitar', left: true }, { label: 'Cambiar carpeta', value: 'cambiar' }, { label: 'Guardar ahora', value: 'guardar', primary: true }]
+      buttons: [{ label: 'Dejar de guardarlo aquí', value: 'quitar', left: true }, { label: 'Cambiar carpeta', value: 'cambiar' }, trasladando ? { label: 'Cerrar' } : { label: 'Guardar ahora', value: 'guardar', primary: true }]
     });
     if (r === 'guardar') { if (await asegurarBiblioteca()) await guardarExcelOferta(uid); }
+    else if (r === 'abrir') abrirCarpetaOferta(uid);
+    else if (r === 'abrir-gestion') abrirCarpetaOferta(uid, true);
+    else if (r === 'trasladar') await ofrecerTraslado(uid, true);
+    else if (r === 'no-trasladar') cancelarTraslado(uid);
     else if (r === 'cambiar') await elegirOfertaPara(uid);
     else if (r === 'quitar') {
       const abierto = state.project && state.project.uid === uid;
@@ -6388,6 +6616,124 @@
       toast('El Excel ya no se actualiza en esa carpeta. El que ya estaba ahí se queda.');
       pintarEditorOferta();
     }
+  }
+
+  // ---- La carpeta en el Explorador y su copia en Gestión de Proyectos (pedido del usuario, 2026-10-19) ----
+  /* El navegador no abre carpetas del computador ni copia o mueve archivos: lo hace QUEMPIN.exe 1.3.10 con
+     las direcciones quempin://carpeta y quempin://trasladar (js/oferta.js; Sistema QUEMPIN app/carpetas.py).
+     Windows solo las abre desde un clic de la persona, así que se piden en el mismo clic. Al adjudicarse, la
+     carpeta se copia a Gestión de Proyectos y el original pasa a «0 OFERTAS ADJUDICADAS» (lo eligió el
+     usuario, como lo hacía el equipo a mano): el vínculo sigue en el original, con su Excel al día. */
+  const proyectoDe = (uid) => ((state.project && state.project.uid === uid) ? state.project : S.get(uid));
+  const SIN_EXE = 'Si no se abre, abre una vez QUEMPIN.exe 1.3.10 o más nuevo (en «Cotizaciones y OC - Documentos») y vuelve a intentarlo.';
+  function abrirEnlace(url) {
+    const a = document.createElement('a');
+    a.href = url;
+    a.hidden = true;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+  /* enGestion: la copia de Gestión de Proyectos, donde sigue la ejecución */
+  function abrirCarpetaOferta(uid, enGestion) {
+    const p = proyectoDe(uid);
+    const v = p && QO().vinculo(p);
+    if (!v) return;
+    abrirEnlace(QO().enlaceCarpeta(v, !!enGestion));
+    toast(`Abriendo «${v.nombre}»${enGestion ? ' de Gestión de Proyectos' : ''} en el Explorador de archivos. ${SIN_EXE}`, false, 7000);
+  }
+  /* Cambia el vínculo con la carpeta en todos los presupuestos de esa carpeta (sus versiones). */
+  function cambiarVinculoCarpeta(nombre, fn) {
+    const k = nfcLower(nombre);
+    S.all().forEach((x) => {
+      const abierto = !!state.project && state.project.uid === x.uid;
+      const y = abierto ? state.project : x;
+      const v = QO().vinculo(y);
+      if (!v || nfcLower(v.nombre) !== k) return;
+      y.vinculos = Object.assign({}, y.vinculos, { carpetaOferta: fn(v) });
+      if (abierto) saveNow(); else S.upsert(y);
+    });
+    if (state.project) { updateHeader(); pintarEditorOferta(); if (state.tab === 'seguimiento') pintarHerramientas(); }
+    else if ($('#list-body')) refreshList();
+  }
+  const trasladoOmitido = new Set();   // «Ahora no» al adjudicar (solo esta sesión)
+  /* ¿Copiar la carpeta de la oferta a Gestión de Proyectos? Se pregunta al quedar Adjudicada; directo = lo
+     pidió la persona (menú, carpeta del encabezado, Seguimiento), y entonces se pregunta aunque antes dijo
+     «Ahora no». */
+  async function ofrecerTraslado(uid, directo) {
+    if (!ofertaActiva()) return;
+    const p = proyectoDe(uid);
+    const v = p && QO().vinculo(p);
+    if (!v) return;
+    if (!directo && (QO().copiaEnGestion(v) || trasladoOmitido.has(uid) || QO().trasladoPedido(v) || $('#modal').open)) return;
+    // El Excel en su última versión se escribe mientras se decide; y se anota dónde está la carpeta ahora
+    if (saveTimer && state.project && state.project.uid === uid) saveNow();
+    const eb = await QI().estadoBiblioteca().catch(() => ({}));
+    const listo = QO().escribible(v) && eb.permiso === 'granted'
+      ? QO().guardar(uid).catch((e) => console.warn('Excel antes de la copia:', e)) : Promise.resolve();
+    const desde = eb.permiso === 'granted' ? await QO().rutaActual(v).catch(() => null) : null;
+    const r = await ask({
+      title: 'Copiar la carpeta a Gestión de Proyectos',
+      body: `<p>${p.estado === 'Adjudicada' ? 'La oferta quedó <b>Adjudicada</b>. ' : ''}¿Pasar su carpeta <b>«${esc(v.nombre)}»</b> a <b>Gestión de Proyectos</b>, donde sigue el trabajo de ejecución?</p>
+        <ul class="np-lista">
+          <li>Se copia completa a la raíz de «Gestión de Proyectos - Documentos». Si allá ya hay una carpeta con ese nombre, no se copia otra vez ni se juntan archivos.</li>
+          <li>El original pasa a «Formulación de proyectos › 0 OFERTAS ADJUDICADAS», con el Excel de la formulación, que sigue al día ahí.</li>
+          <li>Lo hace QUEMPIN.exe (1.3.10 o más nuevo) en este computador: pregunta otra vez, muestra el avance y al terminar abre la copia.</li>
+        </ul>`,
+      buttons: [{ label: 'Ahora no' }, { label: 'Copiar la carpeta', value: 'si', primary: true }]
+    });
+    if (r !== 'si') {
+      trasladoOmitido.add(uid);
+      if (!directo) toast('La carpeta sigue donde estaba. Puedes copiarla a Gestión de Proyectos después, desde la carpeta del encabezado o desde Seguimiento.', false, 6000);
+      return;
+    }
+    // En el mismo clic: QUEMPIN.exe, y mientras trabaja el Excel espera (escribir durante la copia la impediría)
+    abrirEnlace(QO().enlaceTraslado(v));
+    cambiarVinculoCarpeta(v.nombre, (x) => QO().pedirTraslado(x, yo(), desde && desde.length ? desde : x.ruta));
+    toast(`Copiando «${v.nombre}» a Gestión de Proyectos: confirma en la ventana de QUEMPIN.exe. ${SIN_EXE}`, false, 9000);
+    await listo;
+    vigilarTraslado(v.nombre);
+  }
+  /* ¿Terminó QUEMPIN.exe? 'hecho' cuando el original aparece en Adjudicadas (estaba en otra parte); si ya
+     estaba ahí no hay cómo verlo y, pasado un minuto, queda 'pedida'; 'no-se-hizo' a los 3 minutos sin
+     cambios; 'esperando' mientras tanto; null sin biblioteca con permiso. */
+  async function estadoTraslado(v) {
+    const ruta = await QO().rutaActual(v).catch(() => null);
+    if (!ruta) return { estado: null };
+    const desde = (v.traslado && v.traslado.desde) || v.ruta;
+    const t = Date.now() - Date.parse(v.traslado.pedido);
+    const igual = (a, b) => a.length === b.length && a.every((n, i) => nfcLower(n) === nfcLower(b[i]));
+    if (ruta.length && QO().enAdjudicadas(ruta) && !igual(ruta, desde)) return { estado: 'hecho', ruta };
+    if (QO().enAdjudicadas(desde) && t > 60000) return { estado: 'pedida', ruta: ruta.length ? ruta : desde };
+    return { estado: t > 180000 ? 'no-se-hizo' : 'esperando', ruta };
+  }
+  /* Después de pedirlo se revisa cada 3 segundos durante 3 minutos; después lo revisa el aviso del editor. */
+  const vigilados = new Set();
+  function vigilarTraslado(nombre) {
+    const k = nfcLower(nombre);
+    if (vigilados.has(k)) return;
+    vigilados.add(k);
+    let n = 0;
+    const revisar = async () => {
+      n += 1;
+      const x = S.all().find((y) => { const v = QO().vinculo(y); return !!v && nfcLower(v.nombre) === k && QO().trasladoPedido(v); });
+      const e = x ? await estadoTraslado(QO().vinculo(x)) : { estado: null };
+      if (x && (e.estado === 'hecho' || e.estado === 'pedida')) { vigilados.delete(k); cerrarTraslado(nombre, e.ruta, e.estado === 'hecho'); return; }
+      if (!x || n >= 62) { vigilados.delete(k); if (state.project) pintarEditorOferta(); return; }
+      setTimeout(revisar, 3000);
+    };
+    setTimeout(revisar, 3000);
+  }
+  function cerrarTraslado(nombre, ruta, confirmada) {
+    cambiarVinculoCarpeta(nombre, (v) => (QO().trasladoPedido(v) ? QO().conCopiaEnGestion(v, ruta, confirmada) : v));
+    if (confirmada) toast(`Listo: la copia de «${nombre}» quedó en Gestión de Proyectos y el original en 0 OFERTAS ADJUDICADAS.`, false, 6000);
+  }
+  function cancelarTraslado(uid) {
+    const p = proyectoDe(uid);
+    const v = p && QO().vinculo(p);
+    if (!v) return;
+    cambiarVinculoCarpeta(v.nombre, (x) => QO().sinTraslado(x));
+    toast('Listo: el Excel vuelve a actualizarse en la carpeta de la oferta.');
   }
 
   // ---------------------------------------------------------------------------
@@ -6486,16 +6832,10 @@
     if (!op) { toast('Los datos de la oportunidad ya no están en esta pestaña. Vuelve a usar «Llevar al Formulador» en el tablero.', true); return; }
     if (enSP()) { await nuevoEnSharePoint(op); return; }
     if (!(await exigirCarpeta())) return;
-    const sel = await elegirOfertaLocal(Object.assign({ completar: true }, opcionesOportunidad(op)));
-    if (!sel) return;
-    const np = S.newProject();
-    if (sel.carpeta) enOfertaLocal(np, sel, { datosOferta: true });
-    const hechos = QOp().aplicar(np, op, monedaDe(np));
-    S.upsert(np);
-    if (sel.carpeta) guardarExcelOferta(np.uid, true);
-    goProject(np, 'ficha');
-    if (sel.carpeta) registrarAlElegirCarpeta(np.uid, `Proyecto creado en «${sel.carpeta.nombre}». ${textoDesdeOportunidad(hechos)}`);
-    else toast(`${textoCreadoDesdeOportunidad(np, hechos)} Cuando tengas la carpeta de su oferta, elígela desde el aviso de arriba.`, false, 6000);
+    await crearProyectoLocal({
+      op, encabezado: 'Nuevo proyecto desde Mercado Público', numero: op.req || '', nombre: op.req ? '' : QOp().nombreCarpeta(op),
+      texto: `El proyecto toma de Mercado Público el título, el cliente, el ID de licitación <b>${esc(op.codigo)}</b>, la ubicación, el presupuesto y el cierre. El N° de requerimiento y el nombre forman su código, «N°. Nombre», igual al nombre de la carpeta de la oferta${op.req ? '' : ' (agrégale el N° si la licitación ya está en la planilla)'}.`
+    });
   }
 
   // ---- Tema claro / oscuro (botón igual al de las demás herramientas QUEMPIN) ------------

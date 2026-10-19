@@ -24,7 +24,9 @@
  *  - Carpetas: solo se crea una carpeta de oferta nueva («N°. Nombre», en la raíz de la biblioteca,
  *    junto a las demás ofertas en curso) cuando una persona lo pide al crear un proyecto o elegir su
  *    carpeta (pedido del usuario, 2026-10-06). Nunca se reemplaza ni se toca una que ya exista.
- *  - Nunca se elimina, mueve ni renombra nada.
+ *  - Nunca se elimina, mueve ni renombra nada. Al adjudicarse, copiar la carpeta a «Gestión de Proyectos» y
+ *    pasar el original a «0 OFERTAS ADJUDICADAS» lo hace QUEMPIN.exe en el computador, que pregunta antes
+ *    (ver «Abrir la carpeta y pasarla a Gestión»).
  * Con SharePoint configurado no hace nada: ahí cloud.js guarda el Excel junto al proyecto.
  */
 (function (root) {
@@ -82,7 +84,15 @@
   function nuevoVinculo(carpeta) {
     return { nombre: carpeta.nombre, ruta: carpeta.ruta.slice(), numero: carpeta.numero || numeroDe(carpeta.nombre) };
   }
-  function nombreBase(p) { return `Formulación ${limpiarNombre(p.codigo) || 'S-N'} v${parseInt(p.version, 10) || 1}`; }
+  /* El Excel lleva el código del proyecto; si el código es el nombre de la carpeta («312. Gimnasio municipal»,
+     desde el 2026-10-19), solo su N°: el nombre ya está en la carpeta, y Excel no abre archivos cuya ruta
+     completa pasa de 218 caracteres. */
+  function codigoArchivo(p) {
+    const c = limpiarNombre(p.codigo);
+    const m = /^(\d{1,6})\.\s/.exec(c);
+    return m ? m[1] : c.slice(0, 40).trim();
+  }
+  function nombreBase(p) { return `Formulación ${codigoArchivo(p) || 'S-N'} v${parseInt(p.version, 10) || 1}`; }
   /* Nombres posibles del Excel, en orden: el que ya usó este navegador (si sigue siendo de este
      código y versión), el nombre de siempre y sus alternativas «(2)», «(3)»… */
   function candidatos(p, previo) {
@@ -160,6 +170,14 @@
      si la carpeta ya existe, err.existente = esa carpeta (para ofrecer usarla). */
   const RESERVADOS = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
   const MAX_NOMBRE = 100;   // ruta completa corta: Excel no abre archivos con rutas de más de 218 caracteres
+  /* El nombre de la carpeta de una oferta, «N°. Nombre» (o solo el nombre, sin N°), que es también el código
+     del proyecto (pedido del usuario, 2026-10-19). '' si no hay nombre. Sin efectos: se prueba en node. */
+  function nombreOferta(numero, titulo) {
+    const n = String(numero === null || numero === undefined ? '' : numero).trim();
+    const t = limpiarNombre(nfc(titulo).replace(/\s+/g, ' ').trim());
+    if (!t) return '';
+    return ((/^\d{1,6}$/.test(n) ? `${n}. ` : '') + t).slice(0, MAX_NOMBRE).replace(/[\s.]+$/, '');
+  }
   function nombreCarpetaNueva(numero, titulo, existentes) {
     const n = String(numero === null || numero === undefined ? '' : numero).trim();
     if (n && !/^\d{1,6}$/.test(n)) throw new Error('El N° debe ser un número, como en la Planilla de Ingreso (por ejemplo, 312).');
@@ -176,7 +194,7 @@
     if (!t) throw new Error('Escribe el nombre de la oferta.');
     if (!n && (/^0 /.test(t) || /^[1-9] /.test(t))) throw new Error('Sin N°, el nombre no puede empezar con «0 », «1 », «2 »…: así se llaman las carpetas que agrupan ofertas.');
     if (RESERVADOS.test(t)) throw new Error('Windows no permite ese nombre de carpeta: escribe otro.');
-    const nombre = (n ? `${n}. ${t}` : t).slice(0, MAX_NOMBRE).replace(/[\s.]+$/, '');
+    const nombre = nombreOferta(n, t);
     const k = nombre.toLowerCase();
     const mismoNombre = lista.find((c) => nfc(c.nombre).toLowerCase() === k);
     if (mismoNombre) {
@@ -203,6 +221,49 @@
     }
     lista = null;   // la próxima lectura la incluye
     return { id: c.nombre, nombre: c.nombre, numero: c.numero, titulo: c.titulo, grupo: 'En curso', ruta: [c.nombre], nueva: true };
+  }
+
+  // ---- Abrir la carpeta y pasarla a Gestión (pedido del usuario, 2026-10-19) ---------------------------
+  /* El navegador no abre carpetas del computador ni copia o mueve archivos: lo hace QUEMPIN.exe 1.3.10 con
+     quempin://carpeta/<formulacion|gestion>/<ruta> y quempin://trasladar/formulacion/<ruta> (Sistema QUEMPIN
+     app/carpetas.py). Si la carpeta se movió, el programa la busca por su nombre en las dos bibliotecas.
+     Al adjudicarse, la carpeta se copia a «Gestión de Proyectos» (donde sigue la ejecución) y el original
+     pasa a «0 OFERTAS ADJUDICADAS», como lo hacía el equipo a mano. El vínculo sigue en el original, así que
+     el Excel de la formulación sigue al día ahí; v.gestion recuerda la copia. Mientras el programa trabaja
+     (v.traslado) el Excel no se escribe: escribir durante la copia o el cambio de lugar lo impediría. */
+  const ADJUDICADAS = /^0 OFERTAS ADJUDICADAS$/i;
+  const trasladoPedido = (v) => !!(v && v.traslado && v.traslado.pedido);
+  const escribible = (v) => !!v && !trasladoPedido(v);
+  const copiaEnGestion = (v) => (v && v.gestion && typeof v.gestion === 'object' ? v.gestion : null);
+  const enAdjudicadas = (ruta) => Array.isArray(ruta) && ruta.length === 2 && ADJUDICADAS.test(nfc(ruta[0]));
+  const rutaEnlace = (ruta) => ruta.map((n) => encodeURIComponent(n)).join('/');
+  /* enGestion: la copia de Gestión (la carpeta de la ejecución), con el mismo nombre en la raíz */
+  const enlaceCarpeta = (v, enGestion) => (enGestion ? `quempin://carpeta/gestion/${rutaEnlace([v.nombre])}` : `quempin://carpeta/formulacion/${rutaEnlace(v.ruta)}`);
+  const enlaceTraslado = (v) => `quempin://trasladar/formulacion/${rutaEnlace(v.ruta)}`;
+  /* desde: dónde estaba la carpeta al pedirlo; si después aparece en Adjudicadas, el programa terminó */
+  function pedirTraslado(v, quien, desde, ahora) {
+    return Object.assign({}, v, { traslado: { pedido: (ahora || new Date()).toISOString(), por: quien || '', desde: (desde || v.ruta).slice() } });
+  }
+  function sinTraslado(v) {
+    const x = Object.assign({}, v);
+    delete x.traslado;
+    return x;
+  }
+  /* El vínculo cuando el programa terminó: el original donde quedó (Adjudicadas) y la copia en Gestión.
+     confirmada = se vio el original en Adjudicadas; si ya estaba ahí, solo se sabe que se pidió. */
+  function conCopiaEnGestion(v, ruta, confirmada, ahora) {
+    const x = sinTraslado(v);
+    if (Array.isArray(ruta) && ruta.length) x.ruta = ruta.slice();
+    x.gestion = { [confirmada ? 'copiada' : 'pedida']: (ahora || new Date()).toISOString() };
+    return x;
+  }
+  /* Dónde está ahora la carpeta del vínculo en «Formulación de proyectos»: su ruta, [] si no está, o null si
+     no hay biblioteca con permiso. */
+  async function rutaActual(v) {
+    const bib = X() ? await X().biblioteca() : null;
+    if (!bib || !v || !rutaValida(v.ruta)) return null;
+    const u = await ubicar(bib, v);
+    return u ? u.ruta : [];
   }
 
   /* Carpetas cuyo N° es el del requerimiento del presupuesto (la sugerencia al elegir). */
@@ -298,6 +359,7 @@
     const ultima = (r) => nfc(r[r.length - 1]);
     const mismo = !!(w && Array.isArray(w.ruta) && w.ruta.length && ultima(w.ruta) === ultima(v.ruta));
     const base = { vinculo: v, ruta: mismo ? w.ruta : v.ruta, archivo: mismo ? w.archivo : `${nombreBase(p)}.xlsx`, hora: mismo ? w.hora : '' };
+    if (trasladoPedido(v)) return Object.assign(base, { estado: 'trasladando' });
     if (enCurso.has(p.uid)) return Object.assign(base, { estado: 'guardando' });
     if ((e.pendientes || {})[p.uid] !== undefined) {
       const err = errores.get(p.uid);
@@ -334,7 +396,7 @@
     if (!(await X().biblioteca())) { avisar(uids); return; }   // sin biblioteca o sin permiso: esperar
     for (const uid of uids) {
       const p = S().get(uid);
-      if (!p || p.eliminado || !vinculo(p)) { desmarcar(uid); errores.delete(uid); avisar([uid]); continue; }
+      if (!p || p.eliminado || !escribible(vinculo(p))) { desmarcar(uid); errores.delete(uid); avisar([uid]); continue; }
       const err = errores.get(uid);
       if (err && !forzar && Date.now() - err.t < T.reintento) continue;
       try { await escribirUno(p); } catch (e) { /* queda pendiente con su error */ }
@@ -369,6 +431,7 @@
   async function guardar(uid) {
     const p = S().get(uid);
     if (!p || !vinculo(p)) throw new Error('El proyecto no tiene carpeta de oferta.');
+    if (trasladoPedido(vinculo(p))) throw new Error('la carpeta se está copiando a Gestión de Proyectos: se guarda al terminar.');
     marcar(uid, p.modificado);
     await guardarPendientes({ forzar: true });
     const err = errores.get(uid);
@@ -387,7 +450,7 @@
         let alguno = false;
         ev.ids.forEach((uid) => {
           const p = S().get(uid);
-          if (p && !p.eliminado && vinculo(p)) { marcar(uid, p.modificado); alguno = true; } else desmarcar(uid);
+          if (p && !p.eliminado && escribible(vinculo(p))) { marcar(uid, p.modificado); alguno = true; } else desmarcar(uid);
         });
         if (!alguno) return;
         const ahora = Date.now();
@@ -406,7 +469,8 @@
 
   const api = {
     grupoDe, numeroDe, grupoDeRuta, rutaValida, vinculo, nuevoVinculo, nombreBase, candidatos, listar, ubicar,
-    nombreCarpetaNueva, crearCarpeta,
+    nombreOferta, nombreCarpetaNueva, crearCarpeta,
+    trasladoPedido, escribible, copiaEnGestion, enAdjudicadas, enlaceCarpeta, enlaceTraslado, pedirTraslado, sinTraslado, conCopiaEnGestion, rutaActual,
     activa, carpetas, sugerencias, info, guardar, guardarPendientes, iniciar,
     _tiempos: (o) => Object.assign(T, o || {}), _estado: leerEstado, _escribirExcel: escribirExcel
   };
