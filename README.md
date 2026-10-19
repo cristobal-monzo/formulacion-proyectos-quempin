@@ -39,7 +39,7 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
   - **Otras herramientas QUEMPIN** (pestaña *Seguimiento*): prepara la cotización en **Sistema QUEMPIN** (llega arriba de «Nueva Cotización», donde se revisa y se emite), envía la **venta** al Análisis Financiero, avisa a la **Planilla de Ingreso** el estado y el valor, y **registra la evaluación de costos** (tipo 81) en el Control de Documentos: toma su número sola al elegir la carpeta de la oferta (una por versión, también la versión nueva que hereda la carpeta), y el Excel exportado lleva ese número.
 - **Comparte los proyectos con el equipo por esa misma carpeta** mientras no se use SharePoint: cada proyecto queda como un archivo en OneDrive y aparece en la lista de los demás equipos que la tengan conectada.
 - **Deja una copia en Excel en la carpeta de cada oferta** (desde el 2026-10-02): `Formulación <código> v<versión>.xlsx`, junto a los antecedentes de la oferta, y la mantiene al día sola mientras se trabaja. Es la misma exportación de *Exportar Excel*, con una nota de que es una copia automática. La carpeta se elige una vez por proyecto: al crearlo o desde el aviso del editor, que la sugiere por el N° de requerimiento.
-- **Crea la carpeta de la oferta sin salir del formulario** (2026-10-06). *Nuevo proyecto* es un formulario: se elige la carpeta de la lista o, con **+ Crear nueva carpeta**, se escribe el N° de requerimiento (la lista propone los de la planilla que todavía no tienen carpeta) y el nombre; la carpeta «N°. Nombre» se crea junto a las ofertas en curso y queda elegida. Valida el nombre, avisa si el N° o el nombre ya tienen carpeta (con «Usar esa carpeta») y muestra el error si no se pudo crear. La primera vez pide ahí mismo las iniciales del Control de Documentos.
+- **Crea la carpeta de la oferta sin salir del formulario** (2026-10-06). *Nuevo proyecto* es un formulario: se elige la carpeta de la lista o, con **+ Crear nueva carpeta**, se escribe el N° de requerimiento (la lista propone los de la planilla que todavía no tienen carpeta) y el nombre; la carpeta «N°. Nombre» se crea junto a las ofertas en curso y queda elegida. Valida el nombre, avisa si el N° o el nombre ya tienen carpeta (con «Usar esa carpeta») y muestra el error si no se pudo crear. Si todavía no hay usuario elegido, pide ahí mismo las iniciales (de la lista del equipo).
 - **Conecta las herramientas en las dos direcciones** (2026-10-06):
   - Menú **Herramientas** (cabecera): las herramientas del recorrido por etapa; dentro de un proyecto, el Análisis Financiero abre la ficha de ese proyecto.
   - Enlaces de entrada: `#/req/<N°>` y `#/tag/<TAG>` abren el proyecto donde está lo que sigue (los usan el tablero de Análisis Financiero y Sistema QUEMPIN); `#/p/<id>/seguimiento` abre su seguimiento.
@@ -51,6 +51,12 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
   - El mismo aviso de cierre va junto al estado en la lista y en el encabezado de cada proyecto en formulación.
 - **Pega filas desde Excel** en materiales, equipos y otros (2026-10-14, `js/pegar.js`): de una planilla de formulación antigua, de cualquier Excel o de la cotización del tablero del Cotizador Histórico («Copiar para el Formulador»). Reconoce descripción, unidad, cantidad y costo unitario con o sin encabezados, números escritos como en Chile y unidades comunes; muestra una vista previa, deja los costos con IVA en neto si se marca, y agrega todas las filas a la partida elegida.
 - **Muestra por qué no se emitió una cotización**: si se descartó en Sistema QUEMPIN (1.3.7 o posterior), el motivo aparece en el *Seguimiento* y en lo que sigue.
+- **Sabe quién trabaja** (2026-10-16, `js/usuario.js`). El botón de usuario de la cabecera elige las iniciales del equipo (NB, ES, LC, CM, MP, SV); se recuerdan en el navegador, en la misma clave que el Portal QUEMPIN (`quempin_usuario`), así que elegirlas en uno vale para el otro.
+  - Un proyecto nuevo parte con su **responsable**: el Evaluador que la Planilla le asignó a ese N° o, si no tiene, el usuario. El campo *Responsable* es una lista con el equipo (un texto de antes se conserva) y sale en el Excel y en el PDF de la Carta Gantt.
+  - La lista de proyectos filtra **Mis proyectos** (se recuerda en el navegador), cada inicial con su cuenta, y *Sin responsable*.
+  - *Pendientes del equipo* dice el evaluador de cada requerimiento por ofertar y marca **Tuyo** los del usuario.
+  - La evaluación de costos se registra en el Control de Documentos con las iniciales del usuario, sin volver a pedirlas, y lo que se envía a las demás herramientas va firmado por él. La primera vez se adoptan las iniciales que el navegador ya tenía (`qpn.formulacion.iniciales` o el «Responsable por defecto» de antes) si son del equipo.
+  - La lista del equipo también está en el registro del Portal y en Sistema QUEMPIN (`app/config.py`, `USUARIOS`): si el equipo cambia, se cambia en los tres.
 
 ## Publicación y actualización
 
@@ -118,6 +124,7 @@ css/brand.css           Sistema de marca compartido con las demás herramientas 
 css/styles.css          Estilos propios (componentes, gráficos, modo claro/oscuro, impresión)
 js/calc.js              Motor de cálculo (replica las fórmulas del Excel)
 js/kpis.js              Definición y descripción de cada KPI
+js/usuario.js           Quién trabaja: las iniciales del equipo, compartidas con el Portal QUEMPIN (quempin_usuario)
 js/store.js             Modelo de datos, valores por defecto, papelera y guardado (local o SharePoint)
 js/cloud.js             Conexión con SharePoint: ingreso con Microsoft, sincronización y reglas de escritura
 js/m365-config.js       Registro en Microsoft Entra y biblioteca de SharePoint (clientId vacío = modo local)

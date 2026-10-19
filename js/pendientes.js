@@ -99,6 +99,8 @@
       out.push({
         numero: r.numero, titulo: r.titulo || '', ubicacion: r.ubicacion || '', referencia: r.referencia || '',
         cierre: r.cierre || '', dias, nivel: nivelPlazo(dias), plazo: textoPlazo(dias), fechaCierre: fechaCierre(r.cierre),
+        // Quién lo evalúa (prepara la oferta) y quién lo captó, con sus iniciales en la Planilla (2026-10-16)
+        evaluador: String(r.evaluador || '').trim(), captador: String(r.captador || '').trim(),
         proyectos: proyectosDe ? proyectosDe(String(r.numero)) : []
       });
     });

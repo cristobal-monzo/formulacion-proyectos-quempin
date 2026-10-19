@@ -95,15 +95,21 @@
 
   // ---- Config ---------------------------------------------------------------
   /* En modo nube, prefijo, parámetros y catálogo son de la empresa (un documento compartido);
-     el responsable por defecto es personal y queda en el navegador. */
+     el responsable por defecto es personal y queda en el navegador. Desde el 2026-10-16 es el usuario
+     elegido (js/usuario.js); el texto libre de antes vale solo mientras no se elige ninguno. */
   let sharedConfig = null;
+  function responsablePorDefecto(local) {
+    const QU = root.QUsuario;
+    if (QU && QU.hayEleccion()) return QU.actual() || (usuario && usuario.nombre) || '';
+    return local.responsable || (usuario && usuario.nombre) || '';
+  }
   function getConfig() {
     const local = lsGet(LS_CONFIG, null) || {};
     const c = mode === 'nube' ? (sharedConfig || {}) : local;
     const prefijo = String(c.prefijo || '').trim();
     return {
       prefijo: prefijo && prefijo.toUpperCase() !== PREFIJO_ANTIGUO ? prefijo : DEFAULT_CONFIG.prefijo,
-      responsable: local.responsable || (usuario && usuario.nombre) || '',
+      responsable: responsablePorDefecto(local),
       parametros: Object.assign(clone(DEFAULT_PARAMETROS), c.parametros || {}),
       catalogoOtros: Array.isArray(c.catalogoOtros) ? c.catalogoOtros : clone(DEFAULT_CATALOGO)
     };

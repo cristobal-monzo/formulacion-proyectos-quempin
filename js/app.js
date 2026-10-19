@@ -12,6 +12,9 @@
   const S = window.QStore;
   const X = window.QExcel;
   const KP = window.QKPIs;
+  const QU = () => window.QUsuario;
+  /* Las iniciales de quien trabaja (js/usuario.js, las mismas del Portal QUEMPIN), o '' */
+  const yo = () => (QU() ? QU().actual() : '');
   const app = document.getElementById('app');
   const $ = (sel, el) => (el || document).querySelector(sel);
   const $$ = (sel, el) => Array.from((el || document).querySelectorAll(sel));
@@ -135,7 +138,9 @@
     /* Utilidad que había antes de "Aplicar" / "Llevar al margen objetivo", para "Deshacer":
        { puid, antes: Map(uid de partida → { utilidadTipo, utilidadValor }), accion } */
     utilUndo: null,
-    list: { q: '', estado: '', resp: '', mes: '', sort: { k: 'mod', dir: -1 } },
+    // resp: '' (todos), '@yo' (Mis proyectos: el responsable es el usuario; se recuerda en este
+    // navegador), '@sin' (sin responsable) o unas iniciales
+    list: { q: '', estado: '', resp: misProyectosGuardado() ? '@yo' : '', mes: '', sort: { k: 'mod', dir: -1 } },
     conflicto: false
   };
   /* Modo nube: activa = hay configuración de SharePoint; lista = sesión iniciada y proyectos cargados. */
@@ -462,10 +467,39 @@
     if (abierta) abierta.focus(); else abrirCombo(t, true);
   });
 
+  /* Usuario (js/usuario.js, pedido del usuario, 2026-10-16): quién trabaja, con las iniciales del
+     equipo. Queda como responsable de lo que crea, autor en el Control de Documentos y en lo que envía
+     a las demás herramientas, y la lista muestra «Mis proyectos». Es el mismo del Portal QUEMPIN. */
+  function pintarUsuario() {
+    const b = $('#usuarioBtn');
+    if (!b) return;
+    const u = yo();
+    b.innerHTML = `${ICON.user}<span class="usr-t">${u ? esc(u) : '¿Quién eres?'}</span>`;
+    b.classList.toggle('sin-usuario', !u);
+    b.setAttribute('aria-label', u ? `Usuario: ${u}. Cambiar` : 'Elegir tu usuario');
+    b.title = u ? `Trabajas como ${u}: lo que formules, registres o envíes queda a tu nombre` : 'Elige tu usuario: lo que formules, registres o envíes queda a tu nombre';
+  }
+  function abrirUsuario(btn) {
+    const u = yo();
+    const todos = S.all();
+    openPop(btn, {
+      kind: 'listbox', align: 'right', label: 'Tu usuario', minWidth: 290,
+      items: [{ head: '¿Quién eres?' }]
+        .concat(QU().LISTA.map((r) => ({ value: r, title: r, selected: u === r, right: plural(todos.filter((p) => pasaResponsable(p, r)).length, 'proyecto') })))
+        .concat([{ sep: true }, { value: '', title: 'Sin usuario', desc: 'Lo que hagas no queda a nombre de nadie', selected: !u }]),
+      foot: 'Lo que formules, registres en el Control de Documentos o envíes a otra herramienta queda a tu nombre, y la lista puede mostrar solo tus proyectos. Vale también en el Portal QUEMPIN.',
+      onPick: (o) => {
+        const nuevo = QU().elegir(o.value);
+        if (nuevo !== u) toast(nuevo ? `Trabajas como ${nuevo}: lo que formules o registres queda a tu nombre.` : 'Sin usuario: lo que hagas no queda a nombre de nadie.');
+      }
+    });
+  }
+
   /* Menús de acciones */
   function openMenu(btn) {
     const key = btn.dataset.menu;
     const id = btn.dataset.id;
+    if (key === 'usuario') { abrirUsuario(btn); return; }
     const n = S.all().length;
     let items = [];
     let extra = {};
@@ -1055,12 +1089,40 @@
   // ---------------------------------------------------------------------------
   //  LISTADO DE PROYECTOS
   // ---------------------------------------------------------------------------
+  /* «Mis proyectos» en la lista (2026-10-16): elegido, se recuerda en este navegador */
+  function misProyectosGuardado() { try { return localStorage.getItem('quempin_fp_mis_proyectos') === '1'; } catch (e) { return false; } }
+  function guardarMisProyectos(si) { try { localStorage.setItem('quempin_fp_mis_proyectos', si ? '1' : '0'); } catch (e) { /* solo esta vez */ } }
+  const respDe = (p) => String((p && p.responsable) || '').trim();
+  /* ¿Pasa el filtro de responsable? '@yo' = el usuario, '@sin' = sin responsable, o unas iniciales */
+  function pasaResponsable(p, f) {
+    if (!f) return true;
+    if (f === '@sin') return !respDe(p);
+    const quien = f === '@yo' ? yo() : f;
+    return QU() ? QU().mismo(respDe(p), quien) : respDe(p) === quien;
+  }
+  const nombreFiltroResp = (f) => (f === '@yo' ? `Mis proyectos (${yo()})` : f === '@sin' ? 'Sin responsable' : f);
+
+  /* El selector de responsable de la lista: todos, «Mis proyectos», el equipo y los de antes, con
+     cuántos proyectos tiene cada uno */
+  function opcionesResponsable(all, L) {
+    const u = yo();
+    const equipo = QU() ? QU().LISTA : [];
+    const deAntes = Array.from(new Set(all.map(respDe).filter((r) => r && !equipo.includes(r.toUpperCase())))).sort((a, b) => a.localeCompare(b, 'es'));
+    const n = (f) => all.filter((p) => pasaResponsable(p, f)).length;
+    if (L.resp === '@yo' && !u) L.resp = '';
+    if (L.resp && L.resp !== '@yo' && L.resp !== '@sin' && !equipo.includes(L.resp) && !deAntes.includes(L.resp)) L.resp = '';
+    const op = (v, t) => `<option value="${esc(v)}" ${L.resp === v ? 'selected' : ''}>${esc(t)}</option>`;
+    const sin = n('@sin');
+    return op('', 'Todos los responsables') + (u ? op('@yo', `Mis proyectos (${u}) · ${n('@yo')}`) : '') +
+      equipo.filter((r) => r !== u).map((r) => op(r, `${r} · ${n(r)}`)).join('') +
+      deAntes.map((r) => op(r, `${r} · ${n(r)}`)).join('') + (sin ? op('@sin', `Sin responsable · ${sin}`) : '');
+  }
+
   function renderList() {
     const all = S.all();
     document.title = 'Proyectos — Formulación QUEMPIN';
     const L = state.list;
-    const responsables = Array.from(new Set(all.map((p) => (p.responsable || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es'));
-    if (L.resp && !responsables.includes(L.resp)) L.resp = '';
+    const opcionesResp = opcionesResponsable(all, L);
     const meses = Array.from(new Set(all.map(mesIngreso).filter(Boolean))).sort().reverse();
     if (L.mes && !meses.includes(L.mes)) L.mes = '';
     app.innerHTML = `<div class="viz-container page">
@@ -1091,10 +1153,7 @@
                 ${meses.map((m) => `<option value="${m}" ${L.mes === m ? 'selected' : ''}>${esc(nombreMes(m))}</option>`).join('')}
               </select></div>
             <div class="viz-field span-3"><label for="list-resp">Responsable</label>
-              <select id="list-resp" class="${L.resp ? 'is-set' : ''}" ${responsables.length ? '' : 'disabled'}>
-                <option value="">${responsables.length ? 'Todos los responsables' : 'Sin responsables asignados'}</option>
-                ${responsables.map((r) => `<option value="${esc(r)}" ${L.resp === r ? 'selected' : ''}>${esc(r)}</option>`).join('')}
-              </select></div>
+              <select id="list-resp" class="${L.resp ? 'is-set' : ''}">${opcionesResp}</select></div>
           </div>
           <div class="filtro-estados" id="list-cartera" role="group" aria-label="Filtrar por estado"></div>
           <div class="viz-filterfoot" id="list-foot"></div>
@@ -1134,7 +1193,7 @@
     const q = norm(L.q.trim());
     return S.all()
       .filter((p) => !L.estado || p.estado === L.estado)
-      .filter((p) => !L.resp || (p.responsable || '').trim() === L.resp)
+      .filter((p) => pasaResponsable(p, L.resp))
       .filter((p) => !L.mes || mesIngreso(p) === L.mes)
       .filter((p) => !q || norm([p.codigo, p.titulo, p.cliente, p.idLicitacion, p.responsable, p.ubicacion, QH() ? QH().reqDe(p) : '', (vinculoAF(p) || {}).tag,
         enSP() ? (window.QCloud.ubicacion(p.uid) || {}).ruta : ''].join(' ')).includes(q));
@@ -1222,7 +1281,7 @@
     const chips = [];
     if (L.q) chips.push(['q', 'Búsqueda', L.q]);
     if (L.estado) chips.push(['estado', 'Estado', L.estado]);
-    if (L.resp) chips.push(['resp', 'Responsable', L.resp]);
+    if (L.resp) chips.push(['resp', 'Responsable', nombreFiltroResp(L.resp)]);
     if (L.mes) chips.push(['mes', 'Ingresados en', nombreMes(L.mes)]);
     el.innerHTML = `<span class="viz-resultcount"><strong>${n}</strong> de ${plural(total, 'proyecto')}${chips.length ? '' : ' · sin filtros'}</span>
       <span class="viz-chips">${chips.map(([k, l, v]) => `<button type="button" class="viz-chip" data-act="quitar-filtro" data-k="${k}" aria-label="Quitar filtro ${esc(l)}"><span class="k">${esc(l)}:</span><span class="v">${esc(v)}</span><span class="x" aria-hidden="true">×</span></button>`).join('')}</span>
@@ -1603,6 +1662,19 @@
       : o.prefix ? `<div class="input-affix pre">${input}<span class="affix">${o.prefix}</span></div>` : input;
     return `<div class="campo ${o.cls || ''}"><label for="f-${path}">${label}${o.opcional ? ' <span class="opc">(opcional)</span>' : ''}</label>${wrapped}${o.hint ? `<span class="hint" ${o.hintId ? `id="${o.hintId}"` : ''}>${o.hint}</span>` : ''}</div>`;
   };
+  /* Responsable del proyecto (2026-10-16): una de las iniciales del equipo (js/usuario.js). Un texto
+     de antes que no está en la lista se conserva como una opción más. */
+  function campoResponsable(p) {
+    const actual = respDe(p);
+    const equipo = QU() ? QU().LISTA : [];
+    const elegida = equipo.find((r) => r === actual.toUpperCase()) || actual;
+    const opciones = [''].concat(equipo, elegida && !equipo.includes(elegida) ? [elegida] : []);
+    const u = yo();
+    return `<div class="campo"><label for="f-responsable">Responsable</label>
+      <select class="input" id="f-responsable" data-f="responsable" aria-describedby="resp-hint">${opciones.map((v) =>
+        `<option value="${esc(v)}" ${v === elegida ? 'selected' : ''}>${v ? esc(v) + (v === u ? ' (tú)' : '') : 'Sin responsable'}</option>`).join('')}</select>
+      <span class="hint" id="resp-hint">Parte con el Evaluador de la Planilla o con tu usuario.</span></div>`;
+  }
   const rowInput = (list, it, k, label, cls, isNum, extra) =>
     `<input class="ci ${cls || ''} ${isNum ? 'num' : ''}" ${isNum ? 'type="number" step="any" inputmode="decimal" data-t="num"' : 'type="text"'} data-list="${list}" data-uid="${it.uid}" data-k="${k}" value="${esc(it[k] === null || it[k] === undefined ? '' : it[k])}" aria-label="${esc(label)}" ${extra || ''}>`;
   const unitCombo = (inputHtml, label) => `<div class="combo">${inputHtml}<button type="button" class="combo-btn" data-picker="unidad" tabindex="-1" aria-haspopup="listbox" aria-expanded="false" aria-label="Elegir ${esc(label)}">${svg('<path d="M6 9l6 6 6-6"/>')}</button></div>`;
@@ -1983,7 +2055,7 @@
             ${fInput('cliente', 'Cliente / mandante')}
             ${fInput('idLicitacion', 'ID de licitación', { opcional: true, placeholder: 'Ej.: 1234-56-LE26' })}
             ${fInput('ubicacion', 'Ubicación')}
-            ${fInput('responsable', 'Responsable')}
+            ${campoResponsable(p)}
             ${fInput('fecha', 'Fecha de formulación', { type: 'date' })}
             <div class="campo"><label for="f-parametros.moneda">Moneda</label>
               <select class="input" id="f-parametros.moneda" data-f="parametros.moneda" aria-describedby="moneda-hint">${Object.keys(MONEDAS).map((m) => `<option value="${m}" ${monedaDe(p) === m ? 'selected' : ''}>${esc(MONEDAS[m].nombre)}</option>`).join('')}</select>
@@ -2723,7 +2795,7 @@
       <section>
         <div class="section-head"><h3 class="seccion-titulo">Paso a paso</h3><p>Los mismos pasos que ves arriba al abrir un proyecto.</p></div>
         <ol class="guia-pasos">
-          ${paso(1, 'Datos del proyecto', 'Al crear el proyecto eliges la carpeta de su oferta, o la creas ahí mismo con «Crear nueva carpeta»: con el N° de la Planilla de Ingreso, el proyecto trae su título, su ubicación y el presupuesto del mandante. Completa el cliente y el responsable.', 'los parámetros (IVA, tarifas, metas) ya vienen con los valores habituales; ábrelos solo si este proyecto es distinto.')}
+          ${paso(1, 'Datos del proyecto', 'Al crear el proyecto eliges la carpeta de su oferta, o la creas ahí mismo con «Crear nueva carpeta»: con el N° de la Planilla de Ingreso, el proyecto trae su título, su ubicación, el presupuesto del mandante y su responsable (el Evaluador de la planilla o, si no tiene, tu usuario: tus iniciales, arriba a la derecha). Completa el cliente.', 'los parámetros (IVA, tarifas, metas) ya vienen con los valores habituales; ábrelos solo si este proyecto es distinto.')}
           ${paso(2, 'Partidas', 'Divide el trabajo en partidas con su unidad y cantidad, por ejemplo «3 medidores de 2"». Los costos comunes a todo el trabajo (instalación de faenas, traslados…) van en la <b>partida base</b>: no se cotiza sola y su costo se divide en partes iguales entre las demás partidas.', 'una partida por cada ítem que irá en la cotización.')}
           ${paso(3, 'Costos', 'En Materiales, Equipos, Mano de obra y Otros ingresa lo que necesita <b>una</b> unidad de la partida y elige a qué partida pertenece. La herramienta multiplica por la cantidad.', 'un costo sin partida no se suma al precio: la herramienta lo marca en rojo.')}
           ${paso(4, 'Utilidad y precio', 'Define la utilidad de cada partida (% de recargo, monto fijo o valor final) y copia los valores netos para la cotización.', '«Llevar al margen objetivo» calcula el recargo que deja el margen justo en la meta.')}
@@ -2793,7 +2865,7 @@
       const L = state.list;
       if (el.id === 'list-search') L.q = el.value;
       else if (el.id === 'list-estado') L.estado = el.value;
-      else if (el.id === 'list-resp') L.resp = el.value;
+      else if (el.id === 'list-resp') { L.resp = el.value; guardarMisProyectos(el.value === '@yo'); }
       else if (el.id === 'list-mes') L.mes = el.value;
       else return;
       el.classList.toggle('is-set', !!el.value);
@@ -3200,7 +3272,7 @@
               crear: crearCarpetaSP, validarNueva: validarCarpetaSP, confirmar: 'Duplicar aquí', planilla: true, actual: window.QCloud.carpetaDe(src.uid)
             });
             if (!sel) break;
-            const c = S.cloneProject(src, { estado: 'Borrador', fecha: S.hoy() });
+            const c = S.cloneProject(src, { estado: 'Borrador', fecha: S.hoy(), responsable: yo() || src.responsable || '' });
             delete c.vinculos; // otra oferta: el envío al Análisis Financiero era de la original
             enCarpeta(c, sel, { datosOferta: true });
             S.upsert(c);
@@ -3217,6 +3289,9 @@
             confirmar: 'Duplicar aquí'
           });
           if (!sel) break;
+          // La copia es un proyecto nuevo: su responsable, como al crearlo (el Evaluador de la Planilla de
+          // esa oferta o el usuario); si no hay ninguno, el del original
+          c.responsable = (sel.req && QU() ? QU().valido(sel.req.evaluador) : '') || yo() || c.responsable;
           if (sel.carpeta) enOfertaLocal(c, sel, {});
           S.upsert(c);
           if (sel.carpeta) guardarExcelOferta(c.uid, true);
@@ -3412,6 +3487,7 @@
           const map = { q: ['q', '#list-search'], estado: ['estado', '#list-estado'], resp: ['resp', '#list-resp'], mes: ['mes', '#list-mes'] };
           const [k, sel] = map[d.k];
           L[k] = '';
+          if (k === 'resp') guardarMisProyectos(false);
           const el = $(sel);
           if (el) { el.value = ''; el.classList.remove('is-set'); }
           refreshList();
@@ -3420,6 +3496,7 @@
         case 'limpiar-filtros': {
           if (state.avisoLista) { state.avisoLista = null; location.hash = '#/'; }
           state.list.q = ''; state.list.estado = ''; state.list.resp = ''; state.list.mes = '';
+          guardarMisProyectos(false);
           ['#list-search', '#list-estado', '#list-resp', '#list-mes'].forEach((s) => { const el = $(s); if (el) { el.value = ''; el.classList.remove('is-set'); } });
           refreshList();
           break;
@@ -3704,6 +3781,10 @@
   });
 
   // ---- Configuración ---------------------------------------------------------------
+  /* Las opciones de un <select> de usuario: la primera vacía (vacio: su texto) y las iniciales del equipo */
+  const opcionesUsuario = (actual, vacio) => [''].concat(QU() ? QU().LISTA : [])
+    .map((v) => `<option value="${esc(v)}" ${v === actual ? 'selected' : ''}>${v ? esc(v) : esc(vacio)}</option>`).join('');
+
   async function openConfig() {
     const cfg = S.getConfig();
     const par = cfg.parametros;
@@ -3719,7 +3800,8 @@
       body: `<p>Valores con que parten los proyectos nuevos${enNube ? ' de todo el equipo' : ' de este navegador'}. Los proyectos existentes conservan los suyos.${enNube ? ` Quedan en SharePoint, en «${esc((window.QPN_M365 || {}).carpetaConfig || 'la biblioteca')}».` : ''}</p>
         <div class="fila-campos">
           ${enNube ? '' : `<div class="campo"><label for="cfg-prefijo">Prefijo del código</label><input class="input" id="cfg-prefijo" value="${esc(cfg.prefijo)}" ${dis}><span class="hint">Ej.: ${esc(cfg.prefijo)}-${new Date().getFullYear()}-001</span></div>`}
-          <div class="campo"><label for="cfg-resp">Responsable por defecto</label><input class="input" id="cfg-resp" value="${esc(cfg.responsable)}">${enNube ? '<span class="hint">Solo para ti.</span>' : ''}</div>
+          <div class="campo"><label for="cfg-usuario">Tu usuario</label><select class="input" id="cfg-usuario" aria-describedby="cfg-usuario-hint">${opcionesUsuario(yo(), 'Sin usuario')}</select>
+            <span class="hint" id="cfg-usuario-hint">Responsable de tus proyectos nuevos y autor en el Control de Documentos. Solo en este navegador; es el mismo del Portal QUEMPIN.</span></div>
         </div>
         <h3 class="sub-t">Precio y tarifas</h3>
         <div class="fila-campos cfg-grid">
@@ -3740,7 +3822,7 @@
     const v = await promesaCfg;
     if (v === 'save') {
       if ($('#cfg-prefijo')) cfg.prefijo = ($('#cfg-prefijo').value || 'QMPN').trim().toUpperCase();
-      cfg.responsable = $('#cfg-resp').value.trim();
+      cfg.responsable = QU() ? QU().elegir($('#cfg-usuario').value) : cfg.responsable;
       if (puede) {
         const leer = (id) => { const n = parseFloat($('#cfg-' + id).value); return Number.isFinite(n) ? n : 0; };
         Object.assign(cfg.parametros, {
@@ -4097,8 +4179,8 @@
     let creada = null;          // la carpeta que se creó en este formulario
     let misma = false;          // «es la misma oferta» cuando la planilla dice otro título
     let iniciales = '';
-    const pedirIniciales = !!opts.iniciales && !leerIniciales();
-    const sugIni = String(S.getConfig().responsable || '').trim().split(/\s+/).filter(Boolean).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
+    // Sin usuario elegido se pide aquí (2026-10-16: de la lista del equipo, ya no escrito a mano)
+    const pedirIniciales = !!opts.iniciales && !yo();
 
     const filas = () => {
       let g = null;
@@ -4143,9 +4225,9 @@
         <div class="cp-lista" id="cp-lista" role="radiogroup" aria-label="Carpetas de oferta">${filas()}</div>
         <p class="cp-vacio" id="cp-vacio" hidden></p>
         <div class="cp-elegida" id="cp-elegida" role="status" aria-live="polite"></div>
-        ${pedirIniciales ? `<div class="campo cp-ini"><label for="cp-ini">Tus iniciales</label>
-          <input class="input" id="cp-ini" maxlength="4" autocomplete="off" value="${esc(sugIni)}" aria-describedby="cp-ini-hint">
-          <span class="hint" id="cp-ini-hint">Con ellas se registra la evaluación de costos en el Control de Documentos. Se piden una sola vez en este navegador.</span></div>` : ''}
+        ${pedirIniciales ? `<div class="campo cp-ini"><label for="cp-ini">¿Quién eres?</label>
+          <select class="input" id="cp-ini" aria-describedby="cp-ini-hint">${opcionesUsuario('', 'Elige tus iniciales')}</select>
+          <span class="hint" id="cp-ini-hint">Quedas como responsable del proyecto y con tus iniciales se registra la evaluación de costos en el Control de Documentos. Se piden una sola vez en este navegador (después se cambian arriba, en tu usuario).</span></div>` : ''}
         ${opts.pie ? `<p class="hint cp-pie">${opts.pie}</p>` : ''}`,
       buttons: [opts.sinCarpeta ? { label: opts.sinCarpeta, value: 'ninguna', left: true } : null, { label: 'Cancelar' }, { label: opts.confirmar || 'Usar esta carpeta', value: 'ok', primary: true }].filter(Boolean)
     });
@@ -4370,15 +4452,14 @@
       }
     });
     const iniEl = $('#cp-ini');
-    if (iniEl) iniEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); boton.click(); } });
     boton.addEventListener('click', (e) => {
       if (!elegida) { e.preventDefault(); return; }
       if (pedirIniciales) {
-        const v = iniEl.value.trim().toUpperCase();
-        if (!/^\p{L}{1,4}$/u.test(v)) {
+        const v = QU() ? QU().valido(iniEl.value) : '';
+        if (!v) {
           e.preventDefault();
           iniEl.setAttribute('aria-invalid', 'true');
-          $('#cp-ini-hint').textContent = 'Escribe tus iniciales (por ejemplo, CM): con ellas se registra la evaluación de costos en el Control de Documentos.';
+          $('#cp-ini-hint').textContent = 'Elige tus iniciales: con ellas se registra la evaluación de costos en el Control de Documentos.';
           $('#cp-ini-hint').classList.add('err');
           iniEl.focus();
           return;
@@ -4416,7 +4497,7 @@
     pl = pl || await cargaPlanilla;
     let req = pl && elegida.numero ? pl.get(elegida.numero) || null : null;
     if (req && opts.planilla && !coincidePlanilla(elegida.titulo, req.titulo) && !misma) req = null;
-    if (iniciales) guardarIniciales(iniciales);
+    if (iniciales && QU()) QU().elegir(iniciales);
     return { carpeta: elegida, req: opts.planilla ? req : null, iniciales };
   }
 
@@ -4663,8 +4744,7 @@
     if (!d) return false;
     const destino = d.nuevo ? { tag: d.tag, nombre: otroNombre.value.trim(), crear: true } : { tag: d.tag };
     const visto = d.q ? d.q.proyectados : null;
-    const u = S.getUser();
-    const m = X.mensajePresupuesto(p, r.totals, destino, visto, (u && u.email) || p.responsable || S.getConfig().responsable || '');
+    const m = X.mensajePresupuesto(p, r.totals, destino, visto, usuarioActual(p));
     try { await X.enviar(m); } catch (e) {
       toast('No se pudo dejar el envío en la carpeta: ' + ((e && e.message) || e), true);
       return false;
@@ -4722,8 +4802,7 @@
     if (!PATRON_TAG.test(tag)) { toast('El TAG debe tener 2 a 10 letras o números.', true); return; }
     const crear = $('#afd-crear').checked;
     const nombre = $('#afd-nombre').value.trim();
-    const u = S.getUser();
-    const m = X.mensajePresupuesto(p, r.totals, crear ? { tag, nombre, crear: true } : { tag }, null, (u && u.email) || p.responsable || '');
+    const m = X.mensajePresupuesto(p, r.totals, crear ? { tag, nombre, crear: true } : { tag }, null, usuarioActual(p));
     X.descargar(m);
     registrarEnvioAF(p, tag, crear ? nombre : '', m);
     toast('Envío descargado: déjalo en Formulación de proyectos › .Herramientas formulación › Intercambio › buzon');
@@ -4764,10 +4843,9 @@
   //  el Control de Documentos. La lógica (mensajes, lecturas, búsqueda) vive en js/herramientas.js.
   // ---------------------------------------------------------------------------
   const QH = () => window.QHerramientas;
-  const usuarioActual = (p) => { const u = S.getUser(); return (u && u.email) || (p && p.responsable) || S.getConfig().responsable || ''; };
-  const CLAVE_INICIALES = 'qpn.formulacion.iniciales';
-  const leerIniciales = () => { try { return localStorage.getItem(CLAVE_INICIALES) || ''; } catch (e) { return ''; } };
-  const guardarIniciales = (v) => { try { localStorage.setItem(CLAVE_INICIALES, v); } catch (e) { /* solo esta vez */ } };
+  /* Quién manda un mensaje a otra herramienta: la cuenta de SharePoint, o el usuario elegido (desde
+     el 2026-10-16 va antes que el responsable del proyecto: firma quien lo envía) */
+  const usuarioActual = (p) => { const u = S.getUser(); return (u && u.email) || yo() || (p && p.responsable) || S.getConfig().responsable || ''; };
 
   /* ¿Se puede leer la carpeta sin pedir nada? (los pintores no pueden abrir diálogos) */
   async function carpetaLista() {
@@ -5728,25 +5806,24 @@
     });
     return `81${anio}${String(n).padStart(2, '0')}`;
   }
-  /* Las iniciales de quien registra; la primera vez en este navegador se piden. '' = no las dio. */
+  /* Las iniciales de quien registra: las del usuario (js/usuario.js); sin usuario se piden una vez y
+     quedan como su usuario. '' = no las dio. */
   async function inicialesRegistro() {
-    const ya = leerIniciales();
-    if (ya) return ya;
-    const sugeridas = String(S.getConfig().responsable || '').trim().split(/\s+/).filter(Boolean).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
+    const ya = yo();
+    if (ya || !QU()) return ya;
     const promesa = ask({
-      title: 'Tus iniciales para el Control de Documentos',
-      body: `<p>Cada evaluación de costos toma su número del Control de Documentos al elegir la carpeta de su oferta, con las iniciales de quien la registra. Se piden una sola vez en este navegador.</p>
-        <div class="fila-campos tres"><div class="campo"><label for="rg-ini">Tus iniciales</label><input class="input" id="rg-ini" maxlength="4" value="${esc(sugeridas)}"></div></div>`,
+      title: '¿Quién registra la evaluación?',
+      body: `<p>Cada evaluación de costos toma su número del Control de Documentos al elegir la carpeta de su oferta, con las iniciales de quien la registra. Elige las tuyas: quedan como tu usuario en este navegador (se cambia arriba, en la cabecera).</p>
+        <div class="fila-campos tres"><div class="campo"><label for="rg-ini">Tus iniciales</label><select class="input" id="rg-ini">${opcionesUsuario('', 'Elige tus iniciales')}</select></div></div>`,
       buttons: [{ label: 'Ahora no' }, { label: 'Registrar', value: 'ok', primary: true }]
     });
     const ini = $('#rg-ini'), btn = $('#modal .modal-foot .btn-primario');
     let valor = '';
-    const pintar = () => { valor = ini.value.trim().toUpperCase(); btn.disabled = !valor; };
-    ini.addEventListener('input', pintar);
+    const pintar = () => { valor = QU().valido(ini.value); btn.disabled = !valor; };
+    ini.addEventListener('change', pintar);
     pintar();
     if (await promesa !== 'ok' || !valor) return '';
-    guardarIniciales(valor);
-    return valor;
+    return QU().elegir(valor);
   }
   const registrando = new Set();
   /* Registra la evaluación de la versión del presupuesto si todavía no tiene número. Desde el
@@ -5949,7 +6026,11 @@
         <div class="pend-b-h"><h4 id="pend-${id}">${titulo}</h4><span class="pend-n" aria-label="${n} pendientes">${n}</span>${accion ? `<span class="pend-acc-h">${accion}</span>` : ''}</div>
         <p class="pend-b-d">${desc}</p>${cuerpo}${pie ? `<p class="pend-nota">${pie}</p>` : ''}</section>`;
 
-    // 1. Por ofertar: requerimientos «En evaluación», del cierre más próximo
+    // 1. Por ofertar: requerimientos «En evaluación», del cierre más próximo. Los del usuario (su
+    // Evaluador en la Planilla) llevan «Tuyo» (2026-10-16)
+    const u = yo();
+    const esTuyo = (x) => !!u && !!QU() && QU().mismo(x.evaluador, u);
+    const tuyos = d.ofertar.filter(esTuyo).length;
     if (d.ofertar.length) {
       const filas = d.ofertar.map((x) => {
         const ps = x.proyectos || [];
@@ -5958,13 +6039,14 @@
           ? `<a class="btn btn-sm" href="#/p/${esc(pr.uid)}/${destinoDe(pr)}" aria-label="Abrir ${esc(pr.codigo)}">Abrir</a>`
           : `<button type="button" class="btn btn-sm btn-acento" data-act="nuevo" data-buscar="${esc(x.numero)}" data-numero="${esc(x.numero)}">${ICON.plus}Formular</button>`;
         const sub = [x.fechaCierre ? `cierre ${x.fechaCierre}` : 'sin fecha de cierre en la planilla', x.ubicacion,
+          x.evaluador ? `evaluador ${x.evaluador}` : 'sin evaluador en la planilla',
           pr ? `en el Formulador: ${pr.codigo} v${pr.version} · ${pr.estado}${ps.length > 1 ? ` (+${ps.length - 1})` : ''}` : 'sin formular'].filter(Boolean).join(' · ');
         return `<li class="pend-fila">
-            <div class="pend-t">${x.dias !== null ? `<span class="chip ${x.nivel} chip-plazo">${ICON.reloj}${esc(x.plazo)}</span>` : ''}<b>N° ${esc(x.numero)}</b> · ${esc(x.titulo || 'Sin título')}<span class="pend-sub">${esc(sub)}</span></div>
+            <div class="pend-t">${x.dias !== null ? `<span class="chip ${x.nivel} chip-plazo">${ICON.reloj}${esc(x.plazo)}</span>` : ''}${esTuyo(x) ? '<span class="chip info chip-tuyo" title="Tú eres el Evaluador en la Planilla de Ingreso">Tuyo</span>' : ''}<b>N° ${esc(x.numero)}</b> · ${esc(x.titulo || 'Sin título')}<span class="pend-sub">${esc(sub)}</span></div>
             <div class="pend-acc">${acc}</div></li>`;
       });
       bloques.push(bloque('ofertar', 'Por ofertar', d.ofertar.length,
-        'Requerimientos «En evaluación» en la Planilla de Ingreso, del cierre más próximo al más lejano.', lista('ofertar', filas)));
+        `Requerimientos «En evaluación» en la Planilla de Ingreso, del cierre más próximo al más lejano.${u ? ` «Tuyo»: tú (${esc(u)}) eres el Evaluador.` : ''}`, lista('ofertar', filas)));
     }
 
     // 2. Pasar a la Planilla: lo que falta escribir, por N°
@@ -6016,7 +6098,7 @@
     const urge = d.ofertar.find((x) => x.nivel === 'bad' || x.nivel === 'warn');
     return `<details class="pend" id="pend-sec"${pend.abierta ? ' open' : ''}>
         <summary class="pend-sum"><span class="pend-sum-t"><span class="seccion-titulo">Pendientes del equipo</span>
-          <span class="pend-res">${cuenta(d.ofertar.length, 'por ofertar')}${cuenta(porEscribir.length, 'para la Planilla')}${cuenta(d.borradores.length, 'en Sistema QUEMPIN')}${urge
+          <span class="pend-res">${cuenta(d.ofertar.length, `por ofertar${tuyos ? ` (${tuyos} ${tuyos === 1 ? 'tuyo' : 'tuyos'})` : ''}`)}${cuenta(porEscribir.length, 'para la Planilla')}${cuenta(d.borradores.length, 'en Sistema QUEMPIN')}${urge
             ? `<span class="chip ${urge.nivel} chip-plazo">${ICON.reloj}${esc(urge.plazo)} · N° ${esc(urge.numero)}</span>` : ''}</span></span><span class="pl-accion" aria-hidden="true"></span></summary>
         <div class="pend-cuerpo"><p class="pend-desc">Lo que espera a alguien, según la Planilla de Ingreso y la carpeta de intercambio.</p>
           <div class="pend-grid">${bloques.join('')}</div></div></details>`;
@@ -6095,7 +6177,8 @@
       m.set(String(r.numero), {
         numero: String(r.numero), estado: r.estado || '', titulo: r.titulo || '', ubicacion: r.ubicacion || '',
         referencia: r.referencia || '', cierre: cierre && !isNaN(cierre) ? cierre : null,
-        presupuesto: typeof r.presupuesto === 'number' && r.presupuesto > 0 ? r.presupuesto : null
+        presupuesto: typeof r.presupuesto === 'number' && r.presupuesto > 0 ? r.presupuesto : null,
+        evaluador: r.evaluador || ''
       });
     });
     return m;
@@ -6125,6 +6208,10 @@
     if (r && !(v.requerimiento && v.requerimiento.numero)) v.requerimiento = { numero: r.numero, titulo: r.titulo || '' };
     p.vinculos = v;
     if (opts && opts.datosOferta) {
+      // El responsable es el Evaluador que la Planilla le asignó a ese N°, si es del equipo; si no,
+      // queda el usuario con que se creó (2026-10-16)
+      const ev = r && QU() ? QU().valido(r.evaluador) : '';
+      if (ev) p.responsable = ev;
       if (!String(p.titulo || '').trim()) p.titulo = (r && r.titulo) || c.titulo || '';
       if (r && r.ubicacion && !String(p.ubicacion || '').trim()) p.ubicacion = r.ubicacion;
       if (r && r.referencia && !String(p.idLicitacion || '').trim()) p.idLicitacion = String(r.referencia);
@@ -6433,6 +6520,14 @@
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     if (mq.addEventListener) mq.addEventListener('change', syncThemeBtn);
   }
+
+  // Usuario: se pinta al abrir y cada vez que cambia, aquí, en el Portal QUEMPIN o en otra pestaña.
+  // La lista (Mis proyectos, Pendientes) se vuelve a armar; un proyecto abierto no cambia.
+  pintarUsuario();
+  if (QU()) QU().alCambiar(() => {
+    pintarUsuario();
+    if (!state.project && $('#list-body, #app .hub-grid')) renderList();
+  });
 
   // Arranque: con SharePoint configurado se espera la sesión; si no, modo local de siempre.
   if (window.QCloud && window.QCloud.configurado) {

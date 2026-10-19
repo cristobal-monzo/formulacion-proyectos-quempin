@@ -476,7 +476,10 @@
       doc.texto(xt, M + 10, 'Carta Gantt', { size: 16, bold: true, color: '#171513' });
       doc.texto(xt, M + 24, `${p.codigo || ''} v${p.version || 1} · ${p.titulo || 'Proyecto sin título'}`, { size: 9, color: '#52514e', maxW: 430 });
       const der = 842 - M;
-      doc.texto(der, M + 2, p.cliente ? `Cliente: ${p.cliente}` : '', { size: 8.5, color: '#52514e', align: 'right', maxW: 300 });
+      // El responsable del proyecto junto al cliente (2026-10-16: lo que se genera lleva a su responsable).
+      // Va primero: si no cabe, se recorta el nombre del cliente
+      doc.texto(der, M + 2, [p.responsable ? `Responsable: ${p.responsable}` : '', p.cliente ? `Cliente: ${p.cliente}` : ''].filter(Boolean).join(' · '),
+        { size: 8.5, color: '#52514e', align: 'right', maxW: 300 });
       doc.texto(der, M + 14, `Inicio ${fechaCorta(res.inicio)} · Término ${fechaCorta(res.termino)}`, { size: 9, bold: true, color: '#171513', align: 'right' });
       doc.texto(der, M + 26, `Plazo: ${res.plazoLaborable} ${tipoDias}${res.calendario.habiles ? ` (${res.plazoCorrido} corridos)` : ''}`, { size: 8.5, color: '#52514e', align: 'right' });
       doc.rect(M, M + 34, W, 1.6, { fill: '#ff5100' });

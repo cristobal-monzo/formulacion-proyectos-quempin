@@ -1175,6 +1175,19 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
   .tbl-apilable td.veces > span { font-size: 13px; }
   .viz-footer { padding-top: 18px; }
 }
+/* Usuario (js/usuario.js, 2026-10-16): sus iniciales siempre a la vista, también en el teléfono.
+   Sin elegir, el botón va con borde naranjo y dice «¿Quién eres?» (en el teléfono, solo el ícono). */
+.usuario-btn .usr-t { font-weight: 900; letter-spacing: 0.04em; white-space: nowrap; }
+.usuario-btn.sin-usuario { border-color: var(--brand-orange); }
+.usuario-btn.sin-usuario .usr-t { font-weight: 700; letter-spacing: 0; }
+@media (max-width: 600px) {
+  /* En el teléfono, del mismo ancho que los demás botones: solo las iniciales (sin el ícono) */
+  .viz-theme-toggle.hb.usuario-btn:not(.sin-usuario) { width: auto; min-width: 40px; padding: 0 8px; }
+  .usuario-btn:not(.sin-usuario) svg { display: none; }
+  .usuario-btn.sin-usuario .usr-t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}
+/* «Tuyo»: requerimientos de la Planilla cuyo Evaluador es el usuario (Pendientes del equipo) */
+.chip-tuyo { font-weight: 900; }
 
 /* Utilidad y precio: meta del margen bajo el total, y aviso breve si falta el presupuesto */
 .meta-margen { font-size: 11px; font-weight: 400; color: var(--text-muted); white-space: normal; }
