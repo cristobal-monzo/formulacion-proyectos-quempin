@@ -991,8 +991,15 @@
     const parts = location.hash.replace(/^#\/?/, '').split('/');
     if (nube.activa && !nube.lista && parts[0] !== 'guia') { state.project = null; renderNube(); return; }
     let where = 'lista';
-    if (parts[0] !== 'req' && parts[0] !== 'tag') state.avisoLista = null;
-    if (parts[0] === 'p' && parts[1]) {
+    if (parts[0] !== 'req' && parts[0] !== 'tag' && parts[0] !== 'oportunidad') state.avisoLista = null;
+    if (parts[0] === 'oportunidad' && parts[1]) {
+      // Desde el tablero «Oportunidades» (js/oportunidad.js). La primera vez trae los datos de la licitación:
+      // se guardan en esta pestaña y la dirección queda corta, #/oportunidad/<código>, que es la que el
+      // Portal recuerda y la que vuelve con «Atrás»
+      const llegada = QOp() && QOp().leer(parts[1]);
+      if (llegada) { guardarOportunidad(llegada); location.replace(`#/oportunidad/${encodeURIComponent(llegada.codigo)}`); return; }
+      if (rutaOportunidad(parts[1])) return;
+    } else if (parts[0] === 'p' && parts[1]) {
       const p = S.get(parts[1]);
       if (!p) { toast('No se encontró el proyecto.', true); location.hash = '#/'; return; }
       if (p.eliminado) { toast('Ese proyecto está en la papelera. Restáuralo para editarlo.', true); location.hash = '#/papelera'; return; }
@@ -1144,6 +1151,7 @@
   function avisoEnlace() {
     const a = state.avisoLista;
     if (!a) return '';
+    if (a.tipo === 'oportunidad') return avisoOportunidad(a);
     const que = a.tipo === 'req' ? `el N° de requerimiento <b>${esc(a.clave)}</b>` : `el proyecto <b>${esc(a.clave)}</b> del Análisis Financiero`;
     if (a.n > 1) return `<div class="nota" role="status"><span>Llegaste desde otra herramienta: hay ${a.n} proyectos con ${que}. Elige cuál abrir.</span><span class="actions"><button type="button" class="btn btn-ghost btn-sm" data-act="limpiar-filtros">Ver todos</button></span></div>`;
     const crear = a.tipo === 'req' ? `<button type="button" class="btn btn-primario btn-sm" data-act="nuevo" data-buscar="${esc(a.clave)}">${ICON.plus}Crear el proyecto del N° ${esc(a.clave)}</button>` : '';
@@ -3108,6 +3116,7 @@
           setTimeout(() => { const t = $('[data-f="titulo"]'); if (t) t.focus(); }, 60);
           break;
         }
+        case 'nuevo-op': await nuevoDesdeOportunidad(); break;
         case 'ejemplo': {
           const ex = S.exampleProject();
           S.upsert(ex);
@@ -3991,12 +4000,13 @@
     return p;
   }
 
-  async function nuevoEnSharePoint() {
-    const sel = await elegirCarpeta({
+  /* op: la oportunidad de Mercado Público que llegó del tablero (js/oportunidad.js), o nada */
+  async function nuevoEnSharePoint(op) {
+    const sel = await elegirCarpeta(Object.assign({
       titulo: 'Nuevo proyecto',
       texto: 'Elige la carpeta de la oferta, o créala aquí si todavía no existe. La formulación se guarda ahí, junto a sus antecedentes.',
       crear: crearCarpetaSP, validarNueva: validarCarpetaSP, confirmar: 'Crear proyecto', completar: true, planilla: true
-    });
+    }, op ? opcionesOportunidad(op) : {}));
     if (!sel) return;
     const todos = S.all().filter((x) => window.QCloud.carpetaDe(x.uid) === sel.carpeta.id)
       .sort((a, b) => (parseInt(b.version, 10) || 1) - (parseInt(a.version, 10) || 1));
@@ -4019,8 +4029,10 @@
       if (partes.length) extra.descripcion = partes.join(' · ') + '.';
     }
     const np = enCarpeta(S.newProject(extra), sel, { datosOferta: true });
+    const hechos = op ? QOp().aplicar(np, op, monedaDe(np)) : [];
     S.upsert(np);
     goProject(np, 'ficha');
+    if (op) toast(textoCreadoDesdeOportunidad(np, hechos));
     setTimeout(() => { const t = $('[data-f="titulo"]'); if (t) t.focus(); }, 60);
   }
 
@@ -4383,6 +4395,12 @@
       const c = lista.find((x) => String(x.numero || '') === String(opts.porNumero));
       if (c) elegir(c);
       else if (opts.crear) abrirPanel(String(opts.porNumero));
+    } else if (opts.nueva && opts.crear && !elegida) {
+      // Desde el tablero «Oportunidades» sin N° en la planilla: «Nueva carpeta» abre con el nombre de la
+      // licitación (por el campo, no por abrirPanel: un nombre que empieza con números no es un N°)
+      abrirPanel('');
+      const t = $('#cp-tit');
+      if (t) { t.value = opts.nueva; t.dispatchEvent(new Event('input')); }
     }
     if (elegida) {
       const fila = Array.from(dlg.querySelectorAll('.cp-fila')).find((b) => b.dataset.id === elegida.id);
@@ -6283,6 +6301,114 @@
       toast('El Excel ya no se actualiza en esa carpeta. El que ya estaba ahí se queda.');
       pintarEditorOferta();
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  //  OPORTUNIDADES DE MERCADO PÚBLICO: «Llevar al Formulador» del tablero (2026-10-16, js/oportunidad.js).
+  //  El proyecto nuevo nace con el nombre, el organismo, el ID, la ubicación, el monto y el cierre.
+  // ---------------------------------------------------------------------------
+  const QOp = () => window.QOportunidad;
+  const CLAVE_OP = 'qpn.formulacion.oportunidad';   // solo esta pestaña (sessionStorage)
+  function guardarOportunidad(op) {
+    state.oportunidad = op;
+    try { sessionStorage.setItem(CLAVE_OP, JSON.stringify(op)); } catch (e) { /* sin almacenamiento: queda en memoria */ }
+  }
+  function oportunidadGuardada(codigo) {
+    let op = state.oportunidad;
+    if (!op) { try { op = JSON.parse(sessionStorage.getItem(CLAVE_OP) || 'null'); } catch (e) { op = null; } }
+    if (!op || op.codigo !== codigo) return null;
+    state.oportunidad = op;
+    return op;
+  }
+
+  /* #/oportunidad/<código>: si la licitación ya tiene proyecto, lo abre; si no, la lista con el aviso y,
+     cuando la biblioteca ya tiene permiso, «Nuevo proyecto» abierto. true = se fue a otra ruta. */
+  function rutaOportunidad(parte) {
+    let codigo = '';
+    try { codigo = decodeURIComponent(parte).trim().toUpperCase(); } catch (e) { codigo = ''; }
+    if (!/^[A-Z0-9][A-Z0-9-]{2,39}$/.test(codigo)) {
+      toast('No se pudo leer la oportunidad de ese enlace. Vuelve a usar «Llevar al Formulador» en el tablero.', true);
+      location.replace('#/');
+      return true;
+    }
+    const op = oportunidadGuardada(codigo);
+    const porReq = (x) => !!(op && op.req && QH() && QH().reqDe(x) === op.req);
+    const ps = S.all().filter((x) => QOp().esDe(x, codigo) || porReq(x))
+      .sort((a, b) => (parseInt(b.version, 10) || 0) - (parseInt(a.version, 10) || 0) || String(b.modificado || '').localeCompare(String(a.modificado || '')));
+    if (ps.length && new Set(ps.map((x) => x.codigo)).size === 1) {
+      toast(`La licitación ${codigo} ya está en el Formulador: se abrió ${ps[0].codigo} v${ps[0].version}.`);
+      location.replace(`#/p/${ps[0].uid}/${destinoDe(ps[0])}`);
+      return true;
+    }
+    state.project = null;
+    state.list.q = !ps.length ? '' : ps.some((x) => QOp().esDe(x, codigo)) ? codigo : op.req;
+    state.avisoLista = { tipo: 'oportunidad', clave: codigo, n: ps.length, op };
+    renderList();
+    if (!ps.length && op && !op.ofrecida) { op.ofrecida = true; ofrecerOportunidad(); }
+    return false;
+  }
+
+  /* Abre «Nuevo proyecto» sin esperar otro clic solo si el formulario de carpetas se puede mostrar ya:
+     pedir permiso a la biblioteca exige un clic, y sin biblioteca el proyecto se crearía sin preguntar.
+     En esos casos queda el botón del aviso. */
+  async function ofrecerOportunidad() {
+    let listo = nube.activa ? !!nube.lista : false;
+    if (!nube.activa && ofertaActiva() && QI() && QI().disponible()) {
+      const e = await QI().estado().catch(() => ({}));
+      listo = !!(e.conectada && e.permiso === 'granted' && e.biblioteca);
+    }
+    if (listo && location.hash.startsWith('#/oportunidad/') && !$('#modal').open) doAct('nuevo-op', {});
+  }
+
+  function avisoOportunidad(a) {
+    const op = a.op;
+    const verTodos = '<button type="button" class="btn btn-ghost btn-sm" data-act="limpiar-filtros">Ver todos</button>';
+    if (a.n > 1) return `<div class="nota" role="status"><span>Llegaste desde Oportunidades: hay ${a.n} proyectos de la licitación <b>${esc(a.clave)}</b>. Elige cuál abrir.</span><span class="actions">${verTodos}</span></div>`;
+    if (!op) return `<div class="nota" role="status"><span>Llegaste desde Oportunidades con la licitación <b>${esc(a.clave)}</b>, pero sus datos ya no están en esta pestaña. Vuelve a usar «Llevar al Formulador» en el tablero.</span><span class="actions">${verTodos}</span></div>`;
+    const c = QOp().campos(op);
+    const moneda = monedaDe({ parametros: S.getConfig().parametros });
+    const cerro = op.cierre && new Date(op.cierre) < new Date();
+    const datos = [
+      ['Título', c.titulo], ['Cliente', c.cliente], ['ID de licitación', c.idLicitacion], ['Ubicación', c.ubicacion],
+      ['Presupuesto', !c.presupuesto ? 'no publicado' : moneda !== 'CLP' ? `no se lleva: los proyectos nuevos son en ${MONEDAS[moneda].corto}` : `${dinero(c.presupuesto, 'CLP')} con IVA`],
+      ['Cierre', op.cierre ? QOp().fechaHora(op.cierre) + (cerro ? ' (ya cerró)' : '') : ''],
+      ['Planilla de Ingreso', op.req ? `N° ${op.req}: sus datos mandan` : '']
+    ].filter((x) => x[1]);
+    return `<div class="nota nota-op" role="status">
+      <span><strong>Desde Oportunidades de Mercado Público${op.compraAgil ? ' (compra ágil)' : ''}.</strong> El proyecto nuevo nace con estos datos; la descripción lleva el alcance, el cierre, la visita y la duración.
+        <dl class="op-datos">${datos.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('')}</dl></span>
+      <span class="actions"><button type="button" class="btn btn-primario btn-sm" data-act="nuevo-op">${ICON.plus}Crear el proyecto</button>${verTodos}</span></div>`;
+  }
+
+  /* Opciones del formulario de carpetas: la del N° de la planilla elegida o, sin N°, «Nueva carpeta»
+     con el nombre de la licitación */
+  function opcionesOportunidad(op) {
+    return {
+      titulo: 'Nuevo proyecto desde Mercado Público',
+      texto: `Elige la carpeta de la oferta de <b>${esc(op.codigo)}</b>, o créala aquí${op.req ? '' : ': «Nueva carpeta» ya trae el nombre de la licitación (agrégale el N° de requerimiento si ya está en la planilla)'}. El proyecto toma de Mercado Público el título, el cliente, el ID de licitación, la ubicación, el presupuesto y el cierre.`,
+      porNumero: op.req || '', nueva: op.req ? '' : QOp().nombreCarpeta(op), confirmar: 'Crear proyecto'
+    };
+  }
+  const textoDesdeOportunidad = (hechos) => (hechos.length ? `Desde Mercado Público: ${hechos.join(', ')}.` : 'Los datos ya venían de la Planilla de Ingreso.');
+  const textoCreadoDesdeOportunidad = (np, hechos) => `Proyecto ${np.codigo} creado. ${textoDesdeOportunidad(hechos)}`;
+
+  /* «Crear el proyecto» del aviso: el mismo camino que «Nuevo proyecto», y después los datos de la
+     oportunidad en lo que la planilla y la carpeta dejaron vacío */
+  async function nuevoDesdeOportunidad() {
+    const op = state.oportunidad;
+    if (!op) { toast('Los datos de la oportunidad ya no están en esta pestaña. Vuelve a usar «Llevar al Formulador» en el tablero.', true); return; }
+    if (enSP()) { await nuevoEnSharePoint(op); return; }
+    if (!(await exigirCarpeta())) return;
+    const sel = await elegirOfertaLocal(Object.assign({ completar: true }, opcionesOportunidad(op)));
+    if (!sel) return;
+    const np = S.newProject();
+    if (sel.carpeta) enOfertaLocal(np, sel, { datosOferta: true });
+    const hechos = QOp().aplicar(np, op, monedaDe(np));
+    S.upsert(np);
+    if (sel.carpeta) guardarExcelOferta(np.uid, true);
+    goProject(np, 'ficha');
+    if (sel.carpeta) registrarAlElegirCarpeta(np.uid, `Proyecto creado en «${sel.carpeta.nombre}». ${textoDesdeOportunidad(hechos)}`);
+    else toast(`${textoCreadoDesdeOportunidad(np, hechos)} Cuando tengas la carpeta de su oferta, elígela desde el aviso de arriba.`, false, 6000);
   }
 
   // ---- Tema claro / oscuro (botón igual al de las demás herramientas QUEMPIN) ------------

@@ -1718,3 +1718,11 @@ button.meta-carpeta .dot { margin: 0 0 0 2px; flex: 0 0 auto; }
   .g-lamina-ctl .btn { flex: 1 1 auto; }
   .g-leyenda .gl-nota { display: none; }
 }
+/* Oportunidad de Mercado Público que llega del tablero «Oportunidades» (js/oportunidad.js, 2026-10-16):
+   los datos con que nace el proyecto, en una grilla que se acomoda al ancho */
+.nota-op { align-items: center; }
+.nota-op .op-datos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 18px; margin: 8px 0 0; }
+.nota-op .op-datos > div { min-width: 0; }
+.nota-op .op-datos > div:nth-child(-n+2) { grid-column: 1 / -1; }   /* título y organismo: largos, en su fila */
+.nota-op .op-datos dt { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); font-weight: 700; }
+.nota-op .op-datos dd { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
