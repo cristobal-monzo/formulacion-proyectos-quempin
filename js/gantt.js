@@ -202,10 +202,11 @@
   }
 
   /* Duración sugerida para la tarea de una partida: los días de su mano de obra por unidad (cada línea
-     dura lo que su nivel más largo; las líneas, una tras otra) por la cantidad. Una cuadrilla; mínimo 1. */
+     dura lo que su nivel más largo; las líneas, una tras otra) por la cantidad. Una cuadrilla; mínimo 1.
+     La mano de obra repartida entre varias partidas no cuenta: no es por unidad de ninguna. */
   function duracionSugerida(partida, manoObra) {
     const num = (v) => (Number.isFinite(+v) ? +v : 0);
-    const porUnidad = (manoObra || []).filter((m) => m.partida === partida.uid)
+    const porUnidad = (manoObra || []).filter((m) => m.partida === partida.uid && !(Array.isArray(m.partidas) && m.partidas.length > 1))
       .reduce((a, m) => a + Math.max(num(m.n1d), num(m.n2d), num(m.n3d)), 0);
     return Math.max(1, Math.ceil(porUnidad * Math.max(1, num(partida.cantidad))));
   }

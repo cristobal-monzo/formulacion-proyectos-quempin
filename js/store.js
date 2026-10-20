@@ -327,7 +327,10 @@
     const map = {};
     c.partidas.forEach((pt) => { const n = uid(); map[pt.uid] = n; pt.uid = n; });
     ['materiales', 'equipos', 'manoObra', 'otros'].forEach((k) => {
-      c[k].forEach((it) => { it.uid = uid(); it.partida = map[it.partida] || ''; });
+      c[k].forEach((it) => {
+        it.uid = uid(); it.partida = map[it.partida] || '';
+        if (Array.isArray(it.partidas)) it.partidas = it.partidas.map((u) => map[u]).filter(Boolean);
+      });
     });
     if (c.gantt) c.gantt.tareas.forEach((t) => { t.partida = map[t.partida] || ''; });
     c.creado = new Date().toISOString();

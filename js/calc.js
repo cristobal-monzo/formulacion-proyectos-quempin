@@ -20,7 +20,11 @@
  * (instalación de faenas, traslados…). No se cotiza sola: su costo directo se divide en partes
  * iguales entre las demás partidas y se suma al de cada una, por categoría, antes de la utilidad.
  *
- * Todas las cantidades de detalle son POR UNIDAD DE PARTIDA.
+ * Costo repartido (it.partidas, dos o más partidas que no son la base): un costo común a varias
+ * partidas. Su total es Cant. × Costo un. (o las horas por las tarifas), sin multiplicar por la
+ * cantidad de ninguna partida, y se divide en partes iguales entre las elegidas.
+ *
+ * Todas las cantidades de detalle son POR UNIDAD DE PARTIDA (salvo los costos repartidos).
  * Los porcentajes se guardan como número de 0 a 100 (19 = 19 %).
  */
 (function (root) {
@@ -48,6 +52,12 @@
       num(it.n2p) * num(it.n2d),
       num(it.n3p) * num(it.n3d)
     ];
+  }
+
+  /* Partidas a las que va un costo: las del reparto si son dos o más, o la única asociada */
+  function partidasDe(it) {
+    if (Array.isArray(it.partidas) && it.partidas.length > 1) return it.partidas;
+    return it.partida ? [it.partida] : [];
   }
 
   function computeProject(p) {
@@ -85,8 +95,12 @@
 
     CATEGORIAS.forEach((cat) => {
       (p[cat.key] || []).forEach((it, i) => {
-        const pt = byUid.get(it.partida) || null;
-        const qtyP = pt ? pt.cantidad : 0;
+        // Reparto: las partidas que siguen existiendo (la base no entra); con una sola, es un costo normal
+        let reparto = Array.isArray(it.partidas) && it.partidas.length > 1
+          ? it.partidas.map((u) => byUid.get(u)).filter((x, j, a) => x && !x.base && a.indexOf(x) === j) : null;
+        let pt = reparto ? reparto[0] || null : byUid.get(it.partida) || null;
+        if (reparto && reparto.length < 2) reparto = null;
+        const qtyP = reparto ? 1 : pt ? pt.cantidad : 0;
         let unit = 0; // costo por unidad de partida
         let dhUnit = 0;
         if (cat.key === 'manoObra') {
@@ -103,7 +117,8 @@
           code: cat.prefijo + (i + 1),
           descripcion: it.descripcion || '',
           partidaUid: pt ? pt.uid : null,
-          partidaCode: pt ? pt.code : null,
+          partidaCode: reparto ? reparto.map((x) => x.code).join('+') : pt ? pt.code : null,
+          reparto: reparto ? reparto.map((x) => x.uid) : null,
           qtyPartida: qtyP,
           costoPorUnidadPartida: unit,
           dhPorUnidadPartida: dhUnit,
@@ -119,9 +134,13 @@
               `${etiqueta} no tiene partida asociada: su costo no se suma al proyecto.`);
           }
         } else {
-          pt[cat.campo] += subtotal;
-          pt.dh += dh;
-          pt.items[cat.key].push(line);
+          // Cada partida del reparto recibe su parte (en su detalle, una línea con esa parte)
+          (reparto || [pt]).forEach((x) => {
+            const n = reparto ? reparto.length : 1;
+            x[cat.campo] += subtotal / n;
+            x.dh += dh / n;
+            x.items[cat.key].push(reparto ? Object.assign({}, line, { subtotal: subtotal / n, dh: dh / n }) : line);
+          });
           if (unit === 0) {
             warn('warn', cat.key, it.uid, `${etiqueta} tiene costo cero (revisa cantidad y costo unitario).`);
           }
@@ -308,7 +327,7 @@
     return Math.round(v * f) / f;
   };
 
-  const api = { computeProject, evaluate, parseUtilidadExcel, num, CATEGORIAS, MONEDAS, monedaDe, redondear };
+  const api = { computeProject, evaluate, parseUtilidadExcel, num, partidasDe, CATEGORIAS, MONEDAS, monedaDe, redondear };
   root.QCalc = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

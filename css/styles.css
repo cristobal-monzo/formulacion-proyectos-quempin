@@ -405,6 +405,8 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
 .pcode.none { background: transparent; color: var(--text-muted); box-shadow: inset 0 0 0 1px var(--gridline); }
 /* Partida base (PB): sus costos se dividen en partes iguales entre las demás partidas (2026-10-09) */
 .pcode.base { background: var(--brand-orange); color: #000000; box-shadow: none; }
+/* Costo repartido en partes iguales entre varias partidas: ÷N */
+.pcode.reparto { background: transparent; color: var(--brand-orange-ink); box-shadow: inset 0 0 0 1px var(--brand-orange); }
 .hint-linea .pcode.base { margin-right: 4px; vertical-align: 1px; }
 .tbl tr.fila-base td { background: var(--orange-soft); }
 .tbl tbody tr.fila-base:hover td { background: var(--orange-soft); }
@@ -610,6 +612,14 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
 .pop-search input { width: 100%; height: 34px; padding: 0 10px; border: 1px solid var(--gridline); border-radius: 6px; background: var(--surface-1); color: var(--text-primary); font-size: 13px; }
 .pop-empty { padding: 14px 10px; color: var(--text-muted); font-size: 12.5px; text-align: center; }
 .pop-foot { border-top: 1px solid var(--gridline); margin-top: 4px; padding: 6px 6px 2px; font-size: 12px; }
+/* Casilla al lado de una opción (partida de un costo repartido): marca varias sin cerrar la lista */
+.pop-fila { display: flex; align-items: center; gap: 2px; }
+.pop-fila .pop-item { flex: 1 1 auto; min-width: 0; }
+.pop-chk, .pop-chk-vacio { flex: 0 0 auto; width: 16px; height: 16px; margin: 0 2px 0 8px; }
+.pop-chk { accent-color: var(--brand-orange); cursor: pointer; }
+.pop-reparto { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 0; }
+.pop-reparto .btn[disabled] { opacity: .55; cursor: not-allowed; }
+.pop-reparto-nota { display: block; color: var(--text-muted); font-size: 11.5px; padding: 4px 0 2px; }
 
 /* ---- Barra de filtros del listado (Centro de Costos) ------------------------ */
 .viz-filterbar { background: var(--surface-card); border: 1px solid var(--border-hairline); border-radius: 10px; padding: 14px 16px 12px; margin-bottom: 16px; }

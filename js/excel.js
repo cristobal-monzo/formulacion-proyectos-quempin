@@ -216,6 +216,15 @@
     // Partida base: bloque propio bajo el total; cada partida suma su parte (costo ÷ partidas) en cada columna
     const bRow = r.base ? pTot + 3 : null;
     const cuota = (L) => (r.base ? `+IFERROR($${L}$${bRow}/$K$${bRow},0)` : '');
+    // Costos repartidos (su Partida es «P1+P2+P3»): cada partida nombrada suma Subtotal ÷ N° de partidas
+    const reparto = (hoja, col, end, lines) => (rr) => {
+      if (!lines.some((l) => l.reparto)) return '';
+      const c = `${hoja}!$C$5:$C$${end}`;
+      return `+SUMPRODUCT(ISNUMBER(SEARCH("+"&A${rr}&"+","+"&${c}&"+"))*ISNUMBER(SEARCH("+",${c}))*${hoja}!$${col}$5:$${col}$${end}/(LEN(${c})-LEN(SUBSTITUTE(${c},"+",""))+1))`;
+    };
+    const rM = reparto(S.M, 'H', mEnd, r.lines.materiales), rE = reparto(S.E, 'H', eEnd, r.lines.equipos);
+    const rH = reparto(S.H, 'M', hEnd, r.lines.manoObra), rDH = reparto(S.H, 'L', hEnd, r.lines.manoObra);
+    const rO = reparto(S.O, 'H', oEnd, r.lines.otros);
 
     styleTitle(wsP, 'PARTIDAS Y RESUMEN DE COSTOS', `${ident} — Las cantidades de detalle se ingresan por unidad de partida.${r.base ? ' Los costos incluyen la parte de la partida base (abajo).' : ''}`, 17);
     wsP.columns = [
@@ -233,12 +242,12 @@
       row.getCell(2).value = pt.descripcion;
       row.getCell(3).value = pt.unidad;
       input(row.getCell(4), FMT.num); row.getCell(4).value = pt.cantidad;
-      link(row.getCell(5), FMT_M); row.getCell(5).value = F(`SUMIF(${S.M}!$C$5:$C$${mEnd},A${rr},${S.M}!$H$5:$H$${mEnd})${cuota('E')}`, pt.mat);
-      link(row.getCell(6), FMT_M); row.getCell(6).value = F(`SUMIF(${S.E}!$C$5:$C$${eEnd},A${rr},${S.E}!$H$5:$H$${eEnd})${cuota('F')}`, pt.eq);
-      link(row.getCell(7), FMT_M); row.getCell(7).value = F(`SUMIF(${S.H}!$C$5:$C$${hEnd},A${rr},${S.H}!$M$5:$M$${hEnd})${cuota('G')}`, pt.mo);
-      link(row.getCell(8), FMT_M); row.getCell(8).value = F(`SUMIF(${S.O}!$C$5:$C$${oEnd},A${rr},${S.O}!$H$5:$H$${oEnd})${cuota('H')}`, pt.otros);
+      link(row.getCell(5), FMT_M); row.getCell(5).value = F(`SUMIF(${S.M}!$C$5:$C$${mEnd},A${rr},${S.M}!$H$5:$H$${mEnd})${rM(rr)}${cuota('E')}`, pt.mat);
+      link(row.getCell(6), FMT_M); row.getCell(6).value = F(`SUMIF(${S.E}!$C$5:$C$${eEnd},A${rr},${S.E}!$H$5:$H$${eEnd})${rE(rr)}${cuota('F')}`, pt.eq);
+      link(row.getCell(7), FMT_M); row.getCell(7).value = F(`SUMIF(${S.H}!$C$5:$C$${hEnd},A${rr},${S.H}!$M$5:$M$${hEnd})${rH(rr)}${cuota('G')}`, pt.mo);
+      link(row.getCell(8), FMT_M); row.getCell(8).value = F(`SUMIF(${S.O}!$C$5:$C$${oEnd},A${rr},${S.O}!$H$5:$H$${oEnd})${rO(rr)}${cuota('H')}`, pt.otros);
       calc(row.getCell(9), FMT_M); row.getCell(9).value = F(`SUM(E${rr}:H${rr})`, pt.cd);
-      link(row.getCell(10), FMT.num); row.getCell(10).value = F(`SUMIF(${S.H}!$C$5:$C$${hEnd},A${rr},${S.H}!$L$5:$L$${hEnd})${cuota('J')}`, pt.dh);
+      link(row.getCell(10), FMT.num); row.getCell(10).value = F(`SUMIF(${S.H}!$C$5:$C$${hEnd},A${rr},${S.H}!$L$5:$L$${hEnd})${rDH(rr)}${cuota('J')}`, pt.dh);
       row.getCell(11).value = { monto: '$', final: 'Final' }[pt.utilidadTipo] || '%';
       row.getCell(11).alignment = { horizontal: 'center' };
       input(row.getCell(11));
@@ -291,6 +300,10 @@
 
     // ---------------- Detalle: Materiales / Equipos / Otros ----------------
     // Los costos de la partida base (PB) buscan su cantidad en el bloque de la base
+    const notaReparto = (cell, ln) => {
+      const cods = ln.partidaCode.split('+');
+      cell.note = `Costo repartido en partes iguales entre ${cods.slice(0, -1).join(', ')} y ${cods[cods.length - 1]}: no se multiplica por su cantidad y cada una suma Subtotal ÷ ${cods.length}.`;
+    };
     const qtyFormula = (rr) => `IFERROR(INDEX(${S.P}!$D$5:$D$${pEnd},MATCH(C${rr},${S.P}!$A$5:$A$${pEnd},0)),${r.base ? `IF(C${rr}=${S.P}!$A$${bRow},${S.P}!$D$${bRow},0)` : '0'})`;
     function detailSheet(ws, titulo, key, lines, items, end) {
       styleTitle(ws, titulo, `${ident} — Cantidad por unidad de partida × Cant. partida × Costo unitario.`, 8);
@@ -310,7 +323,8 @@
         row.getCell(4).value = it.unidad || '';
         input(row.getCell(5), FMT.num); row.getCell(5).value = num(it.cantidad);
         input(row.getCell(6), FMT_M); row.getCell(6).value = num(it.costoUnitario);
-        link(row.getCell(7), FMT.num); row.getCell(7).value = F(qtyFormula(rr), ln.qtyPartida);
+        link(row.getCell(7), FMT.num); row.getCell(7).value = ln.reparto ? 1 : F(qtyFormula(rr), ln.qtyPartida);
+        if (ln.reparto) notaReparto(row.getCell(3), ln);
         calc(row.getCell(8), FMT_M); row.getCell(8).value = F(`G${rr}*E${rr}*F${rr}`, ln.subtotal);
         if (!ln.partidaCode) {
           row.getCell(3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE2DD' } };
@@ -340,7 +354,8 @@
       row.getCell(2).value = it.descripcion || '';
       row.getCell(3).value = ln.partidaCode || ''; row.getCell(3).alignment = { horizontal: 'center' }; input(row.getCell(3));
       ['n1p', 'n1d', 'n2p', 'n2d', 'n3p', 'n3d'].forEach((f, j) => { const c = row.getCell(4 + j); c.value = num(it[f]); input(c, FMT.num); });
-      link(row.getCell(10), FMT.num); row.getCell(10).value = F(qtyFormula(rr), ln.qtyPartida);
+      link(row.getCell(10), FMT.num); row.getCell(10).value = ln.reparto ? 1 : F(qtyFormula(rr), ln.qtyPartida);
+      if (ln.reparto) notaReparto(row.getCell(3), ln);
       calc(row.getCell(11), FMT.num); row.getCell(11).value = F(`D${rr}*E${rr}+F${rr}*G${rr}+H${rr}*I${rr}`, ln.dhPorUnidadPartida);
       calc(row.getCell(12), FMT.num); row.getCell(12).value = F(`J${rr}*K${rr}`, ln.dh);
       calc(row.getCell(13), FMT_M);

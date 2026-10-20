@@ -8,7 +8,7 @@
 (function () {
   'use strict';
 
-  const { computeProject, num, MONEDAS, monedaDe, redondear } = window.QCalc;
+  const { computeProject, num, partidasDe, MONEDAS, monedaDe, redondear } = window.QCalc;
   const S = window.QStore;
   const X = window.QExcel;
   const KP = window.QKPIs;
@@ -347,8 +347,9 @@
     if (pop.parentNode !== host) host.appendChild(pop);
     pop.innerHTML = `${o.search ? `<div class="pop-search"><input type="search" placeholder="${esc(o.search)}" aria-label="${esc(o.search)}" autocomplete="off"></div>` : ''}
       <div class="pop-list" role="${P.kind === 'menu' ? 'menu' : 'listbox'}" aria-label="${esc(o.label || '')}"></div>
-      ${o.foot ? `<div class="pop-foot">${o.foot}</div>` : ''}`;
+      ${o.foot ? '<div class="pop-foot"></div>' : ''}`;
     renderPopList();
+    pintarPiePop();
     pop.hidden = false;
     pop.style.minWidth = Math.max(o.minWidth || 220, anchor.getBoundingClientRect().width) + 'px';
     $('.pop-list', pop).style.maxHeight = o.alto ? `min(${o.alto}px, calc(100vh - 120px))` : '';
@@ -372,14 +373,37 @@
     list.innerHTML = vis.length ? vis.map(({ it, i }) => {
       if (it.sep) return '<div class="pop-sep" role="separator"></div>';
       if (it.head) return `<div class="pop-head" role="presentation">${esc(it.head)}</div>`;
-      return `<button type="button" class="pop-item ${it.danger ? 'danger' : ''} ${it.cls || ''}" role="${role}" data-pi="${i}" ${it.disabled ? 'disabled' : ''} ${it.actual ? 'aria-current="page"' : ''} ${P.kind === 'menu' ? '' : `aria-selected="${!!it.selected}"`}>
+      const fila = `<button type="button" class="pop-item ${it.danger ? 'danger' : ''} ${it.cls || ''}" role="${role}" data-pi="${i}" ${it.disabled ? 'disabled' : ''} ${it.actual ? 'aria-current="page"' : ''} ${P.kind === 'menu' ? '' : `aria-selected="${!!it.selected}"`}>
         ${P.kind === 'menu' ? '' : `<span class="check" aria-hidden="true">${it.selected ? '✓' : ''}</span>`}
         ${it.lead || it.icon || ''}
         <span class="pi-main"><span class="pi-title">${esc(it.title)}</span>${it.desc ? `<span class="pi-desc">${esc(it.desc)}</span>` : ''}</span>
         ${it.right ? `<span class="pi-right">${esc(it.right)}</span>` : ''}
       </button>`;
+      // Casilla al lado de la opción (it.chk: true/false; null deja el espacio para alinear): marcar
+      // varias, sin cerrar la lista; el pie de la lista aplica lo marcado
+      if (it.chk === undefined) return fila;
+      return `<div class="pop-fila">${it.chk === null ? '<span class="pop-chk-vacio"></span>'
+        : `<input type="checkbox" class="pop-chk" data-pc="${i}" tabindex="-1" ${it.chk ? 'checked' : ''} aria-label="${esc(`Marcar ${it.chkLabel || it.title}`)}">`}${fila}</div>`;
     }).join('') : '<div class="pop-empty">Sin coincidencias</div>';
   }
+  /* Pie de la lista: texto fijo, o una función que se vuelve a pintar al marcar una casilla */
+  function pintarPiePop() {
+    const f = $('.pop-foot', pop);
+    if (f && P) f.innerHTML = typeof P.foot === 'function' ? P.foot() : P.foot;
+  }
+  function marcarPop(i, v) {
+    P.items[i].chk = v;
+    $$('.pop-chk', pop).forEach((c) => { c.checked = !!P.items[+c.dataset.pc].chk; });
+    pintarPiePop();
+  }
+  pop.addEventListener('change', (e) => {
+    const c = e.target.closest('.pop-chk');
+    if (c && P) marcarPop(+c.dataset.pc, c.checked);
+  });
+  pop.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pop]');
+    if (b && P && P.onFoot) P.onFoot(b.dataset.pop);
+  });
   function positionPop() {
     if (!P) return;
     const r = P.anchor.getBoundingClientRect();
@@ -411,6 +435,9 @@
       if (e.key === 'Enter' && items[0]) { e.preventDefault(); items[0].click(); }
       return;
     }
+    // Espacio sobre una opción con casilla: la marca o desmarca (Enter la elige sola, como siempre)
+    const conChk = idx >= 0 && P.items[+items[idx].dataset.pi];
+    if (e.key === ' ' && conChk && typeof conChk.chk === 'boolean') { e.preventDefault(); marcarPop(+items[idx].dataset.pi, !conChk.chk); return; }
     if (e.key === 'ArrowDown') { e.preventDefault(); (items[idx + 1] || items[0]).focus(); }
     else if (e.key === 'ArrowUp') {
       e.preventDefault();
@@ -457,6 +484,23 @@
     });
   }
   document.addEventListener('input', (e) => { if (e.isTrusted && combos[e.target.id]) abrirCombo(e.target, false); });
+
+  /* Primera letra en mayúscula en los campos de texto (pedido del usuario, 2026-10-20): al escribir o
+     pegar al comienzo del campo. Si después se cambia a minúscula, se respeta. Antes que los demás
+     (fase de captura), para que se guarde ya en mayúscula. Quedan fuera las unidades (m, kg, m2), las
+     búsquedas, los números y lo que se pega para importar. */
+  const SIN_MAYUS = '[data-k="unidad"], #pg-texto, [data-sin-mayus]';
+  document.addEventListener('input', (e) => {
+    const el = e.target;
+    if (!e.isTrusted || e.isComposing || !/^insert/.test(e.inputType || '')) return;
+    const esTexto = el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && (el.type === 'text' || el.type === ''));
+    if (!esTexto || el.readOnly || /numeric|decimal/.test(el.inputMode) || el.matches(SIN_MAYUS)) return;
+    const v = el.value, fin = el.selectionEnd;
+    const txt = typeof e.data === 'string' ? e.data : e.dataTransfer ? e.dataTransfer.getData('text/plain') : null;
+    if (txt === null || fin - txt.length > 0 || !/^\p{Ll}/u.test(v)) return;   // lo escrito no quedó al comienzo, o ya parte en mayúscula
+    el.value = v.charAt(0).toLocaleUpperCase('es-CL') + v.slice(1);
+    el.setSelectionRange(fin, fin);
+  }, true);
   document.addEventListener('keydown', (e) => {
     const t = e.target;
     if (e.key !== 'ArrowDown' || !combos[t.id]) return;
@@ -636,26 +680,55 @@
       const p = state.project;
       const it = findItem(btn.dataset.list, btn.dataset.uid);
       if (!it) return;
-      const cur = state.partIdx.has(it.partida) ? it.partida : '';
+      // Un clic en la partida la elige sola; las casillas marcan varias para dividir el costo en partes
+      // iguales entre ellas (pedido del usuario, 2026-10-20). La partida base no entra en un reparto.
+      const marcadas = partidasDe(it).filter((u) => state.partIdx.has(u));
+      const cur = marcadas.length === 1 ? marcadas[0] : '';
+      const repartibles = cotizables(p).length > 1;
       const items = p.partidas.map((pt) => ({
         value: pt.uid, selected: cur === pt.uid,
+        chk: !repartibles ? undefined : pt.base ? null : marcadas.includes(pt.uid), chkLabel: `${codP(pt.uid)} para dividir el costo`,
         lead: `<span class="pcode${pt.base ? ' base' : ''}">${codP(pt.uid)}</span>`,
         title: pt.descripcion || 'Partida sin descripción',
         desc: pt.base ? 'Partida base: se divide en partes iguales entre las demás' : '',
         right: `${nf(num(pt.cantidad))} ${pt.unidad || ''}`.trim()
       }));
       if (items.length) items.push({ sep: true });
-      items.push({ value: '', selected: !cur, lead: '<span class="pcode none">—</span>', title: 'Sin partida', desc: 'El costo no se suma al proyecto hasta asociarlo' });
+      items.push({ value: '', selected: !marcadas.length, chk: repartibles ? null : undefined, lead: '<span class="pcode none">—</span>', title: 'Sin partida', desc: 'El costo no se suma al proyecto hasta asociarlo' });
+      const aplicar = (uids) => {
+        closePop(true);
+        it.partida = uids[0] || '';
+        // La primera queda también en «partida»: una versión anterior del Formulador al menos lo suma
+        if (uids.length > 1) it.partidas = uids; else delete it.partidas;
+        recalc();
+        renderTab(`[data-picker="partida"][data-uid="${it.uid}"]`);
+        scheduleSave();
+      };
+      const conChk = () => P.items.filter((x) => typeof x.chk === 'boolean');
       openPop(btn, {
-        kind: 'listbox', align: 'left', label: 'Partida asociada', items, minWidth: 320,
+        kind: 'listbox', align: 'left', label: 'Partida asociada', items, minWidth: 340,
         search: p.partidas.length > 7 ? 'Buscar partida' : '',
-        foot: p.partidas.length ? '' : '<button type="button" class="link-btn" data-act="tab" data-tab="partidas">Crear partidas en la pestaña Partidas</button>',
-        onPick: (o) => {
-          it.partida = o.value;
-          recalc();
-          renderTab(`[data-picker="partida"][data-uid="${it.uid}"]`);
-          scheduleSave();
-        }
+        foot: !p.partidas.length ? '<button type="button" class="link-btn" data-act="tab" data-tab="partidas">Crear partidas en la pestaña Partidas</button>'
+          : !repartibles ? '' : () => {
+            const n = conChk().filter((x) => x.chk).length;
+            const todas = n === conChk().length;
+            return `<div class="pop-reparto">
+              <button type="button" class="link-btn" data-pop="todas">${todas ? 'Quitar todas' : 'Seleccionar todas'}</button>
+              <button type="button" class="btn btn-primario btn-sm" data-pop="dividir" ${n < 2 ? 'disabled' : ''}>${n < 2 ? 'Marca 2 o más para dividir' : `Dividir entre ${n} partidas`}</button>
+            </div>${n >= 2 ? `<span class="pop-reparto-nota">El costo total se divide en partes iguales: 1/${n} a cada una.</span>` : ''}`;
+          },
+        onFoot: (a) => {
+          const cs = conChk();
+          if (a === 'todas') {
+            const todas = cs.every((x) => x.chk);
+            cs.forEach((x) => { x.chk = !todas; });
+            marcarPop(P.items.indexOf(cs[0]), !todas);
+          } else if (a === 'dividir') {
+            const uids = cs.filter((x) => x.chk).map((x) => x.value);
+            if (uids.length > 1) aplicar(uids);
+          }
+        },
+        onPick: (o) => aplicar(o.value ? [o.value] : [])
       });
     } else if (kind === 'unidad') {
       const input = btn.parentElement.querySelector('input');
@@ -2132,6 +2205,15 @@
 
   // ---- Paso 3: costos (materiales, equipos, otros) ----------------------------------
   function partidaPicker(list, it) {
+    const l = state.lineIdx.get(it.uid);
+    if (l && l.reparto) {
+      // Costo repartido: ÷N y los códigos; la descripción de cada partida, en la ayuda
+      const pts = l.reparto.map((u) => state.partIdx.get(u));
+      const todas = pts.length === cotizables(state.project).length;
+      const full = `Dividido en partes iguales entre ${pts.map((x) => `${x.code} · ${x.descripcion || 'Sin descripción'}`).join(', ')}`;
+      return `<button type="button" class="picker" data-picker="partida" data-list="${list}" data-uid="${it.uid}" aria-haspopup="listbox" aria-expanded="false" aria-label="Partida asociada: ${esc(full)}" title="${esc(full)}">
+      <span class="pcode reparto">÷${pts.length}</span><span class="txt">${todas ? 'Todas las partidas' : esc(pts.map((x) => x.code).join(' + '))}</span>${ICON.chev}</button>`;
+    }
     const pt = state.partIdx.get(it.partida);
     const tieneDatos = String(it.descripcion || '').trim() || num(it.costoUnitario) > 0 || num(it.n1p) + num(it.n2p) + num(it.n3p) > 0;
     const full = pt ? `${pt.code} · ${pt.descripcion || 'Sin descripción'}` : 'Sin partida';
@@ -2160,7 +2242,7 @@
   }
   function filtered(key) {
     const f = state.filtro[key];
-    return state.project[key].filter((it) => !f || (f === '__none__' ? !state.partIdx.has(it.partida) : it.partida === f));
+    return state.project[key].filter((it) => !f || (f === '__none__' ? !partidasDe(it).some((u) => state.partIdx.has(u)) : partidasDe(it).includes(f)));
   }
   function sinPartidasNote() {
     return state.project.partidas.length ? '' :
@@ -2172,6 +2254,7 @@
       : 'si la partida son 3 medidores y cada uno lleva 2 flanges de $14.580, ingresa 2: el subtotal es 2 × $14.580 × 3 = $87.480.';
     return `<p><b>Subtotal</b> = cantidad por unidad × costo unitario × cantidad de la partida.</p>
       <p>Ejemplo: ${ej}</p>
+      <p><b>Costo común a varias partidas:</b> al elegir la partida, marca sus casillas (o «Seleccionar todas») y pulsa «Dividir». Su total, cantidad × costo unitario, no se multiplica por la cantidad de ninguna partida: se divide en partes iguales entre las marcadas.</p>
       <p>Pasa el cursor sobre un subtotal para ver su cálculo. Un costo sin partida no se suma al precio.${key === 'otros' ? ' El catálogo se edita en el paso 1, Datos del proyecto.' : ''}</p>`;
   }
   /* Cálculo de una línea de costo, para la ayuda emergente de su subtotal */
@@ -2181,13 +2264,16 @@
     const l = state.lineIdx.get(uid);
     if (!it || !l) return '';
     if (!l.partidaUid) return '<b>Sin partida</b>Elige la partida para que este costo se sume al precio.';
+    // Repartido: el total no se multiplica por la cantidad de ninguna partida; se divide entre ellas
+    const fin = l.reparto ? `, dividido en partes iguales: ${dinero(l.subtotal / l.reparto.length)} a cada una (${esc(l.partidaCode.split('+').join(', '))})`
+      : ` × ${nf(l.qtyPartida)} unidades de la partida`;
     if (list === 'manoObra') {
       const par = state.project.parametros;
       const niv = [1, 2, 3].filter((n) => num(it[`n${n}p`]) * num(it[`n${n}d`]) > 0)
         .map((n) => `${nf(num(it[`n${n}p`]))} × ${nf(num(it[`n${n}d`]))} × ${dinero(num(par['tarifaN' + n]))}`);
-      return `<b>${esc(l.code)} · ${dinero(l.subtotal)}</b>(${niv.join(' + ') || '0'}) × ${nf(l.qtyPartida)} unidades de la partida`;
+      return `<b>${esc(l.code)} · ${dinero(l.subtotal)}</b>(${niv.join(' + ') || '0'})${fin}`;
     }
-    return `<b>${esc(l.code)} · ${dinero(l.subtotal)}</b>${nf(num(it.cantidad))} ${esc(it.unidad || '')} × ${dinero(num(it.costoUnitario))} × ${nf(l.qtyPartida)} unidades de la partida`;
+    return `<b>${esc(l.code)} · ${dinero(l.subtotal)}</b>${nf(num(it.cantidad))} ${esc(it.unidad || '')} × ${dinero(num(it.costoUnitario))}${fin}`;
   }
 
   /* Con muchas filas, la tabla usa diseño fijo (anchos de columna explícitos): con el automático, cada
@@ -2716,9 +2802,10 @@
       return `<tr class="apu-cat"><td colspan="4"><span class="nombre"><span class="swatch ${cls}"></span>${label}</span></td><td class="num">${dinero(lines.reduce((a, l) => a + l.subtotal, 0))}</td></tr>` + lines.map((l) => {
         const it = byUid.get(l.uid) || {};
         const det = k === 'manoObra'
-          ? `${nf(l.dhPorUnidadPartida)} días-hombre por unidad`
+          ? `${nf(l.dhPorUnidadPartida)} días-hombre ${l.reparto ? 'en total' : 'por unidad'}`
           : `${nf(num(it.cantidad))} ${esc(it.unidad || '')} × ${dinero(num(it.costoUnitario))}`;
-        return `<tr><td class="code">${l.code}</td><td>${esc(l.descripcion || '—')}</td><td>${det}</td><td class="num">${dinero(l.costoPorUnidadPartida)} por unidad</td><td class="num">${dinero(l.subtotal)}</td></tr>`;
+        const cu = l.reparto ? `${dinero(l.costoPorUnidadPartida)} ÷ ${l.reparto.length} partidas` : `${dinero(l.costoPorUnidadPartida)} por unidad`;
+        return `<tr><td class="code">${l.code}</td><td>${esc(l.descripcion || '—')}</td><td>${det}</td><td class="num">${cu}</td><td class="num">${dinero(l.subtotal)}</td></tr>`;
       }).join('');
     }).join('') + (pt.cuotaBase ? (() => {
       // Su parte de la partida base, en partes iguales con las demás partidas
@@ -3102,7 +3189,8 @@
       if (it && !it.disabled) cb(it);
       return;
     }
-    if (P && !pop.contains(e.target)) {
+    // composedPath: el botón del pie que se acaba de repintar (p. ej., «Seleccionar todas») ya no está en la lista
+    if (P && !e.composedPath().includes(pop)) {
       const t = e.target.closest('[data-menu], [data-picker]');
       const same = !!t && P.anchor.contains(t);   // el botón mismo, o la flecha de un campo con lista
       closePop();
@@ -3451,6 +3539,7 @@
           const i = p[list].findIndex((x) => x.uid === d.uid);
           if (i < 0) break;
           const c = Object.assign({}, p[list][i], { uid: S.uid() });
+          if (Array.isArray(c.partidas)) c.partidas = c.partidas.slice();
           p[list].splice(i + 1, 0, c);
           recalc(); renderTab(`[data-list="${list}"][data-uid="${c.uid}"][data-k="descripcion"]`); flashRow(c.uid); scheduleSave();
           toast(`${DETALLE[list] ? 'Fila duplicada' : 'Duplicado'}: edita la copia`);
@@ -3460,7 +3549,8 @@
           const list = d.list;
           const uid = d.uid;
           if (list === 'partidas') {
-            const n = ['materiales', 'equipos', 'manoObra', 'otros'].reduce((a, k) => a + p[k].filter((x) => x.partida === uid).length, 0);
+            const solos = (x) => partidasDe(x).length === 1 && x.partida === uid;
+            const n = ['materiales', 'equipos', 'manoObra', 'otros'].reduce((a, k) => a + p[k].filter(solos).length, 0);
             if (n > 0) {
               const pt = state.partIdx.get(uid);
               const v = await ask({
@@ -3470,10 +3560,17 @@
               });
               if (!v) break;
               ['materiales', 'equipos', 'manoObra', 'otros'].forEach((k) => {
-                if (v === 'all') p[k] = p[k].filter((x) => x.partida !== uid);
-                else p[k].forEach((x) => { if (x.partida === uid) x.partida = ''; });
+                if (v === 'all') p[k] = p[k].filter((x) => !solos(x));
+                else p[k].forEach((x) => { if (solos(x)) x.partida = ''; });
               });
             }
+            // Los costos repartidos solo dejan de dividirse entre ella: su total pasa a las demás
+            ['materiales', 'equipos', 'manoObra', 'otros'].forEach((k) => p[k].forEach((x) => {
+              if (partidasDe(x).length < 2 || !x.partidas.includes(uid)) return;
+              x.partidas = x.partidas.filter((u) => u !== uid);
+              x.partida = x.partidas[0];
+              if (x.partidas.length < 2) delete x.partidas;
+            }));
             state.apuOpen.delete(uid);
           }
           p[list] = p[list].filter((x) => x.uid !== uid);
