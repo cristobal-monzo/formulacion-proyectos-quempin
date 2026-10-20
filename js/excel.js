@@ -857,6 +857,24 @@
     try { const p = JSON.parse(json); return p && typeof p.uid === 'string' ? p.uid : null; } catch (e) { return null; }
   }
 
+  /* { uid, modificado } del proyecto guardado en un Excel de la herramienta ({ uid: null } si el archivo no
+     es de la herramienta). Lanza si el archivo no se puede leer ahora (OneDrive lo está reemplazando, o la
+     escritura no terminó): quien llama reintenta en vez de tomarlo por el Excel de otro proyecto. */
+  async function versionDeExcel(buf) {
+    const ExcelJS = await ensureExcelJS();
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buf);
+    const datos = wb.getWorksheet('_datos');
+    const nada = { uid: null, modificado: null };
+    if (!datos) return nada;
+    let json = '';
+    for (let rr = 2; rr <= datos.rowCount; rr++) json += str(cellValue(datos.getCell(`A${rr}`).value));
+    try {
+      const p = JSON.parse(json);
+      return p && typeof p.uid === 'string' ? { uid: p.uid, modificado: typeof p.modificado === 'string' ? p.modificado : null } : nada;
+    } catch (e) { return nada; }
+  }
+
   function importLegacy(wb, fileName) {
     const S = root.QStore;
     const cs = wb.getWorksheet('Costos');
@@ -972,6 +990,6 @@
     return { proyectos: [p], informe };
   }
 
-  const api = { ensureExcelJS, exportProject, exportPortfolio, importFile, uidDeExcel, downloadJSON, fileBase, slug };
+  const api = { ensureExcelJS, exportProject, exportPortfolio, importFile, uidDeExcel, versionDeExcel, downloadJSON, fileBase, slug };
   root.QExcel = api;
 })(typeof window !== 'undefined' ? window : globalThis);

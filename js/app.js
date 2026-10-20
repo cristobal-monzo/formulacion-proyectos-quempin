@@ -143,8 +143,6 @@
     list: { q: '', estado: '', resp: misProyectosGuardado() ? '@yo' : '', mes: '', sort: { k: 'mod', dir: -1 } },
     conflicto: false
   };
-  /* Modo nube: activa = hay configuración de SharePoint; lista = sesión iniciada y proyectos cargados. */
-  const nube = { activa: false, lista: false, ultimo: '' };
   /* Pendientes del equipo (ver pintarPendientes): lo último leído de la Planilla y del buzón.
      porNumero: filas de la Planilla por N° (los avisos «Cierra en N días» de la lista y del editor).
      abierta: la sección desplegada. Parte plegada (ocupaba mucho, pedido del 2026-10-15) y este
@@ -507,16 +505,15 @@
       items = [
         { head: 'Cartera' },
         { icon: ICON.sheet, title: 'Exportar cartera a Excel', desc: 'Todos los proyectos con sus KPI en una planilla', act: 'exportar-cartera', disabled: !n },
-        { icon: ICON.archive, title: 'Respaldar todos los proyectos', desc: enSP() ? 'Copia en JSON de toda la cartera, para archivar fuera de SharePoint' : 'Archivo JSON para restaurar o llevar a otro navegador', act: 'respaldar', disabled: !n },
+        { icon: ICON.archive, title: 'Respaldar todos los proyectos', desc: 'Archivo JSON para restaurar o llevar a otro navegador', act: 'respaldar', disabled: !n },
         { icon: ICON.folder, title: 'Respaldar por mes de ingreso', desc: 'Un JSON por mes en la carpeta que elijas, ordenados por año', act: 'respaldar-meses', disabled: !n },
-        { icon: ICON.trash, title: `Papelera (${S.trash().length})`, desc: enSP() || compartiendo() ? 'Proyectos eliminados: restaurar' : 'Proyectos eliminados: restaurar o eliminar definitivamente', act: 'papelera' },
-        enSP() ? null : { sep: true },
-        enSP() ? null : { icon: ICON.sparkle, title: 'Cargar proyecto de ejemplo', desc: 'Mismos datos del Excel original, para comparar resultados', act: 'ejemplo' }
+        { icon: ICON.trash, title: `Papelera (${S.trash().length})`, desc: compartiendo() ? 'Proyectos eliminados: restaurar' : 'Proyectos eliminados: restaurar o eliminar definitivamente', act: 'papelera' },
+        { sep: true },
+        { icon: ICON.sparkle, title: 'Cargar proyecto de ejemplo', desc: 'Mismos datos del Excel original, para comparar resultados', act: 'ejemplo' }
       ].filter(Boolean);
     } else if (key === 'proj' || key === 'editor-more') {
       const enEditor = key === 'editor-more';
-      const ub = enSP() ? window.QCloud.ubicacion(id) : null;
-      const vo = !enSP() && ofertaActiva() ? QO().vinculo(S.get(id)) : undefined;
+      const vo = ofertaActiva() ? QO().vinculo(S.get(id)) : undefined;
       // En el teléfono, deshacer y rehacer viven en este menú: el encabezado deja sitio al contenido (2026-10-14)
       const telefono = enEditor && window.matchMedia && window.matchMedia('(max-width: 600px)').matches;
       items = [
@@ -527,8 +524,6 @@
         enEditor ? { icon: ICON.gantt, title: 'Carta Gantt', desc: ((state.project && state.project.gantt) || { tareas: [] }).tareas.length ? 'Ver, editar o descargar en PDF el programa de trabajo' : 'Opcional: el programa de trabajo de la oferta', act: 'tab', tab: 'gantt' } : null,
         enEditor ? { sep: true } : null,
         enEditor ? null : { icon: ICON.open, title: 'Abrir', act: 'abrir', id },
-        ub && ub.webUrl ? { icon: ICON.folder, title: 'Abrir la carpeta en SharePoint', desc: ub.ruta, act: 'abrir-carpeta', id } : null,
-        ub ? { icon: ICON.sheet, title: 'Guardar Excel en la carpeta', desc: 'Copia para ver o imprimir desde SharePoint', act: 'excel-carpeta', id } : null,
         vo ? { icon: ICON.folder, title: 'Abrir la carpeta en el Explorador', desc: `Formulación de proyectos · ${vo.nombre}`, act: 'oferta-abrir', id } : null,
         vo && QO().copiaEnGestion(vo) ? { icon: ICON.folder, title: 'Abrir la de Gestión de Proyectos', desc: 'La copia donde sigue la ejecución', act: 'oferta-abrir-gestion', id } : null,
         vo && QO().escribible(vo) ? { icon: ICON.sheet, title: 'Guardar Excel en la carpeta de la oferta', desc: vo.nombre, act: 'oferta-guardar', id } : null,
@@ -538,7 +533,7 @@
         { icon: ICON.file, title: 'Exportar a JSON', desc: 'Para respaldar o compartir y volver a importar', act: 'exp-json', id },
         { icon: ICON.enviar, title: 'Enviar costos al Análisis Financiero', desc: 'Como costos proyectados del proyecto adjudicado', act: 'enviar-af', id },
         { sep: true },
-        { icon: ICON.layers, title: 'Duplicar como proyecto nuevo', desc: enSP() ? 'En la carpeta de otra oferta, versión 1' : 'En otra oferta: su carpeta le da el código', act: 'duplicar', id },
+        { icon: ICON.layers, title: 'Duplicar como proyecto nuevo', desc: 'En otra oferta: su carpeta le da el código', act: 'duplicar', id },
         { icon: ICON.version, title: 'Crear nueva versión', desc: 'Mismo código para una revisión de la oferta', act: 'version', id },
         { sep: true },
         { icon: ICON.trash, title: enEditor ? 'Eliminar proyecto' : 'Eliminar', act: 'eliminar', id, danger: true }
@@ -547,7 +542,7 @@
       // Las herramientas del recorrido, en el orden de sus etapas; dentro de un proyecto, el Análisis
       // Financiero abre la ficha de ese proyecto (pedido del usuario, 2026-10-06: herramientas conectadas)
       const p = state.project;
-      const web = (window.QPN_M365 || {}).planillaWeb;
+      const web = PLANILLA_WEB;
       const vAF = p ? vinculoAF(p) : null;
       items = [
         { head: 'El recorrido de un proyecto' },
@@ -565,19 +560,6 @@
         { icon: ICON.open, title: 'Todas las herramientas', desc: 'El índice de las herramientas QUEMPIN', act: 'abrir-url', url: TABLEROS }
       ].filter(Boolean);
       extra = { minWidth: 340, alto: 600 };
-    } else if (key === 'cuenta') {
-      const u = S.getUser() || {};
-      const c = window.QCloud.info();
-      const pend = window.QCloud.proyectosLocalesPendientes().length;
-      items = [
-        { head: u.nombre || u.email || '' },
-        { icon: ICON.user, title: u.email || '', desc: textoGuardado()[0], disabled: true },
-        { sep: true },
-        c.sitioUrl ? { icon: ICON.folder, title: 'Abrir la biblioteca en SharePoint', desc: 'Las carpetas de las ofertas', act: 'abrir-biblioteca' } : null,
-        pend ? { icon: ICON.upload, title: `Proyectos de este navegador (${pend})`, desc: 'Guardados aquí antes de usar SharePoint', act: 'subir-locales' } : null,
-        { icon: ICON.logout, title: 'Cerrar sesión', act: 'salir' }
-      ].filter(Boolean);
-      extra = { minWidth: 300 };
     } else if (key === 'fila') {
       const list = btn.dataset.list, uid = btn.dataset.uid;
       if (list === 'partidas') {
@@ -737,7 +719,7 @@
     saveTimer = null;
     if (!state.project) return;
     anotarCambio(); // lo que se guarda sin pasar por scheduleSave (p. ej., al elegir la carpeta de la oferta)
-    // Otra persona (SharePoint o carpeta compartida) u otra pestaña guardó este proyecto
+    // Otro equipo (carpeta compartida) u otra pestaña guardó este proyecto
     // mientras se editaba: preguntar antes de sobrescribir.
     const cur = S.get(state.project.uid);
     if (cur && cur !== state.project) { resolverConflicto(cur); return; }
@@ -745,26 +727,16 @@
     if (!okSave) setSaveState('No se pudo guardar en este navegador: exporta el proyecto', 'err');
     else showSyncState();
   }
-  window.addEventListener('beforeunload', (e) => {
-    if (saveTimer) saveNow();
-    // Cambios aún no subidos a SharePoint: se suben ya y el navegador pide confirmar la salida
-    if (enSP() && window.QCloud.info().pendientes > 0) { window.QCloud.vaciar(true); e.preventDefault(); e.returnValue = ''; }
-  });
-  function enSP() { return S.getMode() === 'nube' && !!window.QCloud; }
+  window.addEventListener('beforeunload', () => { if (saveTimer) saveNow(); });
 
-  /* Texto del indicador de guardado según el modo y la sincronización. */
+  /* Texto del indicador de guardado según la sincronización con la carpeta del equipo. */
   function textoGuardado() {
-    if (S.getMode() !== 'nube') {
-      if (!compartiendo()) return ['Guardado en este navegador', ''];
-      const i = QC().info();
-      if (i.sinPermiso || i.sinCarpeta) return ['Guardado solo en este navegador', 'saving'];
-      if (i.error) return ['Guardado en este navegador; no se pudo copiar a la carpeta compartida', 'err'];
-      if (i.pendientes > 0) return ['Guardado en este navegador · copiando a la carpeta compartida…', 'saving'];
-      return ['Guardado en este navegador y en la carpeta compartida', ''];
-    }
-    const c = window.QCloud.info();
-    if (c.pendientes > 0) return c.enLinea ? ['Cambios por subir a SharePoint…', 'saving'] : ['Sin conexión: se subirá al reconectar', 'saving'];
-    return c.enLinea ? ['Guardado en SharePoint', ''] : ['Sin conexión: guardado en este equipo', 'saving'];
+    if (!compartiendo()) return ['Guardado en este navegador', ''];
+    const i = QC().info();
+    if (i.sinPermiso || i.sinCarpeta) return ['Guardado solo en este navegador', 'saving'];
+    if (i.error) return ['Guardado en este navegador; no se pudo copiar a la carpeta compartida', 'err'];
+    if (i.pendientes > 0) return ['Guardado en este navegador · copiando a la carpeta compartida…', 'saving'];
+    return ['Guardado en este navegador y en la carpeta compartida', ''];
   }
   function showSyncState() {
     if (saveTimer || state.conflicto) return;
@@ -779,12 +751,12 @@
     setSaveState('Cambios sin guardar: otra persona modificó este proyecto', 'err');
     const mio = state.project;
     const quien = cur.modificadoPor && cur.modificadoPor !== (S.getUser() || {}).email ? cur.modificadoPor
-      : enSP() ? 'Tú, desde otra ventana,' : 'Alguien, en otro equipo o en otra pestaña,';
+      : 'Alguien, en otro equipo o en otra pestaña,';
     const v = await ask({
       title: 'Otra persona modificó este proyecto',
       body: `<p><b>${esc(quien)}</b> guardó cambios en <b>${esc(cur.codigo)} v${esc(cur.version)}</b> (${esc(new Date(cur.modificado).toLocaleString('es-CL'))}) mientras tú lo editabas.</p>
         <p>Elige qué hacer con tus cambios, que aún no se han guardado:</p>
-        <ul><li><b>Guardar los míos como copia:</b> ${enSP() ? 'tus cambios quedan como una versión nueva en la misma carpeta de la oferta' : 'tus cambios quedan en un proyecto nuevo'} y el original conserva los de la otra persona.</li>
+        <ul><li><b>Guardar los míos como copia:</b> tus cambios quedan en un proyecto nuevo y el original conserva los de la otra persona.</li>
         <li><b>Ver su versión:</b> descarta tus cambios y carga la versión guardada.</li>
         <li><b>Sobrescribir:</b> tus cambios reemplazan los de la otra persona.</li></ul>`,
       buttons: [{ label: 'Sobrescribir', value: 'mia', danger: true, left: true }, { label: 'Ver su versión', value: 'suya' }, { label: 'Guardar los míos como copia', value: 'copia', primary: true }]
@@ -1016,7 +988,6 @@
   // ---------------------------------------------------------------------------
   function route() {
     if (saveTimer) saveNow();
-    if (state.project && enSP()) window.QCloud.vaciar();
     // Al salir de un presupuesto, su Excel de la carpeta de la oferta se pone al día de inmediato
     if (state.project && ofertaActiva()) QO().guardarPendientes();
     closePop();
@@ -1026,7 +997,6 @@
     const dlg = $('#modal');
     if (dlg.open && dlg.dataset.ruta !== location.hash) dlg.close('');
     const parts = location.hash.replace(/^#\/?/, '').split('/');
-    if (nube.activa && !nube.lista && parts[0] !== 'guia') { state.project = null; renderNube(); return; }
     let where = 'lista';
     if (parts[0] !== 'req' && parts[0] !== 'tag' && parts[0] !== 'oportunidad') state.avisoLista = null;
     if (parts[0] === 'oportunidad' && parts[1]) {
@@ -1071,11 +1041,6 @@
 
   function renderModnav(where) {
     const p = state.project;
-    if (nube.activa && !nube.lista) {
-      $('#modnav').innerHTML = `<a class="viz-modnav-tab ${where === 'guia' ? '' : 'is-active'}" href="#/">Ingreso</a>
-        <a class="viz-modnav-tab ${where === 'guia' ? 'is-active' : ''}" href="#/guia">Guía de uso</a>`;
-      return;
-    }
     $('#modnav').innerHTML = `
       <a class="viz-modnav-tab ${where === 'lista' ? 'is-active' : ''}" href="#/" ${where === 'lista' ? 'aria-current="page"' : ''}>Proyectos</a>
       ${p ? `<a class="viz-modnav-tab is-active" id="modnav-proj" href="#/p/${p.uid}/${state.tab}" aria-current="page"><span></span></a>` : ''}
@@ -1149,7 +1114,7 @@
         <div class="viz-filterbar">
           <div class="viz-filtergrid">
             <div class="viz-field span-6"><label for="list-search">Buscar</label>
-              <input type="search" id="list-search" class="${L.q ? 'is-set' : ''}" placeholder="${enSP() ? 'N° de oferta, título, cliente, carpeta o responsable' : 'Código, título, cliente, ubicación o responsable'}" value="${esc(L.q)}" autocomplete="off"></div>
+              <input type="search" id="list-search" class="${L.q ? 'is-set' : ''}" placeholder="Código, título, cliente, ubicación o responsable" value="${esc(L.q)}" autocomplete="off"></div>
             <div class="viz-field span-3"><label for="list-mes">Ingresados en</label>
               <select id="list-mes" class="${L.mes ? 'is-set' : ''}">
                 <option value="">Todos los meses</option>
@@ -1178,11 +1143,9 @@
       <div class="hub-card-cabecera"><div class="icon" aria-hidden="true">${icon}</div><h3>${titulo}</h3></div>
       <p class="desc">${desc}</p>${btn}</article>`;
     return `<div class="hub-grid">
-      ${enSP()
-        ? card(ICON.plus, 'Nuevo proyecto', 'Elige la carpeta de la oferta. El título, la ubicación, el ID de licitación y el presupuesto se toman de la planilla de ingreso.', `<button class="btn btn-primario" data-act="nuevo">Crear proyecto →</button>`)
-        : card(ICON.plus, 'Nuevo proyecto', 'Parte de cero con los parámetros habituales de QUEMPIN (IVA, tarifas y metas).', `<button class="btn btn-primario" data-act="nuevo">Crear proyecto →</button>`)}
-      ${enSP() ? '' : card(ICON.sparkle, 'Proyecto de ejemplo', 'Tres partidas de medidores de gas natural con los datos del Excel original, para ver cómo funciona.', `<button class="btn" data-act="ejemplo">Cargar ejemplo</button>`)}
-      ${card(ICON.upload, 'Importar archivo', enSP() ? 'Un Excel de formulación antiguo (.xlsm) o un proyecto exportado desde aquí (.xlsx o .json). Se guarda en la carpeta de la oferta que elijas.' : 'Un proyecto exportado desde aquí (.xlsx o .json) o un Excel de formulación antiguo (.xlsm).', `<button class="btn" data-act="importar">Importar archivo</button>`)}
+      ${card(ICON.plus, 'Nuevo proyecto', 'Parte de cero con los parámetros habituales de QUEMPIN (IVA, tarifas y metas).', `<button class="btn btn-primario" data-act="nuevo">Crear proyecto →</button>`)}
+      ${card(ICON.sparkle, 'Proyecto de ejemplo', 'Tres partidas de medidores de gas natural con los datos del Excel original, para ver cómo funciona.', `<button class="btn" data-act="ejemplo">Cargar ejemplo</button>`)}
+      ${card(ICON.upload, 'Importar archivo', 'Un proyecto exportado desde aquí (.xlsx o .json) o un Excel de formulación antiguo (.xlsm).', `<button class="btn" data-act="importar">Importar archivo</button>`)}
     </div>
     ${QF() ? `<section class="section">
       <div class="section-head"><h3 class="seccion-titulo">Cómo avanza un proyecto</h3><a href="#/guia">Guía de uso</a></div>
@@ -1198,8 +1161,7 @@
       .filter((p) => !L.estado || p.estado === L.estado)
       .filter((p) => pasaResponsable(p, L.resp))
       .filter((p) => !L.mes || mesIngreso(p) === L.mes)
-      .filter((p) => !q || norm([p.codigo, p.titulo, p.cliente, p.idLicitacion, p.responsable, p.ubicacion, QH() ? QH().reqDe(p) : '', (vinculoAF(p) || {}).tag,
-        enSP() ? (window.QCloud.ubicacion(p.uid) || {}).ruta : ''].join(' ')).includes(q));
+      .filter((p) => !q || norm([p.codigo, p.titulo, p.cliente, p.idLicitacion, p.responsable, p.ubicacion, QH() ? QH().reqDe(p) : '', (vinculoAF(p) || {}).tag].join(' ')).includes(q));
   }
   /* Proyectos de un N° de requerimiento o de un TAG del Análisis Financiero, del más nuevo al más viejo
      (versión más alta y, a igual versión, el último modificado). */
@@ -1408,20 +1370,14 @@
     if (!pend.t) pintarPendientes();   // la fecha de cierre de la Planilla, para el aviso del encabezado
   }
 
+  /* Carpeta de la oferta donde queda el Excel, con el estado de la copia */
   function metaCarpeta(p, sep) {
-    if (!enSP()) {
-      // Modo local: carpeta de la oferta donde queda el Excel, con el estado de la copia
-      const v = ofertaActiva() ? QO().vinculo(p) : null;
-      if (!v) return '';
-      const i = QO().info(p);
-      const dot = { guardado: 'ok', guardando: 'warn', pendiente: 'warn', error: 'bad', trasladando: 'warn' }[i.estado] || '';
-      const tip = textoEstadoOferta(i);
-      return `${sep}<button type="button" class="meta-carpeta" data-act="oferta-info" title="${esc(tip)}" aria-label="Carpeta de la oferta: ${esc(v.nombre)}. ${esc(tip)}">${ICON.folder}<span>${esc(v.nombre)}</span>${dot ? `<span class="dot ${dot}" aria-hidden="true"></span>` : ''}</button>`;
-    }
-    const u = window.QCloud.ubicacion(p.uid);
-    if (!u) return '';
-    const t = `${ICON.folder}<span>${esc(u.carpeta)}</span>`;
-    return `${sep}${u.webUrl ? `<a class="meta-carpeta" href="${esc(u.webUrl)}" target="_blank" rel="noopener" title="Abrir la carpeta en SharePoint: ${esc(u.ruta)}">${t}</a>` : `<span class="meta-carpeta">${t}</span>`}`;
+    const v = ofertaActiva() ? QO().vinculo(p) : null;
+    if (!v) return '';
+    const i = QO().info(p);
+    const dot = { guardado: 'ok', guardando: 'warn', pendiente: 'warn', error: 'bad', trasladando: 'warn' }[i.estado] || '';
+    const tip = textoEstadoOferta(i);
+    return `${sep}<button type="button" class="meta-carpeta" data-act="oferta-info" title="${esc(tip)}" aria-label="Carpeta de la oferta: ${esc(v.nombre)}. ${esc(tip)}">${ICON.folder}<span>${esc(v.nombre)}</span>${dot ? `<span class="dot ${dot}" aria-hidden="true"></span>` : ''}</button>`;
   }
 
   /* Escribe el HTML de un elemento solo si cambió. Lo usan las barras que se repintan en cada tecla
@@ -2106,8 +2062,7 @@
     const v = QO() && QO().vinculo(p);
     const propuesto = codigoPropuesto(p);
     el.textContent = dup ? `⚠ Ya existe otro proyecto ${p.codigo} v${p.version} («${String(dup.titulo || '').slice(0, 40)}»).`
-      : enSP() ? 'N° de la oferta en la planilla de ingreso.'
-        : !codigoAutomatico(p.codigo, p) ? 'Escrito a mano: no cambia al elegir la carpeta ni al completar desde la planilla.'
+      : !codigoAutomatico(p.codigo, p) ? 'Escrito a mano: no cambia al elegir la carpeta ni al completar desde la planilla.'
           : v && p.codigo === v.nombre ? 'El nombre de la carpeta de la oferta; puedes editarlo.'
             : propuesto && p.codigo === propuesto ? 'N° y nombre, como la carpeta de la oferta; puedes editarlo.'
               : `Al elegir la carpeta o completar desde la planilla queda «${propuesto || 'N°. Nombre'}»; puedes editarlo.`;
@@ -3173,7 +3128,6 @@
     try {
       switch (act) {
         case 'nuevo': {
-          if (enSP()) { await nuevoEnSharePoint(); break; }
           if (!(await exigirCarpeta())) break;
           // El N° y el nombre forman el código «N°. Nombre», y se pregunta si se crea la carpeta de la oferta
           // con ese mismo nombre (2026-10-19). «Formular» de Pendientes del equipo trae el N° (d.numero).
@@ -3257,21 +3211,6 @@
           if (saveTimer) saveNow();
           if (!(await exigirCarpeta())) break;
           const src = S.get(id);
-          if (enSP()) {
-            const sel = await elegirCarpeta({
-              titulo: 'Duplicar en otra oferta',
-              texto: `Se crea una copia de <b>${esc(src.codigo)} v${esc(src.version)}</b> en la carpeta de la oferta que elijas.`,
-              crear: crearCarpetaSP, validarNueva: validarCarpetaSP, confirmar: 'Duplicar aquí', planilla: true, actual: window.QCloud.carpetaDe(src.uid)
-            });
-            if (!sel) break;
-            const c = S.cloneProject(src, { estado: 'Borrador', fecha: S.hoy(), responsable: yo() || src.responsable || '' });
-            delete c.vinculos; // otra oferta: el envío al Análisis Financiero era de la original
-            enCarpeta(c, sel, { datosOferta: true });
-            S.upsert(c);
-            toast(`Proyecto duplicado en ${sel.carpeta.nombre}`);
-            goProject(c, 'ficha');
-            break;
-          }
           const cfg = S.getConfig();
           const c = S.cloneProject(src, { codigo: S.nextCodigo(cfg.prefijo, new Date().getFullYear()), version: 1, titulo: (src.titulo || 'Proyecto') + ' (copia)', estado: 'Borrador', fecha: S.hoy() });
           delete c.vinculos; // otra oferta: el envío al Análisis Financiero era de la original
@@ -3297,14 +3236,12 @@
           if (!(await exigirCarpeta())) break;
           const src = S.get(id);
           const maxV = S.all().filter((x) => x.codigo === src.codigo).reduce((a, x) => Math.max(a, parseInt(x.version, 10) || 1), 1);
-          const carpeta = enSP() ? window.QCloud.carpetaDe(src.uid) : null;
-          const c = S.cloneProject(src, { version: carpeta ? siguienteVersion(carpeta) : maxV + 1, estado: 'Borrador', fecha: S.hoy() });
-          if (carpeta) window.QCloud.asignarCarpeta(c.uid, carpeta);
+          const c = S.cloneProject(src, { version: maxV + 1, estado: 'Borrador', fecha: S.hoy() });
           S.upsert(c);
           toast(`Versión ${c.version} de ${c.codigo} creada`);
           goProject(c, (p && state.tab) || 'ficha');
           // La versión nueva hereda la carpeta de la oferta: toma su propio número
-          if (!enSP() && QO() && QO().vinculo(c)) registrarAlElegirCarpeta(c.uid);
+          if (QO() && QO().vinculo(c)) registrarAlElegirCarpeta(c.uid);
           break;
         }
         case 'eliminar': {
@@ -3312,7 +3249,7 @@
           const v = await ask({
             title: 'Eliminar proyecto',
             body: `<p>¿Enviar <b>${esc(target.codigo)} v${esc(target.version)}</b> «${esc(target.titulo || 'Sin título')}» a la papelera?</p>
-              <p>${enSP() ? 'Deja de aparecer para todo el equipo; su archivo sigue en la carpeta de la oferta.' : 'Deja de aparecer en la lista.'} Se puede restaurar desde <b>Más → Papelera</b>.</p>`,
+              <p>Deja de aparecer en la lista. Se puede restaurar desde <b>Más → Papelera</b>.</p>`,
             buttons: [{ label: 'Cancelar', left: true }, { label: 'Exportar y eliminar', value: 'exp' }, { label: 'Enviar a la papelera', value: 'del', danger: true }]
           });
           if (!v) break;
@@ -3337,45 +3274,13 @@
           const v = await ask({
             title: act === 'vaciar' ? 'Vaciar la papelera' : 'Eliminar definitivamente',
             body: `<p>${t ? `¿Eliminar definitivamente <b>${esc(t.codigo)} v${esc(t.version)}</b> «${esc(t.titulo || 'Sin título')}»?` : `¿Eliminar definitivamente ${ids.length === 1 ? 'el proyecto' : `los ${ids.length} proyectos`} de la papelera?`}
-              Esta acción <b>no se puede deshacer</b>${S.getMode() === 'nube' ? ' y afecta a todo el equipo' : ''}.</p>`,
+              Esta acción <b>no se puede deshacer</b>.</p>`,
             buttons: [{ label: 'Cancelar', left: true }, { label: 'Eliminar definitivamente', value: 'si', danger: true }]
           });
           if (v !== 'si') break;
           ids.forEach((x) => S.purge(x));
           toast(ids.length === 1 ? 'Proyecto eliminado definitivamente' : `${ids.length} proyectos eliminados definitivamente`);
           renderPapelera();
-          break;
-        }
-        case 'login-ms': {
-          nubeMensaje('Abriendo el ingreso de Microsoft…');
-          try { await window.QCloud.entrar(); } catch (err) { nubeMensaje(err.message || String(err), true); }
-          break;
-        }
-        case 'salir': {
-          if (saveTimer) saveNow();
-          try { await window.QCloud.salir(); } catch (err) { toast(err.message, true); break; }
-          location.hash = '#/';
-          break;
-        }
-        case 'recargar': location.reload(); break;
-        case 'subir-locales': await ofrecerSubida(true); break;
-        case 'abrir-carpeta': {
-          const u = window.QCloud.ubicacion(id);
-          if (u && u.webUrl) window.open(u.webUrl, '_blank', 'noopener');
-          break;
-        }
-        case 'abrir-biblioteca': {
-          const u = window.QCloud.info().sitioUrl;
-          if (u) window.open(u, '_blank', 'noopener');
-          break;
-        }
-        case 'excel-carpeta': {
-          if (saveTimer) saveNow();
-          const pj = S.get(id) || p;
-          toast('Generando el Excel y guardándolo en SharePoint…');
-          const datos = await X.exportProject(pj, { soloDatos: true });
-          const r = await window.QCloud.guardarExcel(pj.uid, datos);
-          toast(`Guardado en la carpeta de la oferta: ${r.nombre}`);
           break;
         }
         case 'config': await openConfig(); break;
@@ -3735,16 +3640,6 @@
     try {
       toast('Leyendo archivo…');
       const res = await X.importFile(file);
-      let destino = null;
-      if (enSP()) {
-        const n = res.proyectos.length;
-        destino = await elegirCarpeta({
-          titulo: 'Importar: ¿de qué oferta?',
-          texto: `${n === 1 ? 'El proyecto importado se guarda' : `Los ${n} proyectos importados se guardan`} en la carpeta de la oferta que elijas.`,
-          crear: crearCarpetaSP, validarNueva: validarCarpetaSP, confirmar: 'Importar aquí'
-        });
-        if (!destino) return;
-      }
       const nuevos = [];
       for (const p of res.proyectos) {
         const existing = S.get(p.uid);
@@ -3756,10 +3651,8 @@
           });
           if (!v) continue;
           const item = v === 'copy' ? S.cloneProject(p) : p;
-          if (destino && v === 'copy') enCarpeta(item, destino);
           S.upsert(item); nuevos.push(item);
         } else {
-          if (destino) enCarpeta(p, destino);
           S.upsert(p); nuevos.push(p);
         }
       }
@@ -3784,18 +3677,16 @@
   async function openConfig() {
     const cfg = S.getConfig();
     const par = cfg.parametros;
-    const enNube = S.getMode() === 'nube';
-    const puede = true; // en SharePoint, los permisos de la carpeta deciden quién puede cambiarlos
-    const dis = puede ? '' : 'disabled';
+    const dis = '';
     const campo = (id, label, v, pre, suf) => `<div class="campo"><label for="cfg-${id}">${label}</label>
       <div class="input-affix ${pre ? 'pre' : ''}"><input class="input" id="cfg-${id}" type="number" step="any" inputmode="decimal" value="${esc(num(v))}" ${dis}><span class="affix ${pre ? 'cfg-simbolo' : ''}">${pre || suf}</span></div></div>`;
     const monCfg = MONEDAS[par.moneda] ? par.moneda : 'CLP', simb = MONEDAS[monCfg].simbolo;
     const promesaCfg = ask({
       title: 'Configuración',
       wide: true,
-      body: `<p>Valores con que parten los proyectos nuevos${enNube ? ' de todo el equipo' : ' de este navegador'}. Los proyectos existentes conservan los suyos.${enNube ? ` Quedan en SharePoint, en «${esc((window.QPN_M365 || {}).carpetaConfig || 'la biblioteca')}».` : ''}</p>
+      body: `<p>Valores con que parten los proyectos nuevos de este navegador. Los proyectos existentes conservan los suyos.</p>
         <div class="fila-campos">
-          ${enNube ? '' : `<div class="campo"><label for="cfg-prefijo">Prefijo del código</label><input class="input" id="cfg-prefijo" value="${esc(cfg.prefijo)}" ${dis}><span class="hint">Ej.: ${esc(cfg.prefijo)}-${new Date().getFullYear()}-001</span></div>`}
+          <div class="campo"><label for="cfg-prefijo">Prefijo del código</label><input class="input" id="cfg-prefijo" value="${esc(cfg.prefijo)}" ${dis}><span class="hint">Ej.: ${esc(cfg.prefijo)}-${new Date().getFullYear()}-001</span></div>
           <div class="campo"><label for="cfg-usuario">Tu usuario</label><select class="input" id="cfg-usuario" aria-describedby="cfg-usuario-hint">${opcionesUsuario(yo(), 'Sin usuario')}</select>
             <span class="hint" id="cfg-usuario-hint">Responsable de tus proyectos nuevos y autor en el Control de Documentos. Solo en este navegador; es el mismo del Portal QUEMPIN.</span></div>
         </div>
@@ -3811,7 +3702,7 @@
         </div>
         <h3 class="sub-t">Carpeta compartida (OneDrive)</h3>
         <div id="cfg-af"></div>`,
-      buttons: [puede ? { label: 'Restablecer valores de fábrica', value: 'reset', danger: true, left: true } : null, { label: 'Cancelar' }, { label: 'Guardar', value: 'save', primary: true }]
+      buttons: [{ label: 'Restablecer valores de fábrica', value: 'reset', danger: true, left: true }, { label: 'Cancelar' }, { label: 'Guardar', value: 'save', primary: true }]
     });
     pintarCfgAF();
     $('#cfg-moneda').addEventListener('change', (e) => { $$('#modal .cfg-simbolo').forEach((a) => { a.textContent = MONEDAS[e.target.value].simbolo; }); });
@@ -3819,7 +3710,7 @@
     if (v === 'save') {
       if ($('#cfg-prefijo')) cfg.prefijo = ($('#cfg-prefijo').value || 'QMPN').trim().toUpperCase();
       cfg.responsable = QU() ? QU().elegir($('#cfg-usuario').value) : cfg.responsable;
-      if (puede) {
+      {
         const leer = (id) => { const n = parseFloat($('#cfg-' + id).value); return Number.isFinite(n) ? n : 0; };
         Object.assign(cfg.parametros, {
           moneda: $('#cfg-moneda').value, iva: leer('iva'), gastosGenerales: leer('gg'), imprevistos: leer('imp'),
@@ -3836,94 +3727,11 @@
     if (!state.project && !location.hash.startsWith('#/guia')) renderList();
   }
 
-  // ---------------------------------------------------------------------------
-  //  SHAREPOINT: ingreso, cuenta, papelera y cambios de otros usuarios
-  // ---------------------------------------------------------------------------
-  function textoDonde() {
-    return S.getMode() === 'nube'
-      ? 'Los proyectos se guardan en SharePoint, en la carpeta de cada oferta, y los ve todo el equipo. Para archivar una copia aparte usa Más → Respaldar todos los proyectos.'
-      : 'Los proyectos se guardan en este navegador. Para respaldarlos o compartirlos, expórtalos a Excel o JSON; ambos formatos se pueden volver a importar.';
-  }
-
-  /* Pantalla mientras no hay sesión: conectando, ingreso, sin acceso o error. */
-  function renderNube() {
-    const c = window.QCloud.info();
-    renderModnav('ingreso');
-    document.title = 'Ingreso — Formulación QUEMPIN';
-    $('#hdr-sub').textContent = 'Proyectos compartidos del equipo QUEMPIN';
-    let cuerpo;
-    if (c.estado === 'cargando' || c.estado === 'sincronizando') {
-      cuerpo = `<h3>Conectando…</h3><p class="desc">${esc(c.estado === 'sincronizando' ? (c.detalle || 'Cargando los proyectos del equipo.') : 'Verificando tu sesión.')}</p>`;
-    } else if (c.estado === 'sin-sesion') {
-      cuerpo = `<h3>Ingresa con tu cuenta de QUEMPIN</h3>
-        <p class="desc">Los proyectos se guardan en SharePoint, en la carpeta de cada oferta de la biblioteca «Formulación de proyectos». Entra con la misma cuenta Microsoft que usas para OneDrive y Outlook.</p>
-        <button class="btn btn-primario login-ms" type="button" data-act="login-ms">${ICON.login}Entrar con Microsoft</button>`;
-    } else if (c.estado === 'no-autorizado') {
-      cuerpo = `<h3>Tu cuenta no tiene acceso</h3>
-        <p class="desc">${esc(c.detalle || 'Tu cuenta no tiene acceso a la biblioteca de SharePoint.')} Pide al administrador del sitio que te agregue como miembro y vuelve a intentarlo.</p>
-        <div class="actions"><button class="btn btn-primario" type="button" data-act="recargar">Reintentar</button><button class="btn" type="button" data-act="salir">Usar otra cuenta</button></div>`;
-    } else {
-      cuerpo = `<h3>No se pudo conectar con SharePoint</h3>
-        <p class="desc">${esc(c.detalle || 'Error desconocido.')}</p>
-        <div class="actions"><button class="btn btn-primario" type="button" data-act="recargar">Reintentar</button></div>`;
-    }
-    const aviso = '';
-    app.innerHTML = `<div class="viz-container page"><div class="login-wrap">
-      <article class="hub-card login-card">
-        <div class="hub-card-cabecera"><div class="icon" aria-hidden="true">${ICON.user}</div><div><h2>Formulación de proyectos</h2><div class="hub-normas">QUEMPIN · acceso del equipo</div></div></div>
-        ${cuerpo}
-        <p id="login-msg" class="login-msg ${aviso ? 'err' : ''}" role="status" aria-live="polite">${esc(aviso)}</p>
-      </article></div></div>`;
-    const b = $('[data-act="login-ms"]');
-    if (b) b.focus();
-  }
-  function nubeMensaje(texto, esError) {
-    const el = $('#login-msg');
-    if (el) { el.textContent = texto; el.className = 'login-msg ' + (esError ? 'err' : ''); } else if (esError) toast(texto, true);
-  }
   // Enter en un campo con data-enter = su acción
   document.addEventListener('keydown', (e) => {
     const t = e.target;
     if (e.key === 'Enter' && t && t.dataset && t.dataset.enter) { e.preventDefault(); doAct(t.dataset.enter, {}); }
   });
-
-  /* Botón de cuenta del encabezado: nombre y punto de sincronización. */
-  function pintarCuenta(c) {
-    const b = $('#cuentaBtn');
-    if (!b) return;
-    const u = S.getUser();
-    b.hidden = !(nube.activa && u && c.estado === 'listo');
-    if (b.hidden) return;
-    const cls = c.pendientes > 0 || !c.enLinea ? 'pendiente' : 'ok';
-    const nombre = (u.nombre || u.email).split(/[\s@]/)[0];
-    b.innerHTML = `<span class="cuenta-dot ${cls}" aria-hidden="true"></span>${esc(nombre)}`;
-    b.title = `${u.email} · ${textoGuardado()[0]}`;
-    b.setAttribute('aria-label', `Cuenta de ${u.email}. ${textoGuardado()[0]}`);
-  }
-
-  function onCloudEstado(c) {
-    pintarCuenta(c);
-    if (c.estado === 'listo') {
-      $('#footer-datos').textContent = textoDonde();
-      if (!nube.lista) {
-        nube.lista = true;
-        nube.ultimo = '';
-        route();
-        setTimeout(() => ofrecerSubida(false), 400);
-      }
-      showSyncState();
-      return;
-    }
-    if (c.estado === 'error' && nube.lista) { toast(c.detalle, true); return; }
-    if (c.estado === 'sin-sesion' || c.estado === 'no-autorizado') nube.lista = false;
-    if (nube.lista) return;
-    const k = c.estado + '|' + c.detalle;
-    if (k === nube.ultimo) return;
-    nube.ultimo = k;
-    if (saveTimer) saveNow();
-    state.project = null;
-    if (!location.hash.startsWith('#/guia')) renderNube();
-  }
 
   /* Cambios que llegan de otros usuarios (o de otra ventana del mismo usuario). */
   S.on((ev) => {
@@ -3932,16 +3740,10 @@
       if (state.project && ev.ids.includes(state.project.uid)) { updateHeader(); pintarEditorOferta(); }
       return;
     }
-    if (ev.type === 'sync') { showSyncState(); if (nube.activa) pintarCuenta(window.QCloud.info()); else { pintarCompartida(); pintarPendientes(); if (state.project) pintarEditorOferta(); } return; }
+    if (ev.type === 'sync') { showSyncState(); pintarCompartida(); pintarPendientes(); if (state.project) pintarEditorOferta(); return; }
     if (ev.type === 'remote' && ev.conflicto) { alConflicto(ev); return; }
-    if (ev.type === 'carpetas') { // una carpeta de oferta se movió o cambió de nombre en SharePoint
-      if (!nube.lista) return;
-      if (state.project) updateHeader();
-      else if ($('#list-body')) refreshList();
-      return;
-    }
-    // En modo local también llegan cambios: de la carpeta compartida o de otra pestaña.
-    if ((nube.activa && !nube.lista) || (ev.type !== 'remote' && ev.type !== 'config')) return;
+    // Cambios de la carpeta compartida o de otra pestaña.
+    if (ev.type !== 'remote' && ev.type !== 'config') return;
     const h = location.hash;
     if (state.project) {
       if (ev.type !== 'remote' || !ev.ids.includes(state.project.uid)) return;
@@ -3966,8 +3768,8 @@
   // ---- Papelera ---------------------------------------------------------------------
   function renderPapelera() {
     const list = S.trash().sort((a, b) => String(b.eliminadoEn || '').localeCompare(String(a.eliminadoEn || '')));
-    // En SharePoint y en la carpeta compartida el archivo nunca se borra desde la herramienta
-    const puedePurgar = !enSP() && !compartiendo();
+    // En la carpeta compartida el archivo nunca se borra desde la herramienta
+    const puedePurgar = !compartiendo();
     document.title = 'Papelera — Formulación QUEMPIN';
     app.innerHTML = `<div class="viz-container page">
       <div class="page-head">
@@ -3975,7 +3777,6 @@
           <a class="back" href="#/">← Proyectos</a>
           <h2>Papelera</h2>
           <p>Los proyectos eliminados quedan aquí y se pueden restaurar. ${puedePurgar ? 'Eliminarlos definitivamente no se puede deshacer.'
-            : enSP() ? 'Sus archivos siguen en la carpeta de cada oferta en SharePoint; para borrarlos del todo, hazlo allí.'
             : 'Se comparten con el equipo: sus archivos siguen en la carpeta compartida (Formulación de proyectos › .Herramientas formulación › Intercambio).'}</p>
         </div>
         ${puedePurgar && list.length ? `<div class="actions"><button class="btn btn-danger" data-act="vaciar">${ICON.trash}Vaciar papelera</button></div>` : ''}
@@ -3994,45 +3795,8 @@
     </div>`;
   }
 
-  // ---- Proyectos guardados en el navegador antes de usar SharePoint ------------------
-  async function ofrecerSubida(manual) {
-    if (!enSP() || !nube.lista) return;
-    const pend = window.QCloud.proyectosLocalesPendientes();
-    const KEY = 'qpn.formulacion.subidaOmitida';
-    if (!pend.length) { if (manual) toast('No quedan proyectos de este navegador por guardar en SharePoint'); return; }
-    if (!manual) { try { if (localStorage.getItem(KEY) === String(pend.length)) return; } catch (e) { /* sin almacenamiento */ } }
-    const v = await ask({
-      title: 'Proyectos guardados solo en este navegador',
-      wide: true,
-      body: `<p>Este navegador tiene ${plural(pend.length, 'proyecto')} de antes de usar SharePoint. Guarda cada uno en la carpeta de su oferta para que lo vea el equipo. La copia de este navegador no se borra.</p>
-        <div class="loc-lista">${pend.map((p) => `<div class="loc-fila">
-          <span class="nowrap"><span class="code-badge">${esc(p.codigo || '—')}</span><span class="ver">v${esc(p.version)}</span></span>
-          <span class="loc-t">${esc(p.titulo || 'Sin título')}</span>
-          <button type="submit" class="btn btn-sm" value="l:${esc(p.uid)}">${ICON.folder}Guardar en una oferta…</button></div>`).join('')}</div>`,
-      buttons: [{ label: 'Ahora no', value: 'no', primary: true }]
-    });
-    if (typeof v === 'string' && v.startsWith('l:')) {
-      const p = pend.find((x) => x.uid === v.slice(2));
-      const sel = p && await elegirCarpeta({
-        titulo: `Guardar ${p.codigo} v${p.version} en SharePoint`,
-        texto: `«${esc(p.titulo || 'Sin título')}» se guarda en la carpeta de la oferta que elijas.`,
-        crear: crearCarpetaSP, validarNueva: validarCarpetaSP, confirmar: 'Guardar aquí'
-      });
-      if (sel) {
-        enCarpeta(p, sel);
-        S.upsert(p);
-        toast(`Guardado en ${sel.carpeta.nombre}`);
-        if (!state.project) route();
-      }
-      if (window.QCloud.proyectosLocalesPendientes().length) return ofrecerSubida(true);
-      return undefined;
-    }
-    if (!manual) { try { localStorage.setItem(KEY, String(pend.length)); } catch (e) { /* sin almacenamiento */ } }
-    return undefined;
-  }
-
   // ---------------------------------------------------------------------------
-  //  SHAREPOINT: carpeta de la oferta de cada proyecto
+  //  CARPETA DE LA OFERTA: elegirla y compararla con la planilla
   // ---------------------------------------------------------------------------
   /* Palabras que no sirven para comparar el nombre de la carpeta con el de la planilla. */
   const COMUNES = new Set(('mantencion mantenimiento mantenciones preventiva preventivo correctiva correctivo servicio servicios ' +
@@ -4042,94 +3806,19 @@
   function palabras(t) { return norm(t).split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !COMUNES.has(w)); }
   /* true si el título de la planilla parece ser la misma oferta que la carpeta: comparten una palabra
      propia o una abreviatura (Admin ~ Administrativo). Con los datos reales marca 3 de 32 carpetas. */
+  function fechaUTC(d) {
+    if (!(d instanceof Date) || isNaN(d)) return '';
+    const z = (n) => String(n).padStart(2, '0');
+    return `${z(d.getUTCDate())}-${z(d.getUTCMonth() + 1)}-${d.getUTCFullYear()}`;
+  }
   function coincidePlanilla(tituloCarpeta, tituloPlanilla) {
     const a = palabras(tituloCarpeta);
     if (!a.length) return true;
     const b = palabras(tituloPlanilla);
     return a.some((x) => b.some((y) => x === y || (Math.min(x.length, y.length) >= 4 && (x.startsWith(y) || y.startsWith(x)))));
   }
-  function fechaUTC(d) {
-    if (!(d instanceof Date) || isNaN(d)) return '';
-    const z = (n) => String(n).padStart(2, '0');
-    return `${z(d.getUTCDate())}-${z(d.getUTCMonth() + 1)}-${d.getUTCFullYear()}`;
-  }
-  function siguienteVersion(carpetaId) {
-    return S.all().concat(S.trash())
-      .filter((x) => window.QCloud.carpetaDe(x.uid) === carpetaId)
-      .reduce((a, x) => Math.max(a, parseInt(x.version, 10) || 1), 0) + 1;
-  }
-
-  /* Deja el proyecto en la carpeta elegida: código = N° de la oferta y versión libre en esa carpeta.
-     Con datosOferta, además título, ubicación, referencia y presupuesto desde la planilla de ingreso. */
-  function enCarpeta(p, sel, opts) {
-    const c = sel.carpeta, r = sel.req;
-    const ok = !!r; // elegirCarpeta solo entrega la fila de la planilla si corresponde a la carpeta
-    if (c.numero) p.codigo = c.numero;
-    const ocupada = S.all().concat(S.trash()).some((x) => x.uid !== p.uid && window.QCloud.carpetaDe(x.uid) === c.id && String(x.version) === String(p.version));
-    if (ocupada) p.version = siguienteVersion(c.id);
-    if (opts && opts.datosOferta) {
-      p.titulo = (ok && r.titulo) || c.titulo || p.titulo;
-      if (ok && r.ubicacion) p.ubicacion = r.ubicacion;
-      if (ok && r.referencia) p.idLicitacion = String(r.referencia);
-      p.parametros.presupuestoMaximo = ok && r.presupuesto ? r.presupuesto : null;
-      p.parametros.presupuestoIncluyeIva = true;
-    }
-    window.QCloud.asignarCarpeta(p.uid, c.id);
-    return p;
-  }
-
-  /* op: la oportunidad de Mercado Público que llegó del tablero (js/oportunidad.js), o nada */
-  async function nuevoEnSharePoint(op) {
-    const sel = await elegirCarpeta(Object.assign({
-      titulo: 'Nuevo proyecto',
-      texto: 'Elige la carpeta de la oferta, o créala aquí si todavía no existe. La formulación se guarda ahí, junto a sus antecedentes.',
-      crear: crearCarpetaSP, validarNueva: validarCarpetaSP, confirmar: 'Crear proyecto', completar: true, planilla: true
-    }, op ? opcionesOportunidad(op) : {}));
-    if (!sel) return;
-    const todos = S.all().filter((x) => window.QCloud.carpetaDe(x.uid) === sel.carpeta.id)
-      .sort((a, b) => (parseInt(b.version, 10) || 1) - (parseInt(a.version, 10) || 1));
-    if (todos.length) {
-      const ult = todos[0];
-      const v = await ask({
-        title: 'Esta oferta ya tiene formulación',
-        body: `<p>En <b>${esc(sel.carpeta.nombre)}</b> ya está <b>${esc(ult.codigo)} v${esc(ult.version)}</b> «${esc(ult.titulo || 'Sin título')}»${todos.length > 1 ? ` y ${plural(todos.length - 1, 'versión anterior', 'versiones anteriores')}` : ''}.</p>
-          <p>Para revisar el precio o el alcance, ábrela y usa <b>⋯ → Crear nueva versión</b>: así se conserva lo que ya se ofertó.</p>`,
-        buttons: [{ label: 'Cancelar', left: true }, { label: 'Crear otra desde cero', value: 'nuevo' }, { label: `Abrir ${ult.codigo} v${ult.version}`, value: 'abrir', primary: true }]
-      });
-      if (v === 'abrir') { goProject(ult, 'ficha'); return; }
-      if (v !== 'nuevo') return;
-    }
-    const r = sel.req;
-    const ok = !!r;
-    const extra = {};
-    if (ok) {
-      const partes = [r.referencia ? `Referencia ${r.referencia}` : '', r.cierre ? `cierre ${fechaUTC(r.cierre)}` : ''].filter(Boolean);
-      if (partes.length) extra.descripcion = partes.join(' · ') + '.';
-    }
-    const np = enCarpeta(S.newProject(extra), sel, { datosOferta: true });
-    const hechos = op ? QOp().aplicar(np, op, monedaDe(np)) : [];
-    S.upsert(np);
-    goProject(np, 'ficha');
-    if (op) toast(textoCreadoDesdeOportunidad(np, hechos));
-    setTimeout(() => { const t = $('[data-f="titulo"]'); if (t) t.focus(); }, 60);
-  }
-
-  /* Carpetas de oferta nuevas en SharePoint: llevan siempre el N° de la planilla de ingreso. */
-  const crearCarpetaSP = (n, t) => window.QCloud.crearCarpeta(n, t);
-  function validarCarpetaSP(n, t, lista) {
-    if (!/^\d{1,6}$/.test(String(n || '').trim())) throw new Error('Escribe el N° de la oferta en la planilla de ingreso: en SharePoint cada carpeta lo lleva.');
-    return QO().nombreCarpetaNueva(n, t, lista);
-  }
-
-  /* Copia de cambios que chocaron con los de otra persona: nueva versión en la misma oferta. */
+  /* Copia de cambios que chocaron con los de otra persona: un proyecto nuevo. */
   function copiaDeCambios(p, sufijo) {
-    if (enSP()) {
-      const carpeta = window.QCloud.carpetaDe(p.uid);
-      const c = S.cloneProject(p, { version: siguienteVersion(carpeta), titulo: (p.titulo || 'Proyecto') + sufijo });
-      window.QCloud.asignarCarpeta(c.uid, carpeta);
-      S.upsert(c);
-      return c;
-    }
     const cfg = S.getConfig();
     const c = S.cloneProject(p, { codigo: S.nextCodigo(cfg.prefijo, new Date().getFullYear()), version: 1, titulo: (p.titulo || 'Proyecto') + sufijo });
     // La copia no deja su propio Excel en la carpeta de la oferta hasta que alguien lo decida
@@ -4156,21 +3845,21 @@
      ahí mismo sin salir de él, y se confirma con el botón principal. Devuelve
      { carpeta, req, iniciales } (req: la fila de la planilla, si es la misma oferta), { ninguna: true }
      (sigue sin carpeta) o null (canceló).
-     opts: titulo, texto, confirmar (el botón principal), lista (carpetas de la biblioteca local; sin
-       ella, las de SharePoint), leerPlanilla, planilla (true = entregar la fila de la planilla),
+     opts: titulo, texto, confirmar (el botón principal), lista (carpetas de la biblioteca),
+       leerPlanilla, planilla (true = entregar la fila de la planilla),
        completar (true = el proyecto toma título, ubicación y presupuesto de la planilla), crear
        (función (numero, nombre) → carpeta nueva; sin ella no se ofrece crear), validarNueva (función
        (numero, nombre, lista) → { nombre, cambiado } o lanza el error), sinCarpeta (texto del botón
        para seguir sin carpeta), actual (id de la carpeta actual), buscar (texto inicial), pie,
        iniciales (true = pedir las iniciales del Control de Documentos si este navegador no las tiene). */
   async function elegirCarpeta(opts) {
-    const lista = (opts.lista || window.QCloud.carpetas()).slice();
+    const lista = (opts.lista || []).slice();
     const orden = (g) => (g === 'En curso' ? 0 : g === 'Presentada' ? 1 : g === 'Adjudicada' ? 2 : 3);
     const ordenar = () => lista.sort((a, b) => orden(a.grupo) - orden(b.grupo) || String(b.grupo).localeCompare(String(a.grupo)) ||
       (parseInt(b.numero, 10) || 0) - (parseInt(a.numero, 10) || 0) || a.nombre.localeCompare(b.nombre, 'es'));
     ordenar();
     let pl = null;
-    const cargaPlanilla = (opts.leerPlanilla ? opts.leerPlanilla() : window.QCloud.planilla()).catch((err) => { console.warn('Planilla de ingreso no disponible:', err); return null; });
+    const cargaPlanilla = (opts.leerPlanilla ? opts.leerPlanilla() : Promise.resolve(null)).catch((err) => { console.warn('Planilla de ingreso no disponible:', err); return null; });
     let elegida = opts.actual ? lista.find((c) => c.id === opts.actual) || null : null;
     let creada = null;          // la carpeta que se creó en este formulario
     let misma = false;          // «es la misma oferta» cuando la planilla dice otro título
@@ -4500,7 +4189,6 @@
   // ---------------------------------------------------------------------------
   //  ANÁLISIS FINANCIERO: enviar los costos del proyecto como costos proyectados,
   //  por la carpeta de intercambio de las herramientas de QUEMPIN (js/intercambio.js).
-  //  No depende del modo SharePoint ni lo cambia.
   // ---------------------------------------------------------------------------
   const QI = () => window.QIntercambio;
   const vinculoAF = (p) => (p && p.vinculos && p.vinculos.analisisFinanciero) || null;
@@ -4810,20 +4498,18 @@
     const X = QI();
     if (!el || !X) return;
     if (!X.disponible()) {
-      el.innerHTML = `<p class="af-linea">${nube.activa
-        ? 'Este navegador no puede abrir carpetas: los envíos se descargan para dejarlos a mano en la carpeta de intercambio.'
-        : `Este navegador no puede abrir carpetas (usa Chrome o Edge de escritorio). Cada proyecto se descarga para dejarlo en <b>${esc(BUZON_EQUIPO)}</b>; los envíos al Análisis Financiero, también.`}</p>`;
+      el.innerHTML = `<p class="af-linea">Este navegador no puede abrir carpetas (usa Chrome o Edge de escritorio). Cada proyecto se descarga para dejarlo en <b>${esc(BUZON_EQUIPO)}</b>; los envíos al Análisis Financiero, también.</p>`;
       return;
     }
     const est = await X.estado();
     // En modo local la carpeta es obligatoria: no se ofrece «Olvidar» (solo cambiarla).
     el.innerHTML = `<p class="af-linea">${est.conectada ? `Carpeta conectada en este navegador: <b>${esc(est.nombre)}</b>.` : est.movida ? 'La carpeta que estaba conectada cambió de lugar.' : 'Sin conectar.'}
-        ${nube.activa ? 'Se usa para enviar costos al Análisis Financiero.' : 'Todos los proyectos se guardan ahí para el equipo («.Herramientas formulación › Intercambio › publicado › formulador»), y desde ahí se envían costos al Análisis Financiero. Elige la biblioteca <b>Formulación de proyectos - Documentos</b> sincronizada en tu OneDrive.'}</p>
-      ${!nube.activa && est.conectada ? `<p class="af-linea">${est.biblioteca
+        ${'Todos los proyectos se guardan ahí para el equipo («.Herramientas formulación › Intercambio › publicado › formulador»), y desde ahí se envían costos al Análisis Financiero. Elige la biblioteca <b>Formulación de proyectos - Documentos</b> sincronizada en tu OneDrive.'}</p>
+      ${est.conectada ? `<p class="af-linea">${est.biblioteca
         ? 'El Excel de cada proyecto se guarda además en la carpeta de su oferta, que se elige una vez por presupuesto.'
         : 'Para guardar también el Excel de cada proyecto en la carpeta de su oferta, conecta la biblioteca <b>Formulación de proyectos - Documentos</b> completa (ahora está conectada solo una carpeta de adentro).'}</p>` : ''}
       <div class="actions"><button type="button" class="btn btn-sm" data-act="af-carpeta">${ICON.folder}${est.conectada ? 'Cambiar carpeta' : 'Conectar carpeta'}</button>
-      ${est.conectada && nube.activa ? '<button type="button" class="btn btn-sm" data-act="af-olvidar">Olvidar</button>' : ''}</div>
+</div>
       <p class="af-nota" id="cfg-pulso"></p>`;
     if (est.conectada && est.permiso === 'granted' && QH()) {
       const l = QH().lecturaEstado(await QH().publicacion('estado', true));
@@ -4839,9 +4525,9 @@
   //  el Control de Documentos. La lógica (mensajes, lecturas, búsqueda) vive en js/herramientas.js.
   // ---------------------------------------------------------------------------
   const QH = () => window.QHerramientas;
-  /* Quién manda un mensaje a otra herramienta: la cuenta de SharePoint, o el usuario elegido (desde
-     el 2026-10-16 va antes que el responsable del proyecto: firma quien lo envía) */
-  const usuarioActual = (p) => { const u = S.getUser(); return (u && u.email) || yo() || (p && p.responsable) || S.getConfig().responsable || ''; };
+  /* Quién manda un mensaje a otra herramienta: el usuario elegido (desde el 2026-10-16 va antes que el
+     responsable del proyecto: firma quien lo envía) */
+  const usuarioActual = (p) => { return yo() || (p && p.responsable) || S.getConfig().responsable || ''; };
 
   /* ¿Se puede leer la carpeta sin pedir nada? (los pintores no pueden abrir diálogos) */
   async function carpetaLista() {
@@ -4895,11 +4581,10 @@
     const v = p && QO() && QO().vinculo(p);
     return !!p && ((!!v && c === v.nombre) || (!!QO() && c === QO().nombreOferta('', p.titulo)));
   }
-  /* Deja como código el nombre de la carpeta (o «N°. Nombre») si el actual es automático (en SharePoint el
-     código ya es el N°). Si otra formulación de la misma oferta ya tiene esa versión, esta pasa a la
+  /* Deja como código el nombre de la carpeta (o «N°. Nombre») si el actual es automático. Si otra formulación de la misma oferta ya tiene esa versión, esta pasa a la
      siguiente. true = cambió. */
   function ajustarCodigo(p, req) {
-    if (enSP() || !codigoAutomatico(p.codigo, p)) return false;
+    if (!codigoAutomatico(p.codigo, p)) return false;
     const c = codigoPropuesto(p, req);
     if (!c || c === p.codigo) return false;
     p.codigo = c;
@@ -4926,10 +4611,9 @@
   };
   function campoRequerimiento(p) {
     const v = (p.vinculos && p.vinculos.requerimiento) || null;
-    const enCodigo = enSP() && QH() && !v ? QH().reqDe(p) : null;
-    const planillaWeb = (window.QPN_M365 || {}).planillaWeb;
+    const planillaWeb = PLANILLA_WEB;
     return `<div class="campo ancho"><label for="f-req">N° de requerimiento <span class="opc">(Planilla de Ingreso)</span></label>
-        <div class="req-fila"><div class="combo"><input class="input" id="f-req" inputmode="numeric" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" value="${esc(v && v.numero ? v.numero : '')}" placeholder="${enCodigo ? `${esc(enCodigo)} (el código)` : 'Ej.: 280'}"><button type="button" class="combo-btn" data-picker="combo" tabindex="-1" aria-label="Ver los requerimientos">${ICON.caret}</button></div>
+        <div class="req-fila"><div class="combo"><input class="input" id="f-req" inputmode="numeric" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" value="${esc(v && v.numero ? v.numero : '')}" placeholder="Ej.: 280"><button type="button" class="combo-btn" data-picker="combo" tabindex="-1" aria-label="Ver los requerimientos">${ICON.caret}</button></div>
           <button type="button" class="btn btn-sm" data-act="req-completar" data-tip="<b>Completar desde la planilla</b>Trae el título, la ubicación, el ID de licitación y el presupuesto del requerimiento a los campos que estén vacíos, y deja como código «N°. Nombre», igual que el nombre de la carpeta de la oferta.">Completar desde la planilla</button>
           ${planillaWeb ? `<a class="link-btn req-abrir" href="${esc(planillaWeb)}" target="_blank" rel="noopener" data-tip="<b>Abrir la planilla de ingreso</b>Se abre en Excel para la web, en otra pestaña, para buscar o verificar el N°.">${ICON.open}Abrir la planilla</a>` : ''}</div>
         <span class="hint" id="req-hint">El N° con que se registró el requerimiento: une este proyecto con su cotización, el Análisis Financiero y el Flujo de Caja. La lista muestra los ${REQ_RECIENTES} últimos ingresados; para uno anterior, escribe su N° o parte del título.</span></div>`;
@@ -5083,6 +4767,8 @@
      y en la lista; el paso 5 le suma lo que publican las demás herramientas. */
   const QF = () => window.QFlujo;
   const TABLEROS = 'https://cristobal-monzo.github.io/finanzas-quempin/';
+  /* La Planilla de Ingreso en Excel para la web: «Abrir la planilla» junto al N° de requerimiento */
+  const PLANILLA_WEB = 'https://quempinspa2020.sharepoint.com/sites/Licitaciones-Enproceso/Documentos%20compartidos/Planilla%20de%20Ingreso%20de%20Requerimientos.xlsx?web=1';
   const TABLERO_AF = TABLEROS + 'analisis-financiero/';
   /* Sistema QUEMPIN es un programa del computador: el navegador no lo puede abrir, pero sí decir cómo
      llegar y qué hacer ahí con este proyecto. */
@@ -5659,7 +5345,7 @@
     const abrirAF = vAF ? `<a class="btn" href="${esc(enlaceAF(p))}" target="_blank" rel="noopener">${ICON.open}Ver la ficha en Análisis Financiero</a>` : '';
     html.ejecucion = bloqueAF(tVenta || bVenta || abrirAF ? `<div class="herr-cuerpo herr-venta">${tVenta}${acciones(bVenta + abrirAF)}</div>` : '');
     // La carpeta de la oferta: al adjudicarse, su copia en Gestión de Proyectos y el original en Adjudicadas (2026-10-19)
-    const vCarpeta = p.estado === 'Adjudicada' && !enSP() && ofertaActiva() ? QO().vinculo(p) : null;
+    const vCarpeta = p.estado === 'Adjudicada' && ofertaActiva() ? QO().vinculo(p) : null;
     if (vCarpeta) {
       const copia = QO().copiaEnGestion(vCarpeta);
       const abrirO = `<button type="button" class="btn" data-act="oferta-abrir">${ICON.folder}Abrir ${copia ? 'el original' : 'la carpeta'}</button>`;
@@ -5886,7 +5572,7 @@
   //  CARPETA COMPARTIDA: proyectos del equipo por OneDrive (modo local, js/compartida.js)
   // ---------------------------------------------------------------------------
   const QC = () => window.QCompartida;
-  function compartiendo() { return !nube.activa && !!QC() && QC().activa(); }
+  function compartiendo() { return !!QC() && QC().activa(); }
   const BUZON_EQUIPO = 'Formulación de proyectos › .Herramientas formulación › Intercambio › buzon';
   const notaCompartida = (texto, botones) => `<div class="nota compartida-nota" role="region" aria-label="Carpeta del equipo">
       <span>${texto}</span><span class="actions">${botones}</span></div>`;
@@ -5901,7 +5587,7 @@
      leer la carpeta): 'sin-api', 'sin-carpeta', 'sin-permiso', 'error'; '' si está al día; null
      mientras no se sabe. Compartir es obligatorio (pedido del usuario, 2026-09-30). */
   function problemaCompartida() {
-    if (nube.activa || !QC() || !QI()) return '';
+    if (!QC() || !QI()) return '';
     if (!QI().disponible()) return 'sin-api';
     const i = QC().info();
     if (i.sinCarpeta) return 'sin-carpeta';
@@ -5917,7 +5603,7 @@
 
   /* Lista de proyectos: aviso para conectar la carpeta del equipo, o una línea con su estado. */
   async function pintarCompartida() {
-    if (nube.activa || !QC() || !QI()) return;
+    if (!QC() || !QI()) return;
     const e = await QC().estado();
     const caja = $('#compartida'), linea = $('#compartida-linea');
     const pie = $('#footer-datos');
@@ -5981,7 +5667,7 @@
      cierre. Con la carpeta del equipo sin conectar no muestra nada: la lista ya pide conectarla.
      forzar: sin esperar el minuto. */
   function pintarPendientes(forzar) {
-    if (nube.activa || !QP() || !QI() || !QH()) return Promise.resolve();
+    if (!QP() || !QI() || !QH()) return Promise.resolve();
     repintarPendientes();   // lo último leído, al instante
     if (pend.enCurso) return pend.enCurso;
     if (!forzar && pend.t && Date.now() - pend.t < PEND_CADA_MS) return Promise.resolve();
@@ -6070,7 +5756,7 @@
     // 2. Pasar a la Planilla: lo que falta escribir, por N°
     const porEscribir = d.sugerencias.filter((g) => !g.alDia);
     if (porEscribir.length) {
-      const planillaWeb = (window.QPN_M365 || {}).planillaWeb;
+      const planillaWeb = PLANILLA_WEB;
       const actual = (c) => (c.actual === null || c.actual === undefined || c.actual === '' ? 'vacío'
         : typeof c.actual === 'number' ? dinero(c.actual, 'CLP') : `«${c.actual}»`);
       const filas = porEscribir.map((g) => {
@@ -6149,7 +5835,7 @@
      equipo. Sin la API o sin la biblioteca en el computador, se sigue y se entrega por archivo.
      true = seguir. Debe llamarse desde un clic (el permiso y el selector lo necesitan). */
   async function exigirCarpeta() {
-    if (nube.activa || !QC() || !QI() || !QI().disponible()) return true;
+    if (!QC() || !QI() || !QI().disponible()) return true;
     const e = await QI().estado();
     if (e.conectada && e.permiso === 'granted') return true;
     if (e.conectada && await QI().permitir()) { QC().sincronizar(); return true; }
@@ -6169,13 +5855,9 @@
 
   /* Carpeta del proyecto en la lista y en el encabezado. */
   function carpetaCorta(p) {
-    if (!enSP()) {
-      const v = QO() && QO().vinculo(p);
-      const copia = v && QO().copiaEnGestion(v) ? ' · copia en Gestión' : '';
-      return v ? `<div class="proj-carpeta" title="Excel en la carpeta de la oferta: ${esc(v.ruta.join(' › '))}${copia ? '. La ejecución sigue en su copia de Gestión de Proyectos' : ''}">${ICON.folder}<span>${esc(QO().grupoDeRuta(v.ruta))} · ${esc(v.nombre)}${copia}</span></div>` : '';
-    }
-    const u = window.QCloud.ubicacion(p.uid);
-    return u ? `<div class="proj-carpeta" title="${esc(u.grupo)} · ${esc(u.carpeta)}">${ICON.folder}<span>${esc(u.grupo)} · ${esc(u.carpeta)}</span></div>` : '';
+    const v = QO() && QO().vinculo(p);
+    const copia = v && QO().copiaEnGestion(v) ? ' · copia en Gestión' : '';
+    return v ? `<div class="proj-carpeta" title="Excel en la carpeta de la oferta: ${esc(v.ruta.join(' › '))}${copia ? '. La ejecución sigue en su copia de Gestión de Proyectos' : ''}">${ICON.folder}<span>${esc(QO().grupoDeRuta(v.ruta))} · ${esc(v.nombre)}${copia}</span></div>` : '';
   }
 
   // ---------------------------------------------------------------------------
@@ -6183,10 +5865,10 @@
   //  (modo local, js/oferta.js). El presupuesto completo sigue en el repositorio del equipo.
   // ---------------------------------------------------------------------------
   const QO = () => window.QOferta;
-  function ofertaActiva() { return !nube.activa && !!QO() && QO().activa(); }
+  function ofertaActiva() { return !!QO() && QO().activa(); }
   const ofertaOmitida = new Set();   // presupuestos en que se eligió «Ahora no» (solo esta sesión)
 
-  /* La planilla de ingreso (leída en la biblioteca, o la copia publicada), como la lee el modo SharePoint:
+  /* La planilla de ingreso (leída en la biblioteca, o la copia publicada), con el formato que usa el selector de carpetas:
      N° → { titulo, estado, ubicacion, referencia, cierre, presupuesto }. */
   async function planillaPublicada() {
     const datos = QH() ? await QH().requerimientos() : null;
@@ -6785,8 +6467,8 @@
      pedir permiso a la biblioteca exige un clic, y sin biblioteca el proyecto se crearía sin preguntar.
      En esos casos queda el botón del aviso. */
   async function ofrecerOportunidad() {
-    let listo = nube.activa ? !!nube.lista : false;
-    if (!nube.activa && ofertaActiva() && QI() && QI().disponible()) {
+    let listo = false;
+    if (ofertaActiva() && QI() && QI().disponible()) {
       const e = await QI().estado().catch(() => ({}));
       listo = !!(e.conectada && e.permiso === 'granted' && e.biblioteca);
     }
@@ -6830,7 +6512,6 @@
   async function nuevoDesdeOportunidad() {
     const op = state.oportunidad;
     if (!op) { toast('Los datos de la oportunidad ya no están en esta pestaña. Vuelve a usar «Llevar al Formulador» en el tablero.', true); return; }
-    if (enSP()) { await nuevoEnSharePoint(op); return; }
     if (!(await exigirCarpeta())) return;
     await crearProyectoLocal({
       op, encabezado: 'Nuevo proyecto desde Mercado Público', numero: op.req || '', nombre: op.req ? '' : QOp().nombreCarpeta(op),
@@ -6869,18 +6550,9 @@
     if (!state.project && $('#list-body, #app .hub-grid')) renderList();
   });
 
-  // Arranque: con SharePoint configurado se espera la sesión; si no, modo local de siempre.
-  if (window.QCloud && window.QCloud.configurado) {
-    nube.activa = true;
-    $('#footer-datos').textContent = 'Los proyectos se guardan en SharePoint, en la carpeta de cada oferta, y los ve todo el equipo.';
-    window.QCloud.onEstado(onCloudEstado);
-    window.QCloud.iniciar();
-    if (location.hash.startsWith('#/guia')) route();
-  } else {
-    // Modo local: los proyectos se comparten por la carpeta de OneDrive si este navegador lo activó,
-    // y el Excel de cada uno se mantiene al día en la carpeta de su oferta.
-    if (QC()) QC().iniciar();
-    if (QO()) QO().iniciar();
-    route();
-  }
+  // Arranque: los proyectos se comparten por la carpeta de OneDrive si este navegador lo activó,
+  // y el Excel de cada uno se mantiene al día en la carpeta de su oferta.
+  if (QC()) QC().iniciar();
+  if (QO()) QO().iniciar();
+  route();
 })();

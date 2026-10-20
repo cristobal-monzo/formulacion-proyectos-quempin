@@ -4,7 +4,7 @@ Herramienta web para formular y evaluar los costos de proyectos. Reemplaza las h
 
 **Herramienta publicada:** https://cristobal-monzo.github.io/formulacion-proyectos-quempin/
 
-Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages**. Mientras la conexión con SharePoint no esté configurada (hoy), cada presupuesto se guarda en el navegador y en el **repositorio del equipo**, una carpeta de la biblioteca *Formulación de proyectos* sincronizada por OneDrive. Además queda una **copia en Excel en la carpeta de su oferta**. Con SharePoint configurado, se guardan en la carpeta de cada oferta (ver [Dónde quedan los datos](#dónde-quedan-los-datos)).
+Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages**. Cada presupuesto se guarda en el navegador y en el **repositorio del equipo**, una carpeta de la biblioteca *Formulación de proyectos* sincronizada por OneDrive. Además queda una **copia en Excel en la carpeta de su oferta**. Ver [Dónde quedan los datos](#dónde-quedan-los-datos).
 
 ## Qué hace
 
@@ -37,7 +37,7 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
   - **Sesgo real** (paso 5, simulador de sobrecostos): «Simular con el sesgo real» usa cuánto se desvió el gasto real del presupuesto en los proyectos terminados (Análisis Financiero).
   - **Si el procesador del intercambio se detiene, se avisa** (2026-10-08): con más de 4 horas hábiles sin correr (lunes a viernes, 8:30 a 19:00; las noches y los fines de semana no cuentan), la lista de proyectos y el *Seguimiento* lo dicen en rojo, porque lo que se envía a las demás herramientas queda esperando.
   - **Otras herramientas QUEMPIN** (pestaña *Seguimiento*): prepara la cotización en **Sistema QUEMPIN** (llega arriba de «Nueva Cotización», donde se revisa y se emite), envía la **venta** al Análisis Financiero, avisa a la **Planilla de Ingreso** el estado y el valor, y **registra la evaluación de costos** (tipo 81) en el Control de Documentos: toma su número sola al elegir la carpeta de la oferta (una por versión, también la versión nueva que hereda la carpeta), y el Excel exportado lleva ese número.
-- **Comparte los proyectos con el equipo por esa misma carpeta** mientras no se use SharePoint: cada proyecto queda como un archivo en OneDrive y aparece en la lista de los demás equipos que la tengan conectada.
+- **Comparte los proyectos con el equipo por esa misma carpeta**: cada proyecto queda como un archivo en OneDrive y aparece en la lista de los demás equipos que la tengan conectada.
 - **Deja una copia en Excel en la carpeta de cada oferta** (desde el 2026-10-02): `Formulación <código> v<versión>.xlsx` (con el código «N°. Nombre», solo el N°: `Formulación 312 v1.xlsx`), junto a los antecedentes de la oferta, y la mantiene al día sola mientras se trabaja. Es la misma exportación de *Exportar Excel*, con una nota de que es una copia automática. La carpeta se elige una vez por proyecto: al crearlo o desde el aviso del editor, que la sugiere por el N° de requerimiento.
 - **El código es el nombre de la carpeta** (2026-10-19): «N°. Nombre», por ejemplo `312. Gimnasio municipal`. Se propone al crear el proyecto, al elegir su carpeta y con «Completar desde la planilla»; un código escrito a mano no se toca. En la lista y el encabezado se corta con «…» (completo al pasar el mouse).
 - **Nuevo proyecto pregunta por la carpeta** (2026-10-19). Se escribe el N° de requerimiento (la lista propone los de la planilla que todavía no tienen carpeta, y el nombre llega de la planilla) y el nombre; el formulario muestra el código y pregunta *¿Crear la carpeta de la oferta?*: «Sí, crear «N°. Nombre» en la biblioteca Formulación de proyectos» o «No, sin carpeta por ahora». Si ese N° o ese nombre ya tienen carpeta, propone usarla; «Elegir otra carpeta que ya existe…» abre el selector de siempre, que también permite **+ Crear nueva carpeta** (2026-10-06). Las iniciales del usuario se piden solo si hay carpeta (con ellas se registra la evaluación de costos).
@@ -69,24 +69,15 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
   git commit -m "descripción del cambio"
   git push
   ```
-- El sitio es público, igual que las demás herramientas QUEMPIN publicadas con GitHub Pages. **No contiene datos de proyectos**: esos viven en SharePoint, donde cada persona entra con su cuenta de QUEMPIN, o en el navegador de cada usuario y la carpeta compartida de OneDrive. Nunca se suben al repositorio archivos de la biblioteca.
+- El sitio es público, igual que las demás herramientas QUEMPIN publicadas con GitHub Pages. **No contiene datos de proyectos**: esos viven en el navegador de cada usuario y la carpeta compartida de OneDrive. Nunca se suben al repositorio archivos de la biblioteca.
 - Al abrirla pide **la misma contraseña de los Tableros Financieros** (desde el 2026-10-13). La página no la lleva escrita: trae un sobre corto cifrado con ella (`<script id="llaveFormulador">` en `index.html`), y la barrera la verifica abriéndolo con `js/candado.js`, copia del candado de los tableros. El navegador recuerda la misma clave que los tableros (`quempin_viz_clave`): quien ya entró a un tablero entra directo, y entrar acá abre los tableros. Los scripts de la herramienta se cargan recién después. Si la contraseña cambia, se regenera el sobre con `py -3.14 "Visualizador Web/candado.py" --llave-formulador` (repositorio Finanzas QUEMPIN) y se publica. Las marcas antiguas (`quempin_formulador_unlocked`) ya no abren en el sitio publicado; solo en `127.0.0.1`, donde corren las pruebas.
 
 También funciona abriendo `index.html` directamente desde el computador (doble clic). Para exportar e importar Excel se usa la copia local de la librería en `vendor/`, así que no necesita internet. Sin conexión solo cambian las tipografías.
 
 ## Dónde quedan los datos
 
-La herramienta tiene dos modos. Cuál se usa depende de `js/m365-config.js`.
+Los proyectos se guardan en el navegador y en la carpeta del equipo (el modo SharePoint, que nunca se configuró, se retiró el 2026-10-19; queda en el historial de git).
 
-**SharePoint**, para uso en equipo. Se configura una vez siguiendo [docs/SHAREPOINT.md](docs/SHAREPOINT.md).
-- Cada proyecto es un archivo `Formulación <N°> v<versión>.json` en la carpeta de su oferta, junto al Excel y los antecedentes de siempre. Si la carpeta se mueve a Adjudicadas o a Cerradas, el proyecto la sigue.
-- Cada persona entra con su cuenta Microsoft de QUEMPIN y ve lo que SharePoint le permite. No hay una lista de usuarios aparte.
-- **Nuevo proyecto** pide el N° y el nombre, pregunta por la carpeta de la oferta y toma de la *Planilla de Ingreso de Requerimientos* el título, la ubicación, la referencia, el cierre y el presupuesto. La planilla solo se lee.
-- Todo el equipo ve la misma cartera. Si dos personas guardan el mismo proyecto, se pregunta antes de sobrescribir.
-- SharePoint guarda el historial de versiones de cada archivo y tiene papelera propia.
-- La herramienta solo escribe sus propios archivos (`Formulación …` y `Formulador - configuración.json`). No modifica, mueve ni borra nada más. Para un piloto, `raiz` la limita a una carpeta de prueba.
-
-**Local**, el modo por defecto si SharePoint no está configurado o si se abre `index.html` como archivo.
 - Los proyectos se guardan en el **navegador de cada usuario** (`localStorage`, unos 5 MB compartidos con las demás herramientas de `cristobal-monzo.github.io`). Eso equivale a unos 450 proyectos medianos. Cada versión cuenta como un proyecto.
 - **Todo presupuesto se guarda también en la carpeta del equipo (obligatorio).** Crear uno nuevo, importarlo, duplicarlo o hacer una nueva versión exige conectar la carpeta. Donde no se puede (Firefox, Safari, celulares, o sin la biblioteca en el computador), el presupuesto se descarga con *Descargar para el equipo* para dejarlo en el buzón, y Claude lo incorpora al repositorio en `/Actualizar_Finanzas`. Lo que queda solo en un navegador lleva la marca «Solo en este navegador».
 - **Para que el equipo vea los mismos proyectos**, cada navegador los comparte por la carpeta de intercambio, oculta en la biblioteca de SharePoint *Formulación de proyectos* (`.Herramientas formulación/Intercambio`), que el equipo ya tiene sincronizada en OneDrive (Chrome o Edge de escritorio). La lista de proyectos pide conectarla eligiendo la biblioteca; en **Configuración** se puede cambiar. Cada proyecto queda como un archivo en `publicado/formulador/` (el repositorio de las formulaciones), OneDrive lo lleva a los demás equipos y su formulador lo trae a la lista. Si dos equipos cambian el mismo proyecto a la vez, se conserva una versión y los otros cambios quedan como copia: nunca se pierde trabajo. Detalle en [docs/INTERCAMBIO.md](docs/INTERCAMBIO.md).
@@ -97,9 +88,8 @@ La herramienta tiene dos modos. Cuál se usa depende de `js/m365-config.js`.
   - **Reglas:** solo escribe su propio archivo `Formulación … .xlsx` dentro de la carpeta de oferta elegida. Nunca la carpeta de herramientas, la carpeta modelo ni la de archivos frecuentes. Un archivo con el mismo nombre que no sea de ese presupuesto no se toca: la copia queda como «… (2).xlsx». No borra, mueve ni renombra nada. Solo crea una carpeta cuando alguien la pide con *+ Crear nueva carpeta*: una carpeta de oferta nueva («N°. Nombre») en la raíz de la biblioteca, nunca encima de una que exista. Lo que alguien cambie en la copia se reemplaza en la siguiente actualización; OneDrive guarda las versiones anteriores.
   - **Necesita la biblioteca completa conectada.** Quien conectó solo la carpeta de herramientas ve un aviso para conectarla, y el navegador pide el permiso una vez por sesión.
 - Sin esa carpeta, cada persona ve solo los proyectos de su navegador: se comparten **exportando a Excel o JSON** e **importando**. Borrar los datos del navegador borra los proyectos que no estén en la carpeta.
-- Al pasar a SharePoint, la herramienta ofrece guardar los proyectos del navegador en la carpeta de su oferta.
 
-En ambos modos, eliminar un proyecto lo envía a la **papelera** (*Más → Papelera*), desde donde se restaura. En modo local sin carpeta compartida también se puede eliminar definitivamente. En SharePoint y en la carpeta compartida el archivo queda: para borrarlo del todo se hace allá.
+Eliminar un proyecto lo envía a la **papelera** (*Más → Papelera*), desde donde se restaura. Sin carpeta compartida también se puede eliminar definitivamente; en la carpeta compartida el archivo queda: para borrarlo del todo se hace allá.
 
 ## Uso rápido
 
@@ -110,7 +100,7 @@ En ambos modos, eliminar un proyecto lo envía a la **papelera** (*Más → Pape
 5. **Evaluación** → revisa el veredicto y corrige las alertas. El botón del pie lleva a lo que sigue: **preparar la cotización** en Sistema QUEMPIN.
 6. **Seguimiento** → la oferta sigue sola su recorrido: la cotización emitida aparece con su número, **Marcar como Enviada** cuando sale al cliente y, si se adjudica, **Pasar a ejecución**. La línea «Recorrido de la oferta», arriba de los pasos, dice en qué etapa va; al desplegarla se ven las seis etapas y qué sigue. Para una revisión de la oferta usa **⋯ → Crear nueva versión** (mismo código, v2, v3…).
 
-Los valores con que parten los proyectos nuevos (IVA, tarifas y metas, y en modo local el prefijo del código) se cambian en **Configuración**, arriba a la derecha.
+Los valores con que parten los proyectos nuevos (IVA, tarifas, metas y el prefijo del código) se cambian en **Configuración**, arriba a la derecha.
 
 Proyectos grandes: una pestaña de costos con más de 300 filas usa columnas de ancho fijo, para que escribir siga siendo inmediato (con 1.500 materiales, cada tecla pasó de ~0,5 s a ~0,08 s el 2026-10-08).
 
@@ -127,10 +117,7 @@ css/styles.css          Estilos propios (componentes, gráficos, modo claro/oscu
 js/calc.js              Motor de cálculo (replica las fórmulas del Excel)
 js/kpis.js              Definición y descripción de cada KPI
 js/usuario.js           Quién trabaja: las iniciales del equipo, compartidas con el Portal QUEMPIN (quempin_usuario)
-js/store.js             Modelo de datos, valores por defecto, papelera y guardado (local o SharePoint)
-js/cloud.js             Conexión con SharePoint: ingreso con Microsoft, sincronización y reglas de escritura
-js/m365-config.js       Registro en Microsoft Entra y biblioteca de SharePoint (clientId vacío = modo local)
-redirect.html           Página de retorno del ingreso con Microsoft
+js/store.js             Modelo de datos, valores por defecto, papelera y guardado en el navegador
 js/excel.js             Exportación e importación (Excel y JSON)
 js/intercambio.js       Carpeta de intercambio con las demás herramientas QUEMPIN (Análisis Financiero)
 js/herramientas.js      Lo demás que se intercambia: requerimientos, precios, sesgo, cotización, venta, planilla, Control de Documentos
@@ -146,11 +133,9 @@ js/candado.js           Verificación de la contraseña (copia textual de Finanz
 js/app.js               Interfaz
 js/logo-data.js         Logo oficial embebido para el Excel exportado
 vendor/exceljs.min.js   Librería ExcelJS 4.4.0 (licencia MIT, ver vendor/exceljs.LICENSE)
-vendor/msal/            MSAL 5.23.0, librería de ingreso de Microsoft (licencia MIT, ver vendor/msal/LICENSE)
 assets/                 Logos oficiales (fondo blanco y fondo negro), isotipo e íconos
 ejemplos/               Proyecto de ejemplo con los datos del Excel original (JSON importable)
 docs/ANALISIS_KPI.md    Evaluación de los KPI del Excel y puntos de mejora
-docs/SHAREPOINT.md      Cómo conectar con SharePoint, piloto, permisos y cuidados
 docs/INTERCAMBIO.md     Cómo se comunican las herramientas y el envío de costos al Análisis Financiero
 ```
 
@@ -171,6 +156,6 @@ La herramienta sigue el *Manual de Identidad de Marca QUEMPIN* y usa el mismo si
 
 ## Mantención
 
-- **Valores por defecto** (IVA, tarifas por nivel, metas, catálogo de otros costos): ajústalos en la ficha de un proyecto y presiona *Usarlos como predeterminados para proyectos nuevos*. En SharePoint aplica a todo el equipo y queda en `Formulador - configuración.json`. Para cambiar los valores de fábrica, edita `DEFAULT_PARAMETROS` y `DEFAULT_CATALOGO` en `js/store.js`.
+- **Valores por defecto** (IVA, tarifas por nivel, metas, catálogo de otros costos): ajústalos en la ficha de un proyecto y presiona *Usarlos como predeterminados para proyectos nuevos*. Para cambiar los valores de fábrica, edita `DEFAULT_PARAMETROS` y `DEFAULT_CATALOGO` en `js/store.js`.
 - **Textos de los KPI:** se editan en `js/kpis.js`. Se reflejan en la herramienta, en la guía y en el Excel exportado.
 - **Fórmulas:** están en `js/calc.js`. Con el ejemplo del Excel el resultado debe ser costo directo $2.046.404 y precio neto $4.092.808.

@@ -4,11 +4,10 @@ El formulador comparte información con las otras herramientas de QUEMPIN (Anál
 
 **Dónde está:** en la biblioteca de SharePoint *Formulación de proyectos - Documentos*, que el equipo ya tiene sincronizada, en `.Herramientas formulación/Intercambio/` (en el disco el nombre quedó en mayúsculas: `.HERRAMIENTAS FORMULACIÓN`). Ahí vive también el repositorio de las formulaciones compartidas. Se movió el 2026-09-30 desde *Finanzas QUEMPIN/Intercambio* para que todos los colegas tengan acceso.
 - **Quién la ve:** todos los que entran a esa biblioteca. Eso incluye `publicado/analisis-financiero.json`, con los costos proyectados y reales por proyecto, y el buzón de envíos al Análisis Financiero. La decisión la tomó el usuario sabiendo esto.
-- **«Oculta» solo en parte:** el punto inicial la separa de las carpetas de ofertas, y el modo SharePoint no la lista como oferta. SharePoint la muestra igual, y el atributo *oculto* de Windows se marcó solo en el computador de quien la movió: OneDrive no lo lleva a los demás.
+- **«Oculta» solo en parte:** el punto inicial la separa de las carpetas de ofertas. SharePoint la muestra igual, y el atributo *oculto* de Windows se marcó solo en el computador de quien la movió: OneDrive no lo lleva a los demás.
 
 - **No hay servidor ni base de datos.** La página abre la carpeta con la API de acceso a archivos del navegador (Chrome o Edge de escritorio).
 - **No hay que iniciar sesión** en ningún servicio.
-- **No depende del modo SharePoint** ni lo cambia: funciona igual con los proyectos guardados en el navegador o en SharePoint.
 
 ## Qué se puede hacer hoy
 
@@ -45,7 +44,7 @@ Qué se envía:
 
 **Navegadores sin acceso a carpetas** (Firefox, Safari, celulares): el envío se descarga como archivo y se deja a mano en `.Herramientas formulación/Intercambio/buzon`.
 
-**Todo presupuesto se guarda en la carpeta del equipo** (modo local, mientras no se use SharePoint). Es obligatorio desde el 2026-09-30, por pedido del usuario. Cada navegador guarda sus proyectos en `localStorage` y, además, los copia en `publicado/formulador/`, el repositorio de las formulaciones, y trae los de los demás.
+**Todo presupuesto se guarda en la carpeta del equipo**. Es obligatorio desde el 2026-09-30, por pedido del usuario. Cada navegador guarda sus proyectos en `localStorage` y, además, los copia en `publicado/formulador/`, el repositorio de las formulaciones, y trae los de los demás.
 
 1. Mientras la carpeta no esté conectada, la lista muestra **Conectar carpeta**, sin opción de posponerlo. Para conectarla se elige la biblioteca *Formulación de proyectos - Documentos*. En **Configuración → Carpeta compartida** se puede cambiar, pero no apagar.
 2. **Crear un presupuesto exige la carpeta.** Esto vale para *Nuevo*, *Importar*, *Duplicar* y *Nueva versión*. Si no está conectada, se pide conectarla (*Conectar la biblioteca*). Si falta solo el permiso de la sesión, se pide en el mismo clic. Quien no tiene la biblioteca en ese computador puede elegir *Trabajar sin la carpeta* y entregar el presupuesto por archivo (ver abajo).
@@ -71,7 +70,7 @@ Si la carpeta cambia de lugar, el formulador lo detecta porque ya no encuentra s
 Cómo se resuelve quién gana, sin un reloj común entre equipos:
 - Cada archivo lleva la versión del proyecto (`datos.modificado`, que nunca se repite en un mismo proyecto) y su `historia`: las versiones anteriores que pasaron por la carpeta. Cada navegador recuerda la última versión que sincronizó de cada proyecto (`qpn.formulacion.compartida.v1` en `localStorage`).
 - Si la carpeta viene de esa versión y aquí no se tocó, se trae. Si aquí se editó y la carpeta sigue igual, se sube.
-- Si cambiaron los dos, o la carpeta perdió una versión que subió este navegador (un conflicto de OneDrive), se trae la de la carpeta y **los cambios de aquí quedan como un proyecto aparte** con «(cambios sin subir)» en el título. Si el proyecto estaba abierto con cambios sin guardar, se pregunta como en SharePoint.
+- Si cambiaron los dos, o la carpeta perdió una versión que subió este navegador (un conflicto de OneDrive), se trae la de la carpeta y **los cambios de aquí quedan como un proyecto aparte** con «(cambios sin subir)» en el título. Si el proyecto estaba abierto con cambios sin guardar, se pregunta antes de sobrescribir.
 - Eliminar manda a la papelera de todos. En los navegadores que pueden abrir la carpeta no hay *Eliminar definitivamente*: el archivo queda en la carpeta.
 - Las copias que deja OneDrive en un conflicto (`<uid>-EQUIPO.json`) y cualquier archivo que no sea `<uid>.json` se ignoran.
 - Dos pestañas del mismo navegador se avisan los cambios y sincronizan de a una.
@@ -84,7 +83,7 @@ de QUEMPIN. Todo está en `js/herramientas.js` (la interfaz, en la sección *OTR
 
 | Dónde | Qué hace | Mensaje o publicación |
 |---|---|---|
-| Paso 1 · N° de requerimiento | La clave común de proyecto: el N° de la *Planilla de Ingreso*. La lista muestra los 20 últimos ingresados (el N° es correlativo), del más nuevo al más antiguo; al escribir se suman los anteriores que calzan con el N° o el título. «Completar desde la planilla» llena título, ubicación y presupuesto (con IVA) **solo si están vacíos**. Se guarda en `vinculos.requerimiento`. En modo SharePoint, el código ya es ese N°. | con la biblioteca conectada lee la planilla misma (raíz de la biblioteca, al día, mismo formato que `requerimientos.py`); si no, `publicado/requerimientos.json` |
+| Paso 1 · N° de requerimiento | La clave común de proyecto: el N° de la *Planilla de Ingreso*. La lista muestra los 20 últimos ingresados (el N° es correlativo), del más nuevo al más antiguo; al escribir se suman los anteriores que calzan con el N° o el título. «Completar desde la planilla» llena título, ubicación y presupuesto (con IVA) **solo si están vacíos**. Se guarda en `vinculos.requerimiento`. | con la biblioteca conectada lee la planilla misma (raíz de la biblioteca, al día, mismo formato que `requerimientos.py`); si no, `publicado/requerimientos.json` |
 | Paso 3 · botón **$** (materiales y equipos) | Busca compras parecidas con el mismo buscador del tablero del Cotizador y ofrece el **promedio** o la **última compra**, sin IVA y reajustadas por UF. El ítem guarda de dónde salió (`precioRef`). | lee `publicado/precios-referencia.json` |
 | Paso 5 · simulador de sobrecostos | «Simular con el sesgo real»: usa la desviación real del presupuesto por categoría en los proyectos terminados. Queda anotado en `parametros.sensibilidadOrigen`. | lee `sesgo` de `publicado/analisis-financiero.json` |
 | Seguimiento · Cotización en Sistema QUEMPIN | Envía las partidas con su precio neto unitario. En Sistema QUEMPIN aparecen arriba de «Nueva Cotización» («Revisar y emitir…»; también el botón «Borradores del Formulador» al pie); una persona la revisa y la emite, y el seguimiento muestra el número. | mensaje `borrador-cotizacion`; lee `publicado/documentos-comerciales.json` y `contrapartes.json` |
@@ -186,7 +185,7 @@ El mensaje `formulacion` (entrega por archivo) lleva lo mismo dentro del sobre d
 ## Código
 
 - `js/intercambio.js`: carpeta, permisos, lectura de publicaciones, envío de mensajes y descarga de respaldo. Sin dependencias.
-- `js/compartida.js`: proyectos compartidos por la carpeta (decisión de quién gana, lectura y escritura de `publicado/formulador/`, momentos de sincronización, resumen calculado y entrega por archivo). Usa `QStore`, `QCalc` e `QIntercambio`; no hace nada con SharePoint configurado.
+- `js/compartida.js`: proyectos compartidos por la carpeta (decisión de quién gana, lectura y escritura de `publicado/formulador/`, momentos de sincronización, resumen calculado y entrega por archivo). Usa `QStore`, `QCalc` e `QIntercambio`.
 - `js/app.js`, sección *CARPETA COMPARTIDA*: aviso de la lista, aviso del editor, marca «Solo en este navegador» y exigencia de la carpeta al crear (`exigirCarpeta`).
 - `js/app.js`, sección *ANÁLISIS FINANCIERO*: diálogo de envío, panel del paso Evaluación y opción en Configuración.
 - El vínculo con el Análisis Financiero queda en el propio proyecto (`vinculos.analisisFinanciero`: TAG, nombre y último envío). Así viaja con el proyecto en el modo local, en SharePoint y en las exportaciones JSON.

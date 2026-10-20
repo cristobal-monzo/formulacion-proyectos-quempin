@@ -1,15 +1,10 @@
 /*
  * store.js — Modelo de datos y persistencia.
- * Dos modos:
- *  - 'local': los proyectos viven en el navegador (localStorage). Es el modo por defecto
- *    y el que se usa si la nube no está configurada o se abre index.html sin servidor.
- *  - 'nube': los proyectos viven en SharePoint (ver js/cloud.js). La memoria de esta
- *    página es la copia de trabajo; cloud.js la llena con lo que llega de SharePoint
- *    (applyRemote) y recibe cada cambio local a través del "backend".
- * La interfaz es síncrona en ambos modos: upsert() actualiza la copia en memoria de
- * inmediato y la nube se sincroniza en segundo plano.
- * Eliminar un proyecto lo manda a la papelera (eliminado: true); se puede restaurar.
- * En modo local también se puede eliminar definitivamente; en SharePoint el archivo queda.
+ * Los proyectos viven en el navegador (localStorage); js/compartida.js los refleja en la carpeta
+ * del equipo y trae los de los demás (applyRemote). El modo SharePoint («nube») se retiró el
+ * 2026-10-19: nunca se configuró (queda en el historial de git, js/cloud.js).
+ * Eliminar un proyecto lo manda a la papelera (eliminado: true); se puede restaurar, o eliminar
+ * definitivamente mientras no se comparta.
  */
 (function (root) {
   'use strict';
@@ -79,9 +74,8 @@
   }
 
   // ---- Modo, usuario y avisos -------------------------------------------------
-  let mode = 'local';
-  let backend = null;   // { saveProject(p), deleteProject(id), saveConfig(shared) } en modo nube
-  let usuario = null;   // { email, nombre, rol } en modo nube
+  const mode = 'local';
+  const usuario = null;   // sin cuentas: quien trabaja es el usuario elegido (js/usuario.js)
   const listeners = [];
   /* Eventos: {type:'remote', ids, autores, origen} al llegar cambios de otros usuarios, de la
      carpeta compartida (origen 'carpeta') o de otra pestaña (origen 'ventana'); con
@@ -94,10 +88,8 @@
   function emit(ev) { listeners.slice().forEach((fn) => { try { fn(ev); } catch (e) { console.error(e); } }); }
 
   // ---- Config ---------------------------------------------------------------
-  /* En modo nube, prefijo, parámetros y catálogo son de la empresa (un documento compartido);
-     el responsable por defecto es personal y queda en el navegador. Desde el 2026-10-16 es el usuario
-     elegido (js/usuario.js); el texto libre de antes vale solo mientras no se elige ninguno. */
-  let sharedConfig = null;
+  /* El responsable por defecto es el usuario elegido (js/usuario.js, desde el 2026-10-16); el texto
+     libre de antes vale solo mientras no se elige ninguno. */
   function responsablePorDefecto(local) {
     const QU = root.QUsuario;
     if (QU && QU.hayEleccion()) return QU.actual() || (usuario && usuario.nombre) || '';
@@ -105,7 +97,7 @@
   }
   function getConfig() {
     const local = lsGet(LS_CONFIG, null) || {};
-    const c = mode === 'nube' ? (sharedConfig || {}) : local;
+    const c = local;
     const prefijo = String(c.prefijo || '').trim();
     return {
       prefijo: prefijo && prefijo.toUpperCase() !== PREFIJO_ANTIGUO ? prefijo : DEFAULT_CONFIG.prefijo,
@@ -114,38 +106,21 @@
       catalogoOtros: Array.isArray(c.catalogoOtros) ? c.catalogoOtros : clone(DEFAULT_CATALOGO)
     };
   }
-  function setConfig(c) {
-    if (mode !== 'nube') return lsSet(LS_CONFIG, c);
-    const local = lsGet(LS_CONFIG, null) || {};
-    local.responsable = c.responsable || '';
-    lsSet(LS_CONFIG, local);
-    const shared = { prefijo: c.prefijo || DEFAULT_CONFIG.prefijo };
-    if (c.parametros) shared.parametros = c.parametros;
-    if (c.catalogoOtros) shared.catalogoOtros = c.catalogoOtros;
-    const prev = sharedConfig || {};
-    const cambia = ['prefijo', 'parametros', 'catalogoOtros'].some((k) => JSON.stringify(shared[k]) !== JSON.stringify(prev[k]));
-    if (cambia) backend.saveConfig(shared);
-    return true;
-  }
-  function setSharedConfig(c) { sharedConfig = c || {}; emit({ type: 'config' }); }
+  function setConfig(c) { return lsSet(LS_CONFIG, c); }
 
   // ---- Proyectos ------------------------------------------------------------
   // cache: todos los proyectos, incluidos los de la papelera.
   let cache = null;
   function full() {
     if (!cache) {
-      if (mode === 'nube') cache = [];
-      else {
-        const data = lsGet(LS_PROYECTOS, { proyectos: [] });
-        cache = (data.proyectos || []).map(normalize);
-      }
+      const data = lsGet(LS_PROYECTOS, { proyectos: [] });
+      cache = (data.proyectos || []).map(normalize);
     }
     return cache;
   }
   function all() { return full().filter((p) => !p.eliminado); }
   function trash() { return full().filter((p) => p.eliminado); }
   function persist() {
-    if (mode === 'nube') return true;
     return lsSet(LS_PROYECTOS, { schema: SCHEMA, proyectos: cache || [] });
   }
   function get(id) { return full().find((p) => p.uid === id) || null; }
@@ -168,7 +143,6 @@
     const list = full();
     const i = list.findIndex((x) => x.uid === p.uid);
     if (i >= 0) list[i] = p; else list.unshift(p);
-    if (mode === 'nube') { backend.saveProject(p); return true; }
     const ok = persist();
     emit({ type: 'local', ids: [p.uid] });
     return ok;
@@ -188,25 +162,16 @@
     delete p.eliminado; delete p.eliminadoEn; delete p.eliminadoPor;
     return upsert(p);
   }
-  /* Eliminar definitivamente (solo en modo local). */
+  /* Eliminar definitivamente. */
   function purge(id) {
     cache = full().filter((p) => p.uid !== id);
-    if (mode === 'nube') { backend.deleteProject(id); return true; }
     const ok = persist();
     emit({ type: 'local', ids: [id] });
     return ok;
   }
 
-  // ---- Nube -------------------------------------------------------------------
-  function useCloud(b, u) {
-    mode = 'nube'; backend = b; usuario = u; cache = []; sharedConfig = null;
-    emit({ type: 'reset' });
-  }
-  function useLocal() {
-    mode = 'local'; backend = null; usuario = null; cache = null; sharedConfig = null;
-    emit({ type: 'reset' });
-  }
-  /* Cambios que llegan del servidor o de la carpeta compartida. borrados: uids cuyo archivo ya
+  // ---- Cambios de otros ---------------------------------------------------------
+  /* Cambios que llegan de la carpeta compartida. borrados: uids cuyo archivo ya
      no existe. opts.conflicto: la versión llegó mientras había cambios sin subir (opts.local).
      opts.autores / opts.origen: quién y de dónde, para los avisos. En modo local se guardan
      en este navegador. */
@@ -225,7 +190,7 @@
       ids.push(...borrados);
     }
     if (ids.length) {
-      if (mode === 'local') persist();
+      persist();
       emit({
         type: 'remote', ids, autores: Array.from(autores), inicial: !!(opts && opts.inicial),
         conflicto: !!(opts && opts.conflicto), local: (opts && opts.local) || null,
@@ -238,7 +203,7 @@
      sobrescribirla con la copia vieja de esta página. Los que no cambiaron conservan su objeto. */
   if (root.addEventListener) {
     root.addEventListener('storage', (e) => {
-      if (mode !== 'local' || !cache || e.key !== LS_PROYECTOS) return;
+      if (!cache || e.key !== LS_PROYECTOS) return;
       let data;
       try { data = JSON.parse(e.newValue || 'null'); } catch (err) { return; }
       const antes = new Map(cache.map((p) => [p.uid, p]));
@@ -254,8 +219,8 @@
       if (ids.length) emit({ type: 'remote', ids, autores: [], origen: 'ventana' });
     });
   }
-  /* Proyectos guardados en este navegador en modo local (para subirlos a la nube).
-     No se borran al subirlos: quedan como respaldo y se ofrecen solo los que falten en la nube. */
+  /* Proyectos guardados en este navegador (los lee js/compartida.js de localStorage, no de la memoria
+     de esta página: si otra pestaña acaba de guardar, manda su versión). */
   function localProjects() {
     const data = lsGet(LS_PROYECTOS, { proyectos: [] });
     return (data.proyectos || []).map(normalize);
@@ -412,7 +377,7 @@
     uid, hoy, clone, getConfig, setConfig,
     all, trash, get, upsert, remove, restore, purge, nextCodigo, normalize, cloneProject,
     newProject, newPartida, newPartidaBase, newMaterial, newEquipo, newManoObra, newOtro, exampleProject,
-    on, emit, getMode, getUser, useCloud, useLocal, applyRemote, setSharedConfig, localProjects,
+    on, emit, getMode, getUser, applyRemote, localProjects,
     _resetCache: () => { cache = null; }
   };
   root.QStore = api;

@@ -27,7 +27,6 @@
  *  - Nunca se elimina, mueve ni renombra nada. Al adjudicarse, copiar la carpeta a «Gestión de Proyectos» y
  *    pasar el original a «0 OFERTAS ADJUDICADAS» lo hace QUEMPIN.exe en el computador, que pregunta antes
  *    (ver «Abrir la carpeta y pasarla a Gestión»).
- * Con SharePoint configurado no hace nada: ahí cloud.js guarda el Excel junto al proyecto.
  */
 (function (root) {
   'use strict';
@@ -43,6 +42,7 @@
   const RE_CARPETA_OFERTA = /^(\d+)\s*[.\-]\s*(.*)$/;
   const MAX_PROF = 4;      // carpetas «0 …» anidadas que se recorren
   const MAX_COPIAS = 9;
+  const RECIENTE_MS = 120000;   // un Excel ilegible cambiado hace menos que esto se está escribiendo: se espera
 
   const S = () => root.QStore;
   const X = () => root.QIntercambio;
@@ -50,7 +50,7 @@
   const limpiarNombre = (s) => nfc(s).replace(/[\\/:*?"<>|#%]+/g, '-').replace(/\s+/g, ' ').replace(/^[\s.]+|[\s.]+$/g, '');
 
   // ---- Carpetas de oferta (sin efectos: se prueba en node) -------------------------------------
-  /* Mismos criterios que el modo SharePoint (cloud.js): «0 OFERTAS ADJUDICADAS», «0 Ofertas
+  /* «0 OFERTAS ADJUDICADAS», «0 Ofertas
      Cerradas 2025»… agrupan; «1 CARPETA MODELO» y «2 ARCHIVOS…» no son ofertas. */
   function grupoDe(nombre, previo) {
     if (!/^0 /.test(nombre)) return previo;
@@ -275,9 +275,21 @@
   }
 
   // ---- Escritura (único punto que escribe en la biblioteca) ---------------------------------
-  async function uidDe(file) {
-    if (!file.size) return '';   // vacío (una escritura que no terminó): no hay nada que cuidar
-    try { return (await root.QExcel.uidDeExcel(await file.arrayBuffer())) || null; } catch (e) { return null; }
+  /* { uid, modificado } del Excel que ya está en la carpeta; uid '' si está vacío (una escritura que no
+     terminó: no hay nada que cuidar). Si no se puede leer en este momento (OneDrive lo está reemplazando),
+     lanza un error de «ocupado» que se reintenta en un minuto: antes se lo tomaba por el Excel de otro
+     proyecto y se escribía un «(2)» que después quedaba como el de este presupuesto (2026-10-19, N° 289). */
+  async function versionDe(file) {
+    if (!file.size) return { uid: '', modificado: null };
+    const buf = await file.arrayBuffer();
+    try { return await root.QExcel.versionDeExcel(buf); } catch (e) {
+      // Un .xlsx (zip, empieza con «PK») recién cambiado que no se puede leer se está escribiendo o
+      // sincronizando: se reintenta. Cualquier otro no es un Excel de la herramienta.
+      const b = new Uint8Array(buf.slice ? buf.slice(0, 2) : buf);
+      const zip = b[0] === 0x50 && b[1] === 0x4B;
+      if (zip && Date.now() - file.lastModified < RECIENTE_MS) throw Object.assign(new Error('el archivo está abierto o bloqueado'), { name: 'NoModificationAllowedError' });
+      return { uid: null, modificado: null };
+    }
   }
   /* Escribe el Excel de p en la carpeta de su oferta. Devuelve { archivo, ruta, movida, lastModified, size }. */
   async function escribirExcel(p, previo) {
@@ -287,7 +299,7 @@
     if (!v) throw new Error('El proyecto no tiene carpeta de oferta.');
     const u = await ubicar(bib, v);
     if (!u) throw new Error(`No se encuentra la carpeta «${v.nombre}» en la biblioteca. Si le cambiaron el nombre, vuelve a elegirla.`);
-    const datos = await root.QExcel.exportProject(p, { soloDatos: true, copiaOferta: true });
+    let datos = null;   // se arma solo si hay que escribir
     const mismoLugar = !!(previo && rutaIgual(previo.ruta, u.ruta));
     for (const nombre of candidatos(p, mismoLugar ? previo.archivo : '')) {
       let fh = null;
@@ -299,11 +311,17 @@
       if (fh) {
         const f = await fh.getFile();
         const conocido = mismoLugar && previo.archivo === nombre && previo.lastModified === f.lastModified && previo.size === f.size;
-        const uid = conocido ? p.uid : await uidDe(f);
-        if (uid !== p.uid && uid !== '') continue;   // es de otro presupuesto, o no es de la herramienta
+        const ver = conocido ? { uid: p.uid, modificado: previo.modificado } : await versionDe(f);
+        if (ver.uid !== p.uid && ver.uid !== '') continue;   // es de otro presupuesto, o no es de la herramienta
+        // Ya tiene esta versión (la escribió este u otro equipo): reescribirla igual solo sube otra copia
+        // idéntica a SharePoint y abre la puerta a copias en conflicto de OneDrive.
+        if (ver.uid === p.uid && ver.modificado && ver.modificado === p.modificado) {
+          return { archivo: nombre, ruta: u.ruta, movida: u.movida, lastModified: f.lastModified, size: f.size, sinCambios: true };
+        }
       } else {
         fh = await u.dir.getFileHandle(nombre, { create: true });
       }
+      if (!datos) datos = await root.QExcel.exportProject(p, { soloDatos: true, copiaOferta: true });
       const w = await fh.createWritable();
       try { await w.write(datos); await w.close(); } catch (e) {
         try { await w.abort(); } catch (e2) { /* ya cerrado */ }
@@ -394,9 +412,14 @@
     const uids = pendientes();
     if (!uids.length) return;
     if (!(await X().biblioteca())) { avisar(uids); return; }   // sin biblioteca o sin permiso: esperar
+    const marcados = leerEstado().pendientes || {};
     for (const uid of uids) {
       const p = S().get(uid);
       if (!p || p.eliminado || !escribible(vinculo(p))) { desmarcar(uid); errores.delete(uid); avisar([uid]); continue; }
+      // Lo marcado era una versión hecha aquí que ya no es la del proyecto: llegó una más nueva de otro
+      // equipo (o la de aquí quedó como copia en un conflicto). Ese equipo escribe su Excel. Antes la marca
+      // no se borraba nunca y el Excel se reescribía igual en cada vuelta de la carpeta, cada 20 s (2026-10-19).
+      if (marcados[uid] !== p.modificado) { desmarcar(uid); errores.delete(uid); avisar([uid]); continue; }
       const err = errores.get(uid);
       if (err && !forzar && Date.now() - err.t < T.reintento) continue;
       try { await escribirUno(p); } catch (e) { /* queda pendiente con su error */ }
