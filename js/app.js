@@ -565,7 +565,6 @@
         telefono ? { icon: ICON.rehacer, title: 'Rehacer', desc: hist.redo.length ? 'Vuelve a hacer lo deshecho' : 'Nada que rehacer', act: 'rehacer', disabled: !hist.redo.length } : null,
         telefono ? { sep: true } : null,
         enEditor ? { icon: ICON.print, title: 'Imprimir resumen', desc: 'Utilidad, precio y evaluación en una página', act: 'imprimir' } : null,
-        enEditor ? { icon: ICON.gantt, title: 'Carta Gantt', desc: ((state.project && state.project.gantt) || { tareas: [] }).tareas.length ? 'Ver, editar o descargar en PDF el programa de trabajo' : 'Opcional: el programa de trabajo de la oferta', act: 'tab', tab: 'gantt' } : null,
         enEditor ? { sep: true } : null,
         enEditor ? null : { icon: ICON.open, title: 'Abrir', act: 'abrir', id },
         vo ? { icon: ICON.folder, title: 'Abrir la carpeta en el Explorador', desc: `Formulación de proyectos · ${vo.nombre}`, act: 'oferta-abrir', id } : null,
@@ -1551,7 +1550,7 @@
           aria-label="Paso ${ps.n}: ${esc(ps.label)}${ps.n === 2 ? ` (${plural(ps.cant, 'partida')})` : ps.n === 3 ? ` (${plural(ps.cant, 'costo')})` : ''}, ${EST[ps.est]}">
           <span class="paso-marca" aria-hidden="true">${marca}</span><span class="paso-l">${esc(ps.label)}</span>${ps.n === 2 || ps.n === 3 ? `<span class="count" aria-hidden="true">${ps.cant}</span>` : ''}
         </button>`;
-    }).join('<span class="paso-sep" aria-hidden="true"></span>') + pestanaGantt() + pestanaSeguimiento();
+    }).join('<span class="paso-sep" aria-hidden="true"></span>') + pestanaSeguimiento();
     // Al escribir casi nunca cambia: sin cambios no se toca el DOM ni se mide (medir fuerza el diseño)
     if (!pintar(el, html)) return;
     // En pantallas angostas la barra se desplaza: mantener visible el paso activo
@@ -1563,15 +1562,8 @@
     }
   }
 
-  /* Pestaña «Carta Gantt», opcional: no es un paso de la formulación */
-  function pestanaGantt() {
-    const on = state.tab === 'gantt';
-    const n = ((state.project && state.project.gantt) || { tareas: [] }).tareas.length;
-    return `<span class="paso-sep paso-sep-seg" aria-hidden="true"></span><button type="button" class="paso-tab paso-seg paso-gantt ${on ? 'active' : ''}" data-act="tab" data-tab="gantt" ${on ? 'aria-current="page"' : ''}
-        aria-label="Carta Gantt, opcional${n ? `: ${plural(n, 'tarea')}` : ''}">
-        <span class="paso-marca" aria-hidden="true">${ICON.gantt}</span><span class="paso-l">Carta Gantt</span><span class="paso-opc" aria-hidden="true">${n || 'opcional'}</span>
-      </button>`;
-  }
+  /* La Carta Gantt ya no tiene pestaña ni opción de menú aquí (pedido del usuario, 2026-10-20): vive en su
+     propia ventana del Portal QUEMPIN, que abre este Formulador en #/p/<uid>/gantt. */
 
   /* Pestaña «Seguimiento», después de los 5 pasos: lo que sigue con la oferta en las demás herramientas.
      Se marca cuando hay algo que hacer ahí. */
@@ -3374,6 +3366,7 @@
         case 'config': await openConfig(); break;
         case 'abrir-url': if (d.url) window.open(d.url, '_blank', 'noopener'); break;
         case 'info-sistema': await infoSistema(); break;
+        case 'abrir-sistema': abrirSistemaQuempin(); break;
         case 'enviar-af': await enviarAF(id); break;
         case 'af-estado': await actualizarEstadoAF(p, true); toast('Estado del envío actualizado'); break;
         case 'req-completar': await completarDesdePlanilla(); break;
@@ -4872,7 +4865,7 @@
   async function infoSistema() {
     const p = state.project;
     const borr = p && ((p.vinculos || {}).sistemaQuempin || {}).ultimoBorrador;
-    await ask({
+    const v = await ask({
       title: 'Sistema QUEMPIN',
       body: `<p>Es el programa que emite las <b>cotizaciones</b> y las <b>órdenes de compra</b> con su número y su PDF. Se usa en el computador, no en el navegador.</p>
         <ol class="rcl-pasos">
@@ -4881,8 +4874,9 @@
           <li>Al emitir, el Formulador recibe el número solo: el seguimiento del proyecto dice qué sigue.</li>
         </ol>
         ${borr && !borr.folio ? `<p class="af-linea"><span class="chip warn">En espera</span> La cotización de <b>${esc(p.codigo)} v${esc(borr.version)}</b> ya está en «Borradores del Formulador».</p>` : ''}`,
-      buttons: [{ label: 'Entendido', primary: true }]
+      buttons: [{ label: 'Cerrar', value: '' }, { label: 'Abrir Sistema QUEMPIN', value: 'abrir', primary: true }]
     });
+    if (v === 'abrir') abrirSistemaQuempin();
   }
   let publicadoDe = { uid: null, datos: null };   // lo último leído de la carpeta para el proyecto abierto
   let refinadoUid = null;
@@ -5319,11 +5313,13 @@
       + (vo ? linea(`${ICON.folder}<span class="rcl-carpeta">Carpeta de la oferta: <b>${esc(vo.nombre)}</b> · el Excel de la formulación se mantiene al día ahí.</span>`) : '');
     const bFormulacion = falta ? `<button type="button" class="btn" data-act="sigue" data-accion="ir-paso">Ir al paso ${falta.n}${ICON.arrow}</button>` : '<button type="button" class="btn" data-act="tab" data-tab="evaluacion">Ver la evaluación</button>';
     const bloqueAF = (venta) => `<div class="herr-af"><div class="af-panel" id="af-panel"></div>${venta || ''}</div>`;
+    // Sistema QUEMPIN se abre desde aquí, con o sin la carpeta del equipo (pedido del usuario, 2026-10-20)
+    const bSistema = `<button type="button" class="btn" data-act="abrir-sistema">${ICON.monitor}Abrir Sistema QUEMPIN</button>`;
     const reqSinCarpeta = req ? linea(`<span class="code-badge">N° ${esc(req)}</span> en la Planilla de Ingreso.`) : '';
     const sinReq = linea('Escribe el N° de requerimiento en los datos del proyecto: une este proyecto con su cotización, el Análisis Financiero y el Flujo de Caja.') + acciones('<button type="button" class="btn" data-act="sigue" data-accion="ir-req">Escribir el N°</button>');
 
     const pintarSin = (aviso) => {
-      herrDe = { uid: p.uid, html: { requerimiento: req ? reqSinCarpeta : sinReq, formulacion: resumenFormulacion + acciones(bFormulacion), ejecucion: bloqueAF() }, aviso, pulso: '' };
+      herrDe = { uid: p.uid, html: { requerimiento: req ? reqSinCarpeta : sinReq, formulacion: resumenFormulacion + acciones(bFormulacion), cotizacion: acciones(bSistema), ejecucion: bloqueAF() }, aviso, pulso: '' };
       pintarRecorrido(recorridoDe(p));
     };
     // Sin la carpeta, lo de las demás herramientas no se puede leer; el envío al Análisis Financiero
@@ -5399,10 +5395,10 @@
         : eb && eb.estado === 'rechazado' ? esc((eb.detalle || []).join(' '))
           : eb && eb.estado === 'descartado' ? `Se descartó en Sistema QUEMPIN${motivo ? `. Motivo: <b>${esc(motivo.replace(/\.$/, ''))}</b>` : ''}.` : 'Espera en Sistema QUEMPIN a que alguien la revise y la emita.';
       tCot = linea(`${chipEstado(eb ? eb.estado : 'pendiente')} Versión ${esc(borr.version)} enviada el ${esc(fechaHora(borr.fecha))}. ${det}`)
-        + (espera ? `<ol class="rcl-pasos"><li>Abre <b>Sistema QUEMPIN</b> en tu computador.</li><li>En <b>Nueva Cotización</b>, usa el botón <b>Borradores del Formulador</b> y carga esta cotización.</li><li>Revísala y emítela: este proyecto verá su número solo.</li></ol>` : '');
+        + (espera ? `<ol class="rcl-pasos"><li>Abre <b>Sistema QUEMPIN</b> con el botón de abajo.</li><li>En <b>Nueva Cotización</b>, usa el botón <b>Borradores del Formulador</b> y carga esta cotización.</li><li>Revísala y emítela: este proyecto verá su número solo.</li></ol>` : '');
     }
     if (cots.length) tCot += linea('Emitidas: ' + cots.slice(0, 4).map((c) => `<span class="code-badge">${esc(c.folio)}</span> ${esc(fechaCorta(c.fecha))} · neto ${MONEDAS[c.moneda === 'SOL' ? 'PEN' : c.moneda] ? dinero(c.neto, c.moneda === 'SOL' ? 'PEN' : c.moneda) : `${nf(c.neto)} ${esc(c.moneda)}`}`).join(' · '));
-    html.cotizacion = tCot + acciones(`<button type="button" class="btn" data-act="herr-cotizacion" ${r.partidas.length ? '' : 'disabled'}>${ICON.enviar}${borr ? 'Preparar de nuevo…' : 'Preparar la cotización…'}</button>`);
+    html.cotizacion = tCot + acciones(`<button type="button" class="btn" data-act="herr-cotizacion" ${r.partidas.length ? '' : 'disabled'}>${ICON.enviar}${borr ? 'Preparar de nuevo…' : 'Preparar la cotización…'}</button>${bSistema}`);
 
     // 4. Oferta y adjudicación: el estado y el aviso a la Planilla de Ingreso
     let tPla = linea(`Estado de la oferta: <span class="estado" data-e="${esc(p.estado)}">${esc(p.estado)}</span>`), bPla = '';
@@ -6412,6 +6408,12 @@
     document.body.appendChild(a);
     a.click();
     a.remove();
+  }
+  /* Sistema QUEMPIN en «Nueva Cotización», con la misma dirección que usa el Portal (QUEMPIN.exe 1.3.8 o más
+     nuevo; si ya está abierto, va a esa ventana). */
+  function abrirSistemaQuempin() {
+    abrirEnlace('quempin://cotizacion');
+    toast(`Abriendo Sistema QUEMPIN en «Nueva Cotización». ${SIN_EXE}`, false, 7000);
   }
   /* enGestion: la copia de Gestión de Proyectos, donde sigue la ejecución */
   function abrirCarpetaOferta(uid, enGestion) {
