@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QUEMPIN — Carta Gantt</title>
+  <meta name="description" content="El programa de trabajo de cada proyecto de QUEMPIN, con su ruta crítica, en PDF y Excel.">
+  <link rel="icon" type="image/png" href="../assets/favicon.png">
+  <link rel="apple-touch-icon" href="../assets/icono-180.png">
+  <!-- Marca y componentes compartidos con el Formulador; lo propio de la Carta Gantt, en gantt.css -->
+  <link rel="stylesheet" href="../css/brand.css">
+  <link rel="stylesheet" href="../css/styles.css">
+  <link rel="stylesheet" href="gantt.css">
+  <script>
+    // Aplica el tema guardado antes de pintar (evita parpadeo)
+    try {
+      var t = localStorage.getItem('quempin_gantt_theme');
+      if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+  </script>
+</head>
+<body>
+<div class="viz-gate" id="pwGate">
+  <form class="viz-gate-card" id="pwForm">
+    <img src="../assets/logo-quempin-negativo.png" alt="QUEMPIN">
+    <h2>Carta Gantt</h2>
+    <p class="hint">Acceso restringido. Ingresa la contraseña de las herramientas QUEMPIN (la misma de los tableros).</p>
+    <input id="pwInput" type="password" placeholder="Contraseña" autocomplete="off" autocapitalize="off">
+    <button type="submit">Entrar</button>
+    <div class="viz-gate-error" id="pwError"></div>
+  </form>
+</div>
+
+<div class="viz-root" id="root" style="display:none">
+  <!-- Dentro del Portal QUEMPIN la cabecera se oculta (data-en-portal="gantt"): el portal tiene la suya -->
+  <header class="viz-header">
+    <div class="viz-container">
+      <a class="viz-logo" href="#/" aria-label="Inicio: cartas Gantt"><img src="../assets/isotipo.png" alt="" width="42" height="42"><span class="viz-wordmark">QUEMP<span class="in">IN</span></span></a>
+      <div class="viz-titleblock">
+        <h1>Carta Gantt</h1>
+        <p>El programa de trabajo de cada proyecto, con su ruta crítica</p>
+      </div>
+      <button class="viz-theme-toggle hb" type="button" id="themeToggle" data-act="tema">Modo oscuro</button>
+    </div>
+  </header>
+
+  <main id="app" tabindex="-1"></main>
+
+  <footer class="viz-container viz-footer">
+    Herramienta interna de <strong>QUEMPIN Soluciones Energéticas</strong> · Las cartas se guardan en este navegador y se comparten con el equipo por la carpeta de intercambio ·
+    <a href="https://www.quempin.cl" target="_blank" rel="noopener">www.quempin.cl</a>
+  </footer>
+
+  <!-- Capas flotantes: dentro de .viz-root para heredar los colores del tema -->
+  <div id="toast" role="status" aria-live="polite"></div>
+  <div id="tooltip" class="viz-tooltip" role="tooltip"></div>
+  <div id="pop" class="pop" hidden></div>
+  <dialog id="modal"></dialog>
+</div>
+
+<noscript><p style="padding:24px;font-family:sans-serif">Esta herramienta necesita JavaScript habilitado.</p></noscript>
+
+<!-- ../js/candado.js: el mismo del Formulador (copia de «Visualizador Web/candado.js» de Finanzas QUEMPIN). -->
+<script src="../js/candado.js"></script>
+<script>
+(function () {
+  // Barrera de contraseña: la misma del Formulador y los tableros. El sobre que la verifica es el del
+  // Formulador (su index.html, «llaveFormulador», que escribe candado.py --llave-formulador): se lee de
+  // ahí, así que cambiar la contraseña allá vale también aquí. Se recuerda la misma clave que ellos
+  // ('quempin_viz_clave', mismo sitio): quien ya entró a uno entra directo.
+  // Las marcas antiguas ('1' en localStorage) solo sirven en 127.0.0.1/localhost, donde corren las pruebas.
+  var CLAVE = 'quempin_viz_clave';
+  var MARCAS_ANTIGUAS = ['quempin_formulador_unlocked', 'quempin_viz_unlocked'];
+  var LOCAL = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  var SCRIPTS = ['../js/logo-data.js', '../js/usuario.js', '../js/intercambio.js', '../js/compartida.js',
+    'pdf.js', 'gantt.js', 'datos.js', 'excel.js', 'app.js'];
+  function aB64(arr) {
+    var bin = '';
+    for (var i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]);
+    return btoa(bin);
+  }
+  function deB64(b64) {
+    var bin = atob(b64), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  var gate = document.getElementById('pwGate');
+  var gateForm = document.getElementById('pwForm');
+  var gateInput = document.getElementById('pwInput');
+  var gateError = document.getElementById('pwError');
+  var boton = gateForm.querySelector('button');
+  var unlocked = false;
+  var sobre = null;
+
+  function unlock() {
+    if (unlocked) return;
+    unlocked = true;
+    gate.style.display = 'none';
+    document.getElementById('root').style.display = '';
+    SCRIPTS.forEach(function (src) {
+      var el = document.createElement('script');
+      el.src = src;
+      el.async = false; // conserva el orden de ejecución
+      document.body.appendChild(el);
+    });
+  }
+  function abre(clave) {
+    return QuempinCandado.descifrarBytes(clave, sobre).then(function () { return clave; });
+  }
+  function pedir() { gate.style.visibility = ''; gateInput.focus(); }
+  function sinLlave(msg) { gate.style.visibility = ''; gateError.textContent = msg; boton.disabled = true; }
+
+  var marcaLocal = false;
+  try {
+    marcaLocal = MARCAS_ANTIGUAS.some(function (k) { return localStorage.getItem(k) === '1'; });
+    if (!LOCAL) MARCAS_ANTIGUAS.forEach(function (k) { localStorage.removeItem(k); });
+  } catch (e) {}
+  if (LOCAL && marcaLocal) { unlock(); return; }
+
+  gateForm.addEventListener('submit', function (evt) {
+    evt.preventDefault();
+    if (!sobre) return;   // todavía se está leyendo la llave
+    boton.disabled = true;
+    gateError.textContent = 'Verificando…';
+    QuempinCandado.derivar(gateInput.value, sobre).then(abre).then(function (clave) {
+      try { localStorage.setItem(CLAVE, aB64(clave)); } catch (e) {}
+      gateError.textContent = '';
+      unlock();
+    }, function () {
+      gateError.textContent = 'Contraseña incorrecta. Intenta de nuevo.';
+      boton.disabled = false;
+      gateInput.value = '';
+      gateInput.focus();
+    });
+  });
+
+  gate.style.visibility = 'hidden';
+  fetch('../index.html', { cache: 'no-cache' }).then(function (r) { return r.text(); }).then(function (html) {
+    var el = new DOMParser().parseFromString(html, 'text/html').getElementById('llaveFormulador');
+    try { sobre = JSON.parse(el.textContent); } catch (e) { sobre = null; }
+  }).catch(function () { sobre = null; }).then(function () {
+    if (!sobre || !window.crypto || !crypto.subtle || typeof QuempinCandado === 'undefined') {
+      sinLlave(sobre ? 'Este navegador no puede verificar la contraseña. Actualízalo, o usa Chrome, Edge o Safari al día.'
+        : 'No se pudo leer la llave de la contraseña. Revisa la conexión y vuelve a cargar la página.');
+      return;
+    }
+    var recordada = null;
+    try { recordada = localStorage.getItem(CLAVE); } catch (e) {}
+    if (!recordada) { pedir(); return; }
+    var clave;
+    try { clave = deB64(recordada); } catch (e) { clave = new Uint8Array(0); }
+    abre(clave).then(unlock, pedir);
+  });
+})();
+</script>
+</body>
+</html>

@@ -151,9 +151,6 @@
     const wsE = wb.addWorksheet('Equipos', { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }] });
     const wsH = wb.addWorksheet('Mano de obra', { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }] });
     const wsO = wb.addWorksheet('Otros', { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }] });
-    // Carta Gantt (opcional, 2026-10-13): solo si el proyecto tiene tareas
-    const conGantt = !!(p.gantt && Array.isArray(p.gantt.tareas) && p.gantt.tareas.length && root.QGantt);
-    const wsGt = conGantt ? wb.addWorksheet('Carta Gantt', { views: [{ state: 'frozen', xSplit: 2, ySplit: 4, showGridLines: false }] }) : null;
     const wsG = wb.addWorksheet('Guía', { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }] });
     const wsD = wb.addWorksheet('_datos', { state: 'hidden' });
     const ident = `${p.codigo} · v${p.version} · ${p.titulo || 'Sin título'}`;
@@ -659,71 +656,6 @@
       fill: nErr ? C.badBg : (nWarn ? C.warnBg : C.okBg)
     });
 
-    // ---------------- Carta Gantt ----------------
-    // La misma grilla que la hoja «Carta Gantt» de las planillas .xlsm del equipo: una columna por día
-    // (o por semana si el plazo pasa de 10 semanas), pintada donde trabaja cada tarea; en naranja la
-    // ruta crítica. Las fechas son las calculadas por la herramienta (js/gantt.js).
-    if (wsGt) {
-      const QG = root.QGantt;
-      const res = QG.calcular(p.gantt, root.QStore.hoy());
-      const nums = new Map(p.gantt.tareas.map((tg, i) => [tg.uid, i + 1]));
-      const codigos = new Map((r.base ? [r.base] : []).concat(r.partidas).map((x) => [x.uid, x.code]));
-      const habiles = res.calendario.habiles;
-      const DIAMS = 86400000;
-      const fecha = (d) => new Date(d * DIAMS);
-      styleTitle(wsGt, 'CARTA GANTT', `${ident} — Inicio ${QG.fechaCorta(res.inicio)} · Término ${QG.fechaCorta(res.termino)} · Plazo ${res.plazoLaborable} ${habiles ? `días hábiles (${res.plazoCorrido} corridos)` : 'días corridos'}`);
-      const porSemana = res.termino - res.inicio + 1 > 70;
-      const paso = porSemana ? 7 : 1;
-      const d0 = porSemana ? res.inicio - ((fecha(res.inicio).getUTCDay() + 6) % 7) : res.inicio;
-      const nCols = Math.max(1, Math.ceil((res.termino + 1 - d0) / paso));
-      const fijas = ['N°', 'Tarea', 'Partida', 'Responsable', 'Días', 'Predecesoras', 'Inicio', 'Término', 'Avance'];
-      const nF = fijas.length;
-      wsGt.columns = [5, 40, 8, 16, 7, 13, 11, 11, 8].map((w) => ({ width: w })).concat(Array.from({ length: nCols }, () => ({ width: porSemana ? 4.6 : 3.4 })));
-      const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-      let mesAnterior = -1;
-      for (let j = 0; j < nCols; j++) {
-        const f = fecha(d0 + j * paso);
-        if (f.getUTCMonth() !== mesAnterior) {
-          const c = wsGt.getRow(3).getCell(nF + 1 + j);
-          c.value = `${MES[f.getUTCMonth()]} ${f.getUTCFullYear()}`;
-          c.font = { name: FONT, size: 9, bold: true, color: { argb: C.dark } };
-          mesAnterior = f.getUTCMonth();
-        }
-      }
-      const hg2 = wsGt.getRow(4);
-      hg2.values = fijas.concat(Array.from({ length: nCols }, (_, j) => fecha(d0 + j * paso).getUTCDate()));
-      styleHeader(hg2);
-      for (let j = 0; j < nCols; j++) hg2.getCell(nF + 1 + j).font = { name: FONT, size: 8, bold: true, color: { argb: C.white } };
-      res.tareas.forEach((tg, i) => {
-        const row = wsGt.getRow(5 + i);
-        row.values = [tg.n, tg.nombre || 'Sin nombre', tg.partida ? (codigos.get(tg.partida) || '') : '', tg.responsable || '', tg.hito ? 'hito' : tg.dur,
-          QG.textoPredecesoras(tg, nums), fecha(tg.dIni), fecha(tg.dFin), tg.hito ? '' : (Number(tg.avance) || 0) / 100];
-        row.getCell(7).numFmt = 'dd-mm-yyyy';
-        row.getCell(8).numFmt = 'dd-mm-yyyy';
-        row.getCell(9).numFmt = '0%';
-        row.getCell(1).alignment = { horizontal: 'center' };
-        [5, 7, 8, 9].forEach((ci) => { row.getCell(ci).alignment = { horizontal: 'center' }; });
-        if (tg.hito) row.getCell(2).font = { name: FONT, size: 10, bold: true };
-        for (let j = 0; j < nCols; j++) {
-          const a = d0 + j * paso, z = a + paso - 1;
-          const c = row.getCell(nF + 1 + j);
-          c.border = { right: { style: 'hair', color: { argb: C.line } }, bottom: { style: 'hair', color: { argb: C.line } } };
-          const cubre = tg.hito ? tg.dIni >= a && tg.dIni <= z : tg.dIni <= z && tg.dFin >= a;
-          if (cubre && tg.hito) {
-            c.value = '◆';
-            c.alignment = { horizontal: 'center' };
-            c.font = { name: FONT, size: 10, bold: true, color: { argb: tg.critica ? C.brand : C.dark } };
-          } else if (cubre) c.fill = solid(tg.critica ? C.brand : C.gray);
-          else if (!porSemana && habiles && !res.calendario.laborable(a)) c.fill = solid(C.light);
-        }
-      });
-      const ley = wsGt.getRow(6 + res.tareas.length);
-      ley.getCell(2).value = `En naranja, la ruta crítica (tareas sin holgura)${habiles && !porSemana ? '; en gris claro, los días no laborables' : ''}. Columnas por ${porSemana ? 'semana (lunes)' : 'día'}. Predecesoras: 2 = después de que termina la 2; 2CC = cuando empieza la 2; 2FF = termina con la 2; +n / -n = días de desfase.`;
-      ley.getCell(2).font = { name: FONT, size: 9, italic: true, color: { argb: C.gray } };
-      wsGt.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
-      wsGt.headerFooter = { oddFooter: `&L${p.codigo} v${p.version}&RPágina &P de &N` };
-    }
-
     // ---------------- Guía de indicadores ----------------
     styleTitle(wsG, 'GUÍA DE INDICADORES', `${ident} — Qué mide cada indicador de la Ficha y cómo se lee.`);
     wsG.columns = [{ width: 30 }, { width: 42 }, { width: 55 }, { width: 70 }, { width: 45 }];
@@ -752,7 +684,7 @@
     const CH = 30000;
     for (let i = 0, rr = 2; i < json.length; i += CH, rr++) wsD.getCell(`A${rr}`).value = json.slice(i, i + CH);
 
-    [wsF, wsPar, wsP, wsM, wsE, wsH, wsO, wsG].concat(wsGt ? [wsGt] : []).forEach(baseFont);
+    [wsF, wsPar, wsP, wsM, wsE, wsH, wsO, wsG].forEach(baseFont);
     // Filas alternadas en las tablas de detalle (sin tapar los rellenos de aviso)
     [[wsP, pEnd, 17], [wsM, mEnd, 8], [wsE, eEnd, 8], [wsH, hEnd, 13], [wsO, oEnd, 8]].forEach(([ws, end, nc]) => {
       for (let rr = 5; rr <= end; rr++) {

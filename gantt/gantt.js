@@ -1,7 +1,8 @@
 /*
- * gantt.js — Carta Gantt del proyecto (2026-10-13). Opcional: no es un paso de la formulación.
+ * gantt.js — Carta Gantt (2026-10-13). Desde el 2026-10-20 es una herramienta aparte del Formulador
+ * (gantt/index.html); hasta entonces vivía dentro de cada proyecto (p.gantt).
  *
- * Modelo (p.gantt, ver js/store.js):
+ * Modelo (carta.gantt, ver gantt/datos.js):
  *   { inicio: 'AAAA-MM-DD', calendario: 'habiles' | 'corridos', escala: 'auto' | 'dias' | 'semanas' | 'meses',
  *     noLaborables: ['AAAA-MM-DD', …],
  *     tareas: [{ uid, nombre, partida, responsable, duracion, hito, avance, noAntesDe,
@@ -15,7 +16,7 @@
  * Ruta crítica: las tareas sin holgura (paso hacia atrás desde el término del proyecto).
  *
  * dibujo() arma la lámina con figuras simples (rect, línea, polígono, texto) que se pintan igual en
- * pantalla (SVG) y en el PDF (js/pdf.js): una sola lógica de diseño para los dos.
+ * pantalla (SVG) y en el PDF (gantt/pdf.js): una sola lógica de diseño para los dos.
  */
 (function (root) {
   'use strict';
@@ -220,7 +221,7 @@
   }
 
   // ---- Lámina: figuras simples para SVG y PDF -----------------------------------------------------
-  /* Mide un texto (puntos). Con js/pdf.js cargado usa los anchos de Helvetica; si no, una aproximación. */
+  /* Mide un texto (puntos). Con gantt/pdf.js cargado usa los anchos de Helvetica; si no, una aproximación. */
   const medir = (s, size, bold) => (root.QPdf ? root.QPdf.ancho(s, size, bold) : String(s).length * size * (bold ? 0.58 : 0.52));
   const recortar = (s, size, bold, maxW) => {
     if (root.QPdf) return root.QPdf.recortar(s, size, bold, maxW);
@@ -447,9 +448,9 @@
   }
 
   /* El PDF de la Carta Gantt (A4 horizontal; varias páginas si hay muchas tareas).
-     p: el proyecto; logo: { jpeg: Uint8Array, px, py } opcional. Devuelve Uint8Array. */
+     p: { gantt, codigo, version, titulo, cliente, responsable } (codigo vacío en una carta suelta); logo: { jpeg: Uint8Array, px, py } opcional. Devuelve Uint8Array. */
   function pdf(p, res, logo, ahora) {
-    if (!root.QPdf) throw new Error('Falta js/pdf.js');
+    if (!root.QPdf) throw new Error('Falta gantt/pdf.js');
     const doc = root.QPdf.documento({ ancho: 842, alto: 595 });
     const g = p.gantt || {};
     const M = 28, W = 842 - 2 * M;
@@ -475,7 +476,7 @@
         xt = M + w + 12;
       }
       doc.texto(xt, M + 10, 'Carta Gantt', { size: 16, bold: true, color: '#171513' });
-      doc.texto(xt, M + 24, `${p.codigo || ''} v${p.version || 1} · ${p.titulo || 'Proyecto sin título'}`, { size: 9, color: '#52514e', maxW: 430 });
+      doc.texto(xt, M + 24, p.codigo ? `${p.codigo} v${p.version || 1} · ${p.titulo || 'Proyecto sin título'}` : (p.titulo || 'Sin nombre'), { size: 9, color: '#52514e', maxW: 430 });
       const der = 842 - M;
       // El responsable del proyecto junto al cliente (2026-10-16: lo que se genera lleva a su responsable).
       // Va primero: si no cabe, se recorta el nombre del cliente
@@ -499,7 +500,7 @@
       if (conHolgura) ley((x0, y0) => { doc.linea(x0, y0 + 2, x0 + 16, y0 + 2, { stroke: COLOR.holgura, lw: 0.6, dash: [1.5, 1.5] }); doc.linea(x0 + 16, y0 - 1, x0 + 16, y0 + 2, { stroke: COLOR.holgura, lw: 0.6 }); }, 'Holgura');
       if (conHoy) ley((x0, y0) => doc.linea(x0 + 8, y0 - 5, x0 + 8, y0 + 5, { stroke: COLOR.hoy, lw: 0.9, dash: [3, 2] }), `Hoy (${gen})`);
       doc.linea(M, 595 - 26, 842 - M, 595 - 26, { stroke: '#e1e0d9', lw: 0.5 });
-      doc.texto(M, 595 - 16, `QUEMPIN SpA · Formulación de proyectos · generado el ${gen}`, { size: 7, color: '#898781' });
+      doc.texto(M, 595 - 16, `QUEMPIN SpA · Carta Gantt · generado el ${gen}`, { size: 7, color: '#898781' });
       doc.texto(842 - M, 595 - 16, `Página ${k + 1} de ${tramos.length}`, { size: 7, color: '#898781', align: 'right' });
     });
     return doc.bytes();

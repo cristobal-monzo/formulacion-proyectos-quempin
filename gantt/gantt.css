@@ -1,0 +1,112 @@
+/* gantt.css — La Carta Gantt, herramienta aparte del Formulador desde el 2026-10-20 (gantt/index.html).
+   Usa la marca y los componentes del Formulador (../css/brand.css y ../css/styles.css: botones, tablas,
+   tarjetas, diálogos, menús); aquí va solo lo suyo. */
+
+/* ---- La carta (2026-10-13; gantt/gantt.js) ---- */
+.g-toolbar { margin-top: 22px; align-items: center; }
+.g-toolbar .right { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.g-resumen.kpis { margin: 4px 0 18px; }
+.g-resumen .kpi-value { font-size: 20px; }
+.tbl-gantt { table-layout: fixed; width: 100%; }
+.tbl-gantt col.c-n { width: 44px; } .tbl-gantt col.c-resp { width: 130px; } .tbl-gantt col.c-dias { width: 74px; }
+.tbl-gantt col.c-pred { width: 112px; } .tbl-gantt col.c-nad { width: 142px; } .tbl-gantt col.c-av { width: 82px; }
+.tbl-gantt col.c-fecha { width: 96px; } .tbl-gantt col.c-acc { width: 44px; }
+.tbl-gantt td.calc { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tbl-gantt .ci { width: 100%; min-width: 0; }
+.tbl-gantt .g-num { font-weight: 700; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.tbl-gantt tr.g-critica td.code { box-shadow: inset 3px 0 0 var(--brand-orange); }
+.tbl-gantt tr.g-critica .g-num { color: var(--brand-orange-ink); }
+.tbl-gantt tr.g-par td { background-color: var(--orange-soft); }
+.g-tarea { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.g-tarea .ci { flex: 1 1 auto; }
+.g-tarea .pcode { flex: 0 0 auto; }
+.g-rombo { flex: 0 0 auto; width: 9px; height: 9px; background: var(--text-primary); transform: rotate(45deg); margin: 0 3px; }
+.tbl-gantt tr.g-hito .ci.desc { font-weight: 700; }
+.g-es-hito { color: var(--text-muted); font-size: 12px; }
+.g-vacio { padding: 18px 20px; border: 1px dashed var(--baseline); border-radius: 10px; background: var(--surface-card); max-width: 760px; }
+.g-vacio p { margin: 0 0 12px; }
+.g-lamina-cab { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin: 0 0 8px; }
+.g-lamina-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+/* La lámina (la misma figura del PDF) toma sus colores de estas variables y sigue el modo oscuro.
+   El PDF usa los colores de papel de js/gantt.js (COLOR). */
+.gantt-lienzo {
+  --g-critica: #ff5100; --g-critica-avance: #b23a00; --g-tarea: #54565a; --g-tarea-avance: #1c1a18; --g-hito: #000000;
+  --g-texto: #171513; --g-suave: #52514e; --g-muted: #898781; --g-grilla: #e1e0d9; --g-base: #c3c2b7; --g-finde: #f4f2ee; --g-fondo: #ffffff;
+  background: var(--g-fondo); border: 1px solid var(--gridline); border-radius: 10px; padding: 10px; overflow-x: auto;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .gantt-lienzo {
+    --g-critica-avance: #8f2e00; --g-tarea: #6e7075; --g-tarea-avance: #d9d7d0; --g-hito: #f4f2ee; --g-texto: #f4f2ee;
+    --g-suave: #c3c2b7; --g-muted: #8f8d86; --g-grilla: #34322e; --g-base: #4d4b46; --g-finde: #2a2825; --g-fondo: var(--surface-card);
+  }
+}
+:root[data-theme="dark"] .gantt-lienzo {
+  --g-critica-avance: #8f2e00; --g-tarea: #6e7075; --g-tarea-avance: #d9d7d0; --g-hito: #f4f2ee; --g-texto: #f4f2ee;
+  --g-suave: #c3c2b7; --g-muted: #8f8d86; --g-grilla: #34322e; --g-base: #4d4b46; --g-finde: #2a2825; --g-fondo: var(--surface-card);
+}
+.gantt-lienzo svg { display: block; max-width: none; }
+.gantt-svg .g-banda, .gantt-svg .g-barra { cursor: pointer; }
+.gantt-svg .g-banda.on { fill: var(--orange-soft) !important; }
+.gantt-svg .g-barra { transition: opacity .12s; }
+.gantt-svg .g-barra:hover { opacity: .82; }
+.g-leyenda { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin: 8px 2px 0; color: var(--text-secondary); }
+.g-leyenda > span { display: inline-flex; align-items: center; gap: 6px; }
+.g-leyenda > span[hidden] { display: none; }
+.g-leyenda .gl-nota { flex: 1 1 260px; justify-content: flex-end; text-align: right; }
+.g-leyenda i { display: inline-block; flex: 0 0 auto; }
+.gl-barra { width: 18px; height: 8px; border-radius: 2px; background: #6e7075; }
+.gl-barra.gl-critica { background: var(--brand-orange); }
+.gl-barra.gl-avance { background: linear-gradient(to bottom, transparent 30%, var(--text-primary) 30% 70%, transparent 70%) no-repeat left / 60% 100%, #6e7075; }
+.gl-holgura { width: 18px; height: 6px; border-bottom: 1px dashed var(--text-muted); border-right: 1px solid var(--text-muted); }
+.gl-rombo { width: 8px; height: 8px; margin: 0 3px; background: var(--text-primary); transform: rotate(45deg); }
+.gl-hoy { width: 0; height: 12px; margin: 0 6px; border-left: 2px dashed var(--brand-orange); }
+.g-pie-borrar { margin-top: 14px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; }
+@media (max-width: 1100px) and (min-width: 641px) { .tbl-gantt .g-opc { display: none; } }
+@media (max-width: 640px) {
+  .tbl-gantt { table-layout: auto; }
+  .tbl-gantt td[data-label="Tarea"] { grid-column: 1 / -1; }
+  .g-toolbar .right { margin-left: 0; width: 100%; }
+  .g-toolbar .right .btn { flex: 1 1 auto; }
+  .g-lamina-ctl { width: 100%; }
+  .g-lamina-ctl .btn { flex: 1 1 auto; }
+  .g-leyenda .gl-nota { display: none; }
+}
+
+/* ---- La herramienta (2026-10-20): lista de cartas, vínculo con el proyecto, carpeta del equipo ---- */
+.g-pagina { padding-top: 18px; }
+html[data-en-portal] .g-pagina { padding-top: 6px; }
+.g-volver { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 10px; font-size: 13px; font-weight: 700; color: var(--text-secondary); text-decoration: none; }
+.g-volver:hover { color: var(--text-primary); }
+.g-volver svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.g-carpeta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 14px; font-size: 13px; color: var(--text-secondary); }
+.g-carpeta:empty { display: none; }
+.g-carpeta svg { width: 15px; height: 15px; vertical-align: -3px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.g-carpeta > span > svg { margin-right: 6px; }
+.g-cab-acc { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.g-cab-acc .icon-btn:disabled { opacity: .35; cursor: default; }
+.g-vinculo { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-height: 38px; }
+.g-pie-carta { margin-top: 18px; }
+.tbl-cartas tbody tr[data-abrir] { cursor: pointer; }
+.tbl-cartas tbody tr[data-abrir]:hover td { background: var(--orange-soft); }
+.tbl-cartas td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.g-eliminadas { margin-top: 22px; }
+.g-papelera { list-style: none; margin: 0; padding: 0; }
+.g-papelera li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 14px; padding: 8px 0; border-bottom: 1px solid var(--gridline); font-size: 13.5px; }
+.g-papelera li:last-child { border-bottom: 0; }
+/* Elegir el proyecto del Formulador */
+.g-plista { display: flex; flex-direction: column; gap: 4px; max-height: min(46vh, 420px); overflow-y: auto; margin: 4px 0 10px; padding: 2px; }
+.g-pfila { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 9px 12px; text-align: left; font: inherit; color: var(--text-primary);
+  background: var(--surface-card); border: 1px solid var(--gridline); border-radius: 8px; cursor: pointer; }
+.g-pfila:hover, .g-pfila:focus-visible { border-color: var(--brand-orange); background: var(--orange-soft); }
+.g-pfila.sel { border-left: 3px solid var(--brand-orange); }
+.g-pfila[hidden] { display: none; }
+.g-pfila-t { font-weight: 700; overflow-wrap: anywhere; }
+.g-pfila-d { font-size: 12.5px; color: var(--text-secondary); }
+.g-psuelta { margin: 6px 0 0; }
+@media (max-width: 640px) {
+  .g-cab-acc { justify-content: flex-start; }
+}
+/* En el teléfono los campos de la carta van de a uno (el Formulador los pone de a dos: aquí el calendario no cabe) */
+@media (max-width: 600px) {
+  .g-pagina .fila-campos .campo { grid-column: 1 / -1; }
+}

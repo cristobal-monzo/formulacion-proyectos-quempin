@@ -291,7 +291,9 @@
     ['partidas', 'materiales', 'equipos', 'manoObra', 'otros'].forEach((k) => {
       out[k] = Array.isArray(out[k]) ? out[k].map((it) => Object.assign({}, it, { uid: it.uid || uid() })) : [];
     });
-    // Carta Gantt (opcional, 2026-10-13): solo si el proyecto la tiene; se completa lo que falte
+    // Carta Gantt (2026-10-13 a 2026-10-20): desde el 2026-10-20 es una herramienta aparte (gantt/) con sus
+    // propios datos. El Formulador ya no la usa, pero conserva p.gantt de los proyectos que la tenían: de
+    // ahí la traspasa la herramienta nueva (gantt/datos.js), en cualquier navegador y cuando sea.
     if (out.gantt && typeof out.gantt === 'object') {
       const g = out.gantt;
       out.gantt = {
@@ -332,7 +334,7 @@
         if (Array.isArray(it.partidas)) it.partidas = it.partidas.map((u) => map[u]).filter(Boolean);
       });
     });
-    if (c.gantt) c.gantt.tareas.forEach((t) => { t.partida = map[t.partida] || ''; });
+    delete c.gantt;   // la copia o la versión nueva no arrastra la carta antigua: la Carta Gantt se duplica allá
     c.creado = new Date().toISOString();
     ['creadoPor', 'modificadoPor', 'eliminado', 'eliminadoEn', 'eliminadoPor'].forEach((k) => { delete c[k]; });
     return Object.assign(c, overrides || {});

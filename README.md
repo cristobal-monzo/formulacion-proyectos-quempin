@@ -1,6 +1,6 @@
 # QUEMPIN · Formulación de proyectos
 
-Herramienta web para formular y evaluar los costos de proyectos. Reemplaza las hojas **Costos**, **Resumen** y **Referencias** del Excel `Excel General Proyectos_CLP.xlsm`. La Carta Gantt queda para una etapa posterior.
+Herramienta web para formular y evaluar los costos de proyectos. Reemplaza las hojas **Costos**, **Resumen** y **Referencias** del Excel `Excel General Proyectos_CLP.xlsm`. La Carta Gantt es una herramienta aparte, en `gantt/`.
 
 **Herramienta publicada:** https://cristobal-monzo.github.io/formulacion-proyectos-quempin/
 
@@ -54,7 +54,7 @@ Es una página estática (HTML + CSS + JavaScript), publicada con **GitHub Pages
 - **Pega filas desde Excel** en materiales, equipos y otros (2026-10-14, `js/pegar.js`): de una planilla de formulación antigua, de cualquier Excel o de la cotización del tablero del Cotizador Histórico («Copiar para el Formulador»). Reconoce descripción, unidad, cantidad y costo unitario con o sin encabezados, números escritos como en Chile y unidades comunes; muestra una vista previa, deja los costos con IVA en neto si se marca, y agrega todas las filas a la partida elegida.
 - **Muestra por qué no se emitió una cotización**: si se descartó en Sistema QUEMPIN (1.3.7 o posterior), el motivo aparece en el *Seguimiento* y en lo que sigue.
 - **Sabe quién trabaja** (2026-10-16, `js/usuario.js`). El botón de usuario de la cabecera elige las iniciales del equipo (NB, ES, LC, CM, MP, SV); se recuerdan en el navegador, en la misma clave que el Portal QUEMPIN (`quempin_usuario`), así que elegirlas en uno vale para el otro.
-  - Un proyecto nuevo parte con su **responsable**: el Evaluador que la Planilla le asignó a ese N° o, si no tiene, el usuario. El campo *Responsable* es una lista con el equipo (un texto de antes se conserva) y sale en el Excel y en el PDF de la Carta Gantt.
+  - Un proyecto nuevo parte con su **responsable**: el Evaluador que la Planilla le asignó a ese N° o, si no tiene, el usuario. El campo *Responsable* es una lista con el equipo (un texto de antes se conserva) y sale en el Excel.
   - La lista de proyectos filtra **Mis proyectos** (se recuerda en el navegador), cada inicial con su cuenta, y *Sin responsable*.
   - *Pendientes del equipo* dice el evaluador de cada requerimiento por ofertar y marca **Tuyo** los del usuario.
   - La evaluación de costos se registra en el Control de Documentos con las iniciales del usuario, sin volver a pedirlas, y lo que se envía a las demás herramientas va firmado por él. La primera vez se adoptan las iniciales que el navegador ya tenía (`qpn.formulacion.iniciales` o el «Responsable por defecto» de antes) si son del equipo.
@@ -104,7 +104,7 @@ Los valores con que parten los proyectos nuevos (IVA, tarifas, metas y el prefij
 
 Proyectos grandes: una pestaña de costos con más de 300 filas usa columnas de ancho fijo, para que escribir siga siendo inmediato (con 1.500 materiales, cada tecla pasó de ~0,5 s a ~0,08 s el 2026-10-08).
 
-**Carta Gantt (opcional, 2026-10-13).** La *Carta Gantt* arma el programa de trabajo de la oferta. Desde el 2026-10-20 se abre en su propia ventana del Portal QUEMPIN (que carga el Formulador en `#/p/<uid>/gantt`): el Formulador ya no tiene su pestaña ni la opción en el menú del proyecto. No es un paso de la formulación: no cuenta para que esté completa. *Crear desde las partidas* agrega un hito de inicio, una tarea por partida (una tras otra, con la duración que sugiere su mano de obra: días por unidad × cantidad, una cuadrilla) y un hito de entrega; también se agregan tareas e hitos a mano. Cada tarea lleva responsable, duración, predecesoras (`2`, `2CC`, `2FF`, `2+3`), fecha «no antes de» y avance. El calendario es de días hábiles (con días no laborables) o corridos. La ruta crítica va en naranja. *Descargar PDF* genera la lámina en A4 horizontal con el logo (varias páginas si hace falta), y el Excel del proyecto suma la hoja *Carta Gantt* con la grilla pintada por día o por semana. Se guarda en `p.gantt` y entra en Ctrl+Z.
+**Carta Gantt: herramienta aparte (2026-10-20).** La Carta Gantt nació como pestaña del Formulador (2026-10-13) y el 2026-10-20 pasó a ser una herramienta propia, en `gantt/` (publicada en `/formulacion-proyectos-quempin/gantt/`), con su ventana en el Portal QUEMPIN. Tiene su lista de cartas y sus datos: en este navegador (`qpn.gantt.cartas.v1`) y, con el equipo, en la carpeta de intercambio (`publicado/gantt/<uid>.json`, con la misma regla de conflictos que los proyectos). Cada carta va vinculada a un proyecto del Formulador (lo lee, no lo cambia: para su código y para *Crear desde las partidas*) o es suelta, con nombre propio. Las cartas que había dentro de los proyectos (`p.gantt`) se **traspasan solas** la primera vez que se abre la herramienta, en cualquier navegador: el Formulador ya no las muestra ni las cambia, pero conserva `p.gantt` para ese traspaso, y una copia o versión nueva del proyecto ya no lo arrastra. El Excel del Formulador ya no lleva la hoja *Carta Gantt*: la herramienta descarga su propio PDF y su propio Excel. Un enlace antiguo `#/p/<uid>/gantt` lleva a `gantt/#/proyecto/<uid>`. *Crear desde las partidas* agrega un hito de inicio, una tarea por partida (una tras otra, con la duración que sugiere su mano de obra: días por unidad × cantidad, una cuadrilla) y un hito de entrega; también se agregan tareas e hitos a mano. Cada tarea lleva responsable, duración, predecesoras (`2`, `2CC`, `2FF`, `2+3`), fecha «no antes de» y avance. El calendario es de días hábiles (con días no laborables) o corridos. La ruta crítica va en naranja. Ctrl+Z y Ctrl+Y deshacen y rehacen.
 
 Atajos: en el proyecto abierto, **Ctrl+Z** deshace el último cambio y **Ctrl+Y** (o Ctrl+Shift+Z) lo rehace, hasta 100 pasos; también con las flechas junto a *Exportar Excel* (2026-10-09). Lo escrito seguido en un mismo campo es un paso, y cada acción (agregar o eliminar una fila, aplicar la utilidad) es otro; al deshacer, la herramienta vuelve a la pestaña donde se hizo el cambio y lo marca. No retira lo ya enviado a otras herramientas (Análisis Financiero, Sistema QUEMPIN, carpeta de la oferta). En las tablas, **Enter** baja a la fila siguiente (en la última fila agrega una nueva). En la columna de unidad, **↓** abre la lista de unidades. Duplicar, mover o eliminar una fila está en su menú **⋯**. En el listado, **/** enfoca el buscador. Los menús y selectores se manejan con flechas, **Enter** y **Esc**. En el teléfono las tablas se muestran como tarjetas.
 
@@ -127,10 +127,10 @@ js/pulso.js             Pulso del procesador del intercambio: cuándo avisar que
 js/busqueda.js          Buscador de precios (copia textual del de Cotizador Historico/Visualizador Web/busqueda.js)
 js/compartida.js        Proyectos compartidos con el equipo por esa carpeta (modo local)
 js/oferta.js            Copia en Excel de cada presupuesto en la carpeta de su oferta (modo local)
-js/gantt.js             Carta Gantt: calendario, dependencias, hitos, ruta crítica, lámina (SVG y PDF)
-js/pdf.js               PDF vectorial mínimo, sin librerías (lo usa la Carta Gantt)
 js/candado.js           Verificación de la contraseña (copia textual de Finanzas QUEMPIN/Visualizador Web/candado.js)
 js/app.js               Interfaz
+gantt/                  Carta Gantt, herramienta aparte (index.html, app.js interfaz, datos.js cartas y carpeta
+                        del equipo, gantt.js cálculo y lámina, pdf.js PDF sin librerías, excel.js su Excel, gantt.css)
 js/logo-data.js         Logo oficial embebido para el Excel exportado
 vendor/exceljs.min.js   Librería ExcelJS 4.4.0 (licencia MIT, ver vendor/exceljs.LICENSE)
 assets/                 Logos oficiales (fondo blanco y fondo negro), isotipo e íconos

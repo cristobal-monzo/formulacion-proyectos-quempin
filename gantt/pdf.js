@@ -1,7 +1,7 @@
 /*
  * pdf.js — PDF vectorial mínimo, sin librerías (2026-10-13).
  *
- * Lo usa la Carta Gantt (js/gantt.js) para descargar un PDF de verdad, no un diálogo de impresión:
+ * Lo usa la Carta Gantt (gantt/gantt.js) para descargar un PDF de verdad, no un diálogo de impresión:
  * rectángulos, líneas, polígonos, texto en Helvetica (con tildes y ñ, WinAnsiEncoding) y una imagen
  * JPEG (el logo). Coordenadas en puntos, con el origen arriba a la izquierda como en pantalla; el
  * cambio al sistema del PDF (origen abajo) se hace aquí.
