@@ -14,6 +14,7 @@
  *              venta-proyecto             → Análisis Financiero
  *              registro-documento         → Sistema QUEMPIN (Control de Documentos, tipo 81)
  *              actualizar-requerimiento   → Planilla de Ingreso (sugerencia que una persona pasa)
+ *              nuevo-requerimiento        → Planilla de Ingreso (proyecto nuevo sin N°: se escribe solo)
  *
  * Todo lo que se envía se valida antes con el catálogo de esquemas que el procesador deja en la
  * carpeta (esquemas.json, ver js/esquemas.js). Nada de este archivo pinta: lo usa app.js.
@@ -254,6 +255,34 @@
     return m;
   }
 
+  /* Proyecto nuevo sin N° en la Planilla de Ingreso (pedido del usuario, 2026-10-26): se registra como fila
+     nueva, con el N° que ya llevan su código y su carpeta. La escribe con Excel planilla_escritura.py (Sistema
+     Intercambio), cada 10 minutos; si en ese rato alguien escribió a mano ese mismo N°, no se escribe y queda
+     rechazado con el motivo. datos: { numero, titulo, estado, canal, captador, evaluador, ubicacion,
+     referencia, apertura, cierre, presupuesto } (fechas AAAA-MM-DD, presupuesto con IVA). */
+  function mensajeNuevoRequerimiento(p, datos, usuario) {
+    const m = sobre('nuevo-requerimiento', 'planilla-requerimientos', usuario);
+    const r = { numero: Number(datos.numero), titulo: String(datos.titulo || '').replace(/\s+/g, ' ').trim() };
+    ['estado', 'canal', 'captador', 'evaluador', 'ubicacion', 'referencia', 'apertura', 'cierre'].forEach((k) => {
+      const v = String(datos[k] === null || datos[k] === undefined ? '' : datos[k]).trim();
+      if (v) r[k] = v;
+    });
+    if (Number(datos.presupuesto) > 0) r.presupuesto = Math.round(Number(datos.presupuesto));
+    m.requerimiento = r;
+    m.fuente = { herramienta: HERRAMIENTA, uid: p.uid, codigo: p.codigo || '' };
+    return m;
+  }
+  /* El siguiente N° libre: uno más que el mayor de las listas (los N° de la Planilla, de las carpetas de
+     oferta, de los registros que esperan en el buzón y de los proyectos de este navegador). */
+  function siguienteNumero(...listas) {
+    let max = 0;
+    listas.forEach((l) => Array.from(l || []).forEach((n) => {
+      const k = /^\d{1,6}$/.test(String(n === null || n === undefined ? '' : n).trim()) ? parseInt(n, 10) : 0;
+      if (k > max) max = k;
+    }));
+    return max + 1;
+  }
+
   /* Qué sugerir según el estado del proyecto: Enviada → Ofertado; Adjudicada y Cerrada → Adjudicado; Perdida →
      No adjudicado; Descartada → Descartado (estos dos sin valor). Con los perdidos la planilla calcula
      la tasa de adjudicación que usa el Flujo de Caja (requerimientos.py, resumen). */
@@ -327,6 +356,7 @@
     publicacion, requerimientos, olvidar, paquete, validar, enviar,
     reqDe, tagDe, proyecto,
     mensajeBorrador, mensajeVenta, mensajeRegistro, mensajeSugerencia, cambiosParaPlanilla,
+    mensajeNuevoRequerimiento, siguienteNumero,
     sensibilidadDesdeSesgo, preciosReferencia, buscarPrecios,
     cotizacionesDe, estadoEnSistema, siguienteFolio, lecturaEstado
   };

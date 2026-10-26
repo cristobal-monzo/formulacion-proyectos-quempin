@@ -5666,6 +5666,11 @@
     }
     let pl = null;
     const cargaPlanilla = planillaPublicada().catch(() => null);
+    // Los N° ya pedidos a la Planilla que todavía esperan en el buzón (nuevo-requerimiento): no se repiten
+    let reservas = null;      // N° → título; null = todavía no se leen
+    const cargaReservas = Promise.resolve(QI() ? QI().leerBuzon({ tipos: ['nuevo-requerimiento'] }) : []).catch(() => [])
+      .then((l) => new Map((l || []).map((m) => [String((m.requerimiento || {}).numero), String((m.requerimiento || {}).titulo || '')])));
+    let registrar = true;     // «registrar en la Planilla de Ingreso» un proyecto cuyo N° no está en ella (2026-10-26)
     const pedirIniciales = !yo();
     let opcion = '';      // la opción elegida a mano ('crear' | 'usar' | 'ninguna'); '' = la propuesta
     let autoTit = '';
@@ -5689,24 +5694,40 @@
     const num = $('#np-num'), tit = $('#np-tit'), cod = $('#np-codigo'), ops = $('#np-opciones');
     const boton = $('#modal .modal-foot .btn-primario');
     const iniEl = $('#cp-ini');
-    // Lo que se haría con lo escrito: el nombre (y código), la carpeta que ya existe y si se puede crear
+    // El siguiente N° libre: después del mayor de la Planilla, de las carpetas, de lo que espera en el buzón y
+    // de los proyectos de este navegador (así dos proyectos nuevos no toman el mismo)
+    const libre = () => (pl && reservas && QH() ? QH().siguienteNumero(pl.keys(), (lista || []).map((c) => c.numero), reservas.keys(),
+      S.all().map((p) => QH().reqDe(p))) : null);
+    // Lo que se haría con lo escrito: el nombre (y código), la carpeta que ya existe y si se puede crear.
+    // n0: el N° escrito; n: el del proyecto (sin N° y con «registrar», el siguiente libre).
     const estado = () => {
-      const n = num.value.trim(), t = tit.value;
+      const n0 = num.value.trim(), t = tit.value;
+      const r = pl && n0 ? pl.get(String(parseInt(n0, 10))) || null : null;
+      const lib = libre();
+      const reservado = n0 && reservas ? reservas.get(String(parseInt(n0, 10))) : undefined;
+      const puedeRegistrar = !!t.trim() && !r && reservado === undefined && (!!n0 || !!lib);
+      const n = n0 || (registrar && puedeRegistrar ? String(lib) : '');
       const nombre = QO() ? QO().nombreOferta(n, t) : String(t || '').trim();
       const k = nfcLower(nombre);
       const existente = (lista || []).find((c) => n && c.numero === n) || (k ? (lista || []).find((c) => nfcLower(c.nombre) === k) : null) || null;
       let error = '';
       if (!existente && t.trim() && lista) { try { QO().nombreCarpetaNueva(n, t, lista); } catch (err) { error = err.message; } }
-      const r = pl && n ? pl.get(String(parseInt(n, 10))) || null : null;
-      return { n, t: String(t || '').replace(/\s+/g, ' ').trim(), nombre, existente, error, r };
+      return { n, n0, t: String(t || '').replace(/\s+/g, ' ').trim(), nombre, existente, error, r, lib, reservado, puedeRegistrar };
     };
     const radio = (valor, sel, html, dis) => `<label class="np-op${dis ? ' dis' : ''}"><input type="radio" name="np-op" value="${valor}" ${sel ? 'checked' : ''} ${dis ? 'disabled' : ''}><span>${html}</span></label>`;
     const pintar = () => {
       const e = estado();
       const codigo = e.existente ? e.existente.nombre : e.nombre;
-      cod.innerHTML = codigo ? `Código del proyecto: <b class="code-badge">${esc(codigo)}</b>${e.existente ? ' <span class="muted">· el nombre de la carpeta que ya existe</span>' : ''}`
+      cod.innerHTML = codigo ? `Código del proyecto: <b class="code-badge">${esc(codigo)}</b>${e.existente ? ' <span class="muted">· el nombre de la carpeta que ya existe</span>' : !e.n0 && e.n ? ' <span class="muted">· con el N° que se registra en la Planilla</span>' : ''}`
         : '<span class="muted">Escribe el nombre: con el N°, el código queda «N°. Nombre».</span>';
-      const planilla = e.n && pl ? (e.r ? `<span class="np-pl">Planilla de Ingreso, N° ${esc(e.n)}: ${esc(e.r.titulo || 'sin título')}${e.r.estado ? ` · ${esc(e.r.estado)}` : ''}</span>` : `<span class="np-pl err">El N° ${esc(e.n)} no está en la Planilla de Ingreso.</span>`) : '';
+      let planilla = '';
+      if (pl && e.r) planilla = `<span class="np-pl">Planilla de Ingreso, N° ${esc(e.n0)}: ${esc(e.r.titulo || 'sin título')}${e.r.estado ? ` · ${esc(e.r.estado)}` : ''}</span>`;
+      else if (pl && e.reservado !== undefined) planilla = `<span class="np-pl err">El N° ${esc(e.n0)} ya se pidió a la Planilla de Ingreso para «${esc(e.reservado || 'otro proyecto')}» y espera que se escriba.${e.lib ? ` El siguiente libre es el ${e.lib}.` : ''}</span>`;
+      else if (pl && e.puedeRegistrar) {
+        const que = e.n0 ? `El N° ${esc(e.n0)} no está en la Planilla de Ingreso: registrarlo` : `Sin N° de requerimiento: registrar el proyecto en la Planilla de Ingreso como <b>N° ${e.lib}</b>`;
+        planilla = `<label class="np-reg"><input type="checkbox" id="np-reg" ${registrar ? 'checked' : ''}><span>${que}, con Estado «Evaluación». Se escribe sola en unos minutos.</span></label>`;
+      } else if (pl && e.n0) planilla = `<span class="np-pl err">El N° ${esc(e.n0)} no está en la Planilla de Ingreso.</span>`;
+      else if (pl && e.lib && !e.t) planilla = `<span class="np-pl">Sin N° de requerimiento, el proyecto se registra en la Planilla de Ingreso como N° ${e.lib}.</span>`;
       let html;
       if (sinNavegador) {
         html = `<p class="np-nota">Este navegador no puede crear carpetas: usa Chrome o Edge de escritorio. El proyecto se crea sin carpeta y la eliges después.</p>`;
@@ -5750,7 +5771,10 @@
     };
     num.addEventListener('input', () => { num.value = num.value.replace(/\D/g, ''); opcion = ''; desdePlanilla(); pintar(); });
     tit.addEventListener('input', () => { pintar(); });
-    ops.addEventListener('change', (ev) => { if (ev.target.name === 'np-op') opcion = ev.target.value; });
+    ops.addEventListener('change', (ev) => {
+      if (ev.target.name === 'np-op') opcion = ev.target.value;
+      if (ev.target.id === 'np-reg') { registrar = ev.target.checked; pintar(); const c = $('#np-reg'); if (c) c.focus(); }
+    });
     // Enter crea el proyecto (sin él, el formulario lo tomaría como el primer botón: cerrar)
     $('#modal .modal-body').addEventListener('keydown', (ev) => {
       if (ev.key !== 'Enter' || ev.target.tagName !== 'INPUT' || (P && pop.contains(document.activeElement))) return;
@@ -5771,10 +5795,11 @@
     pintar();
     (num.value ? tit : num).focus();
     cargaPlanilla.then((m) => { pl = m; if (m && $('#np-num') === num) { desdePlanilla(); pintar(); } });
+    cargaReservas.then((m) => { reservas = m; if ($('#np-num') === num) pintar(); });
     const v = await prom;
     const e = estado();
     delete combos['np-num'];
-    if (v === 'elegir') return { elegir: true, numero: e.n, titulo: e.t };
+    if (v === 'elegir') return { elegir: true, numero: e.n0, titulo: e.t };
     if (v !== 'ok') return null;
     pl = pl || await cargaPlanilla;
     const r = pl && e.n ? pl.get(String(parseInt(e.n, 10))) || null : null;
@@ -5784,8 +5809,35 @@
     return {
       crear: !e.existente && marcada === 'crear' && !!e.t && !e.error,
       carpeta: e.existente && marcada === 'usar' ? e.existente : null,
-      numero: e.n, titulo: e.t, req: r, iniciales
+      numero: e.n, titulo: e.t, req: r, iniciales,
+      // Se pide la fila solo con la Planilla leída: sin ella no se sabe qué N° está libre
+      registrar: !r && registrar && e.puedeRegistrar && !!e.n
     };
+  }
+
+  /* Pide a la Planilla de Ingreso la fila del proyecto nuevo (mensaje nuevo-requerimiento, 2026-10-26), con el
+     formato de las demás: Estado «Evaluación», Canal «Otro» (o «Mercado Público» con ID de licitación),
+     Capt. quien lo crea, Eval. el responsable, «-» sin referencia y la Apertura de hoy. Devuelve si se pidió. */
+  async function registrarEnPlanilla(p, numero, op) {
+    const par = p.parametros || {};
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const cierre = op && /^\d{4}-\d{2}-\d{2}/.test(String(op.cierre || '')) ? String(op.cierre).slice(0, 16) : '';
+    const datos = {
+      numero, titulo: p.titulo || '', estado: 'Evaluación', canal: p.idLicitacion ? 'Mercado Público' : 'Otro',
+      captador: yo() || p.responsable || '', evaluador: p.responsable || yo() || '',
+      ubicacion: p.ubicacion || '', referencia: p.idLicitacion || '-', apertura: iso(new Date()), cierre,
+      presupuesto: par.presupuestoIncluyeIva && num(par.presupuestoMaximo) > 0 ? num(par.presupuestoMaximo) : null
+    };
+    try {
+      const m = QH().mensajeNuevoRequerimiento(p, datos, usuarioActual(p));
+      await QH().enviar(m);
+      p.vinculos = Object.assign({}, p.vinculos, { planilla: Object.assign({}, (p.vinculos || {}).planilla, { registro: { id: m.id, fecha: m.origen.enviado, numero: Number(numero) } }) });
+      S.upsert(p);
+      return true;
+    } catch (err) {
+      toast(`No se pudo pedir el registro en la Planilla de Ingreso: ${(err && err.message) || err}. Pásalo a mano con el N° ${numero}.`, true, 9000);
+      return false;
+    }
   }
   const nfcLower = (s) => String(s || '').normalize('NFC').toLowerCase();
 
@@ -5826,9 +5878,11 @@
     const hechos = op ? QOp().aplicar(np, op, monedaDe(np)) : [];
     if (op) ajustarCodigo(np, d.numero);
     S.upsert(np);
+    // Sin N° en la Planilla de Ingreso: se pide su fila, con el código y los datos ya puestos
+    const registrado = d.registrar ? await registrarEnPlanilla(np, d.numero, op) : false;
     if (sel.carpeta) guardarExcelOferta(np.uid, true);
     goProject(np, 'ficha');
-    const extra = op ? ` ${textoDesdeOportunidad(hechos)}` : '';
+    const extra = (op ? ` ${textoDesdeOportunidad(hechos)}` : '') + (registrado ? ` Queda registrado en la Planilla de Ingreso como N° ${d.numero} en unos minutos.` : '');
     if (sel.carpeta) registrarAlElegirCarpeta(np.uid, `Proyecto ${np.codigo} creado ${sel.carpeta.nueva ? 'con su carpeta nueva' : 'en la carpeta'} «${sel.carpeta.nombre}».${extra}`);
     else toast(`Proyecto ${np.codigo} creado.${extra} Cuando tengas la carpeta de su oferta, elígela desde el aviso de arriba.`, false, 6000);
     setTimeout(() => { const t = $('[data-f="titulo"]'); if (t && !np.titulo) t.focus(); }, 60);

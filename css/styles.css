@@ -1733,6 +1733,12 @@ button.meta-carpeta .dot { margin: 0 0 0 2px; flex: 0 0 auto; }
 .np-op input { margin: 0; }
 .np-op:has(input:checked) span { color: var(--text-primary); }
 #np-opciones > .np-pl, #np-opciones > .np-nota { margin: 4px 0 0 29px; }
+/* Registrar en la Planilla de Ingreso un proyecto sin N° (2026-10-26): casilla con el mismo ritmo que las opciones */
+.np-reg { display: flex; align-items: flex-start; gap: 9px; margin: 8px -6px 0; padding: 8px 10px; border-radius: 6px; font-size: 13px; line-height: 1.45; color: var(--text-secondary); cursor: pointer; }
+.np-reg:hover { background: var(--chip-hover); }
+.np-reg input { flex: 0 0 auto; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--brand-orange); }
+.np-reg span { min-width: 0; overflow-wrap: anywhere; }
+.np-reg:has(input:checked) span { color: var(--text-primary); }
 #np-opciones > .np-elegir { margin: 12px 0 0 0; padding-top: 10px; border-top: 1px solid var(--border-hairline); width: 100%; }
 dialog#modal { overflow: hidden; display: flex; flex-direction: column; max-height: calc(100vh - 32px); }
 dialog#modal:not([open]) { display: none; }
