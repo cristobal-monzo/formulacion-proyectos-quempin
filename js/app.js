@@ -6009,6 +6009,38 @@
       <span>${texto}</span><span class="actions">${botones}</span></div>`;
 
   /* Editor: aviso para elegir la carpeta de la oferta, o el error del último guardado del Excel. */
+  /* La carpeta de la oferta cambió de nombre en la biblioteca (le pusieron o le corrigieron el N°, 2026-10-26):
+     el vínculo la sigue, y con él el código «N°. Nombre» (si es automático) y el N° de requerimiento. Se
+     revisa al pintar el editor; si la carpeta no aparece por ningún lado (eso recorre la biblioteca), a lo más
+     una vez por minuto. true = cambió. */
+  const renombresSinCarpeta = new Map();   // uid|ruta → hora en que no se encontró
+  const renombresEnCurso = new Set();
+  async function seguirCarpetaRenombrada(abierto) {
+    const v0 = QO().vinculo(abierto);
+    if (!v0 || QO().trasladoPedido(v0)) return false;
+    const k = abierto.uid + '|' + v0.ruta.join('/');
+    if (renombresEnCurso.has(k) || Date.now() - (renombresSinCarpeta.get(k) || 0) < 60000) return false;
+    renombresEnCurso.add(k);
+    let c = false;
+    try { c = await QO().renombrada(v0); } catch (e) { c = false; } finally { renombresEnCurso.delete(k); }
+    if (c === null) renombresSinCarpeta.set(k, Date.now());
+    // Mientras se recorre la biblioteca el proyecto abierto puede volver a cargarse (otra pestaña, la carpeta
+    // del equipo): se sigue con el que está abierto ahora, si es el mismo y su vínculo no cambió
+    const p = state.project;
+    const v = p && p.uid === abierto.uid ? QO().vinculo(p) : null;
+    if (!c || !v || v.ruta.join('/') !== v0.ruta.join('/')) return false;
+    const auto = codigoAutomatico(p.codigo, p);
+    const antes = v.nombre;
+    p.vinculos = Object.assign({}, p.vinculos, { carpetaOferta: Object.assign({}, v, { nombre: c.nombre, ruta: c.ruta, numero: c.numero }) });
+    if (c.numero && QH() && QH().reqDe(p) !== c.numero) p.vinculos.requerimiento = { numero: c.numero, titulo: '' };
+    // Vacío es automático para ajustarCodigo: así toma el nombre nuevo aunque el anterior no llevara N°
+    if (auto && p.codigo !== c.nombre) { const previo = p.codigo; p.codigo = ''; if (!ajustarCodigo(p, c.numero)) p.codigo = previo; }
+    saveNow();
+    updateHeader();
+    toast(`La carpeta «${antes}» ahora se llama «${c.nombre}»: el proyecto la sigue${auto ? ', con ese código' : ''}${c.numero ? ` y el N° ${c.numero}` : ''}.`, false, 7000);
+    return true;
+  }
+
   async function pintarEditorOferta() {
     const el = $('#ed-oferta');
     const p = state.project;
@@ -6018,6 +6050,7 @@
       const v = QO().vinculo(p);
       const eb = await QI().estadoBiblioteca();
       if (state.project !== p) return;
+      if (v && eb.permiso === 'granted' && await seguirCarpetaRenombrada(p)) { pintarEditorOferta(); return; }
       if (!v && eb.conectada && !ofertaOmitida.has(p.uid)) {
         const omitir = `<button type="button" class="btn btn-ghost btn-sm" data-act="oferta-omitir">Ahora no</button>`;
         if (!eb.recordada) {

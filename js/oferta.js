@@ -159,10 +159,33 @@
     const d = await abrirRuta(bib, v.ruta);
     if (d) return { dir: d, ruta: v.ruta.slice(), movida: false };
     const nombre = nfc(v.nombre || v.ruta[v.ruta.length - 1]);
-    const iguales = (await carpetasDe(bib, true)).filter((c) => nfc(c.nombre) === nombre);
+    const todas = await carpetasDe(bib, true);
+    let iguales = todas.filter((c) => nfc(c.nombre) === nombre);
+    // Le pusieron o le corrigieron el N° («Casinos» → «312. Casinos», 2026-10-26): el mismo nombre sin el N°
+    if (!iguales.length) {
+      const t = sinNumero(nombre);
+      iguales = t ? todas.filter((c) => sinNumero(c.nombre) === t) : [];
+    }
     if (iguales.length !== 1) return null;
     const d2 = await abrirRuta(bib, iguales[0].ruta);
-    return d2 ? { dir: d2, ruta: iguales[0].ruta.slice(), movida: true } : null;
+    return d2 ? { dir: d2, ruta: iguales[0].ruta.slice(), movida: true, carpeta: iguales[0] } : null;
+  }
+  /* El nombre de una carpeta sin su «N°. » delante, para comparar (sin efectos). */
+  function sinNumero(nombre) {
+    const n = nfc(nombre).trim();
+    const m = RE_CARPETA_OFERTA.exec(n);
+    return (m ? m[2] : n).trim().toLowerCase();
+  }
+  /* La carpeta del vínculo si ahora tiene otro nombre: { nombre, ruta, numero }; false si sigue con su nombre
+     (donde estaba, o movida) o no hay biblioteca con permiso; null si no aparece por ningún lado. */
+  async function renombrada(v) {
+    const bib = X() ? await X().biblioteca() : null;
+    if (!bib || !v || !rutaValida(v.ruta)) return false;
+    const u = await ubicar(bib, v);
+    if (!u) return null;
+    if (!u.movida || !u.carpeta) return false;
+    if (nfc(u.carpeta.nombre) === nfc(v.nombre || v.ruta[v.ruta.length - 1])) return false;
+    return { nombre: u.carpeta.nombre, ruta: u.carpeta.ruta.slice(), numero: u.carpeta.numero || '' };
   }
   /* Nombre de una carpeta de oferta nueva, validado contra las que ya hay (sin efectos: se prueba en
      node). numero: N° de requerimiento de la planilla (opcional); titulo: nombre de la oferta.
@@ -491,7 +514,7 @@
   }
 
   const api = {
-    grupoDe, numeroDe, grupoDeRuta, rutaValida, vinculo, nuevoVinculo, nombreBase, candidatos, listar, ubicar,
+    grupoDe, numeroDe, grupoDeRuta, rutaValida, vinculo, nuevoVinculo, nombreBase, candidatos, listar, ubicar, sinNumero, renombrada,
     nombreOferta, nombreCarpetaNueva, crearCarpeta,
     trasladoPedido, escribible, copiaEnGestion, enAdjudicadas, enlaceCarpeta, enlaceTraslado, pedirTraslado, sinTraslado, conCopiaEnGestion, rutaActual,
     activa, carpetas, sugerencias, info, guardar, guardarPendientes, iniciar,
