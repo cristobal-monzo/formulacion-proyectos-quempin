@@ -211,11 +211,13 @@
     'En revisión': { cls: 'eb-revision', desc: 'Lista para revisión interna' },
     'Enviada': { cls: 'eb-enviada', desc: 'Oferta enviada al cliente' },
     'Adjudicada': { cls: 'eb-adjudicada', desc: 'El cliente aceptó la oferta' },
+    'Cerrada': { cls: 'eb-cerrada', desc: 'Proyecto terminado: ya no está en ejecución' },
     'Perdida': { cls: 'eb-perdida', desc: 'Se adjudicó a otro oferente' },
     'Descartada': { cls: 'eb-descartada', desc: 'No se presentó la oferta' }
   };
   const EN_CURSO = ['Borrador', 'En revisión', 'Enviada'];
   const EN_FORMULACION = ['Borrador', 'En revisión'];   // los demás estados ya salieron de la formulación
+  const GANADAS = ['Adjudicada', 'Cerrada'];   // Cerrada (2026-10-26): adjudicada y con la ejecución terminada
 
   const UNIDAD_NOMBRE = { 'Un.': 'Unidad', kg: 'Kilogramo', m: 'Metro lineal', m2: 'Metro cuadrado', m3: 'Metro cúbico', gl: 'Global', km: 'Kilómetro', 'día': 'Día', hr: 'Hora', lt: 'Litro', noche: 'Noche' };
 
@@ -566,7 +568,7 @@
         vo ? { icon: ICON.folder, title: 'Abrir la carpeta en el Explorador', desc: `Formulación de proyectos · ${vo.nombre}`, act: 'oferta-abrir', id } : null,
         vo && QO().copiaEnGestion(vo) ? { icon: ICON.folder, title: 'Abrir la de Gestión de Proyectos', desc: 'La copia donde sigue la ejecución', act: 'oferta-abrir-gestion', id } : null,
         vo && QO().escribible(vo) ? { icon: ICON.sheet, title: 'Guardar Excel en la carpeta de la oferta', desc: vo.nombre, act: 'oferta-guardar', id } : null,
-        vo && QO().escribible(vo) && !(QO().copiaEnGestion(vo) || {}).copiada && (S.get(id) || {}).estado === 'Adjudicada' ? { icon: ICON.folder, title: 'Copiar la carpeta a Gestión de Proyectos', desc: 'El original pasa a 0 OFERTAS ADJUDICADAS', act: 'oferta-trasladar', id } : null,
+        vo && QO().escribible(vo) && !(QO().copiaEnGestion(vo) || {}).copiada && GANADAS.includes((S.get(id) || {}).estado) ? { icon: ICON.folder, title: 'Copiar la carpeta a Gestión de Proyectos', desc: 'El original pasa a 0 OFERTAS ADJUDICADAS', act: 'oferta-trasladar', id } : null,
         vo === null ? { icon: ICON.folder, title: 'Elegir la carpeta de la oferta', desc: 'Para dejar ahí una copia en Excel, al día', act: 'oferta-elegir', id } : null,
         enEditor ? null : { icon: ICON.download, title: 'Exportar a Excel', desc: 'Planilla con fórmulas vivas y ficha de KPI', act: 'exp-xlsx', id },
         { icon: ICON.file, title: 'Exportar a JSON', desc: 'Para respaldar o compartir y volver a importar', act: 'exp-json', id },
@@ -1260,7 +1262,7 @@
     const mObj = num(par.margenObjetivo) / 100, mMin = num(par.margenMinimo) / 100;
     const precio = (p) => rs.get(p.uid).totals.precioNeto;
     const enCurso = list.filter((p) => EN_CURSO.includes(p.estado));
-    const adj = list.filter((p) => p.estado === 'Adjudicada');
+    const adj = list.filter((p) => GANADAS.includes(p.estado));
     const perd = list.filter((p) => p.estado === 'Perdida');
     // El margen ponderado suma montos: con proyectos en varias monedas se calcula con los en pesos
     const todosVivos = list.filter((p) => p.estado !== 'Perdida' && p.estado !== 'Descartada');
@@ -1271,11 +1273,11 @@
     const margen = pn > 0 ? ut / pn : null;
     const semM = margen === null ? '' : margen >= mObj ? 'sem-ok' : margen >= mMin ? 'sem-warn' : 'sem-bad';
     const conErr = list.filter((p) => rs.get(p.uid).warnings.some((w) => w.level === 'error')).length;
-    const cerradas = adj.length + perd.length;
+    const resueltas = adj.length + perd.length;
     const enviadas = enCurso.filter((p) => p.estado === 'Enviada').length;
     el.innerHTML = [
       kpiTop('Ofertas en curso', sumaPorMoneda(enCurso, precio, true), enCurso.length ? `${enCurso.length - enviadas} en formulación · ${plural(enviadas, 'enviada')} · precio neto` : 'Ninguna oferta sin cerrar', 'accent', 'Suma del precio de venta neto (sin IVA) de los proyectos de este Formulador en Borrador o En revisión (en formulación) y Enviada (esperando respuesta). Lo que espera en la Planilla está en «Pendientes del equipo».'),
-      kpiTop('Adjudicado', sumaPorMoneda(adj, precio, true), cerradas ? `Tasa de adjudicación ${pct(adj.length / cerradas)} (${adj.length} de ${cerradas} cerradas)` : 'Sin ofertas cerradas aún', '', 'Precio neto de los proyectos adjudicados. La tasa compara adjudicadas contra adjudicadas + perdidas.'),
+      kpiTop('Adjudicado', sumaPorMoneda(adj, precio, true), resueltas ? `Tasa de adjudicación ${pct(adj.length / resueltas)} (${adj.length} de ${resueltas} resueltas)` : 'Sin ofertas resueltas aún', '', 'Precio neto de los proyectos adjudicados, en ejecución o ya cerrados. La tasa compara adjudicadas (y cerradas) contra adjudicadas + perdidas.'),
       kpiTop('Margen ponderado', pct(margen), `Objetivo ${pct(mObj)} · mínimo ${pct(mMin)}`, semM, `Utilidad total ÷ precio neto total, sin contar proyectos perdidos ni descartados${variasMonedas ? '; como hay proyectos en otras monedas, solo cuentan los en pesos chilenos' : ''}. Las metas son las predeterminadas de Configuración.`),
       kpiTop('Con errores', String(conErr), conErr ? 'Revísalos antes de exportar' : 'Todos pasan la validación', conErr ? 'sem-bad' : 'sem-ok')
     ].join('');
@@ -3919,7 +3921,7 @@
     const u = v && v.ultimoEnvio;
     let texto;
     if (!u) {
-      texto = `<p class="af-linea">${p.estado === 'Adjudicada'
+      texto = `<p class="af-linea">${GANADAS.includes(p.estado)
         ? '«Pasar a ejecución» envía sus costos y su venta al Análisis Financiero, y avisa la adjudicación a la planilla: pasan a ser los costos proyectados y la venta del proyecto en ejecución, para compararlos con el gasto real del Centro de Costos.'
         : 'Cuando la oferta se adjudique, sus costos y su venta pasan al Análisis Financiero como costos proyectados y venta del proyecto en ejecución, para compararlos con el gasto real del Centro de Costos.'}</p>`;
     } else {
@@ -3930,7 +3932,7 @@
         ${costosCambiaron(p, state.result) ? '<p class="af-linea af-aviso">Los costos cambiaron desde ese envío: vuelve a enviarlos para actualizar el Análisis Financiero.</p>' : ''}`;
     }
     // Antes de adjudicarse no hay nada que enviar desde aquí (sigue en ⋯ → Enviar costos, para casos especiales)
-    const boton = u || p.estado === 'Adjudicada';
+    const boton = u || GANADAS.includes(p.estado);
     el.innerHTML = `<div class="af-texto" id="af-estado">${texto}</div>
       ${boton ? `<div class="actions">
         ${u ? '<button type="button" class="btn" data-act="af-estado">Actualizar estado</button>' : ''}
@@ -4050,7 +4052,7 @@
     // Oferta adjudicada (y abierta): el mismo envío lleva la venta y el aviso a la planilla. Es «pasar a
     // ejecución»: un clic en vez de tres (pedido del usuario, 2026-10-05: simplificar pasos).
     let extra = null;
-    if (p === state.project && p.estado === 'Adjudicada' && QH()) {
+    if (p === state.project && GANADAS.includes(p.estado) && QH()) {
       const [docs, reqs] = await Promise.all([QH().publicacion('documentos-comerciales', true), QH().requerimientos(true)]);
       const cots = QH().cotizacionesDe(p, docs);
       const vi = valorConIva(p, cots);
@@ -4714,13 +4716,15 @@
       : s.fin ? (s.etapa === 'ejecucion' ? ' En ejecución: lo que sigue se registra en el tablero de Análisis Financiero.' : ' No queda nada pendiente.')
         : s.espera ? ` Ahora: ${min(s.corto)}.`
           : ` Siguiente: ${min(s.boton ? s.boton.replace(/…$/, '') : s.corto)}.`;
-    toast(`Oferta ${p.estado}${avisada ? ', con aviso a la Planilla de Ingreso' : ''}.${que}`, false, 6000);
+    toast(p.estado === 'Cerrada' ? 'Proyecto cerrado: sale de la Planificación semanal del Portal.'
+      : `Oferta ${p.estado}${avisada ? ', con aviso a la Planilla de Ingreso' : ''}.${que}`, false, 6000);
     // Adjudicada: ¿la carpeta de la oferta se copia a Gestión de Proyectos? (2026-10-19). Después del cambio de
     // pestaña de «Marcar como Adjudicada», que cerraría el diálogo.
     if (p.estado === 'Adjudicada') setTimeout(() => { if (state.project && state.project.uid === p.uid) ofrecerTraslado(p.uid); }, 800);
   }
   /* Cambia el estado desde el recorrido. Enviada, Perdida y Descartada avisan a la Planilla de Ingreso
-     en el mismo clic (el recorrido lo dice); la adjudicación viaja con «Pasar a ejecución». */
+     en el mismo clic (el recorrido lo dice); la adjudicación viaja con «Pasar a ejecución». Cerrada no
+     avisa: en la planilla el proyecto sigue «Adjudicado». */
   async function marcarEstado(estado) {
     const p = state.project;
     if (!p) return false;
@@ -4729,7 +4733,7 @@
       updateHeader();
       scheduleSave();
     }
-    const avisada = estado !== 'Adjudicada' && !!(QH() && QH().reqDe(p)) && await avisarPlanilla(true);
+    const avisada = !GANADAS.includes(estado) && !!(QH() && QH().reqDe(p)) && await avisarPlanilla(true);
     alCambiarEstado(avisada);
     return true;
   }
@@ -4758,6 +4762,8 @@
       case 'marcar-enviada': hecho = await marcarEstado('Enviada'); break;
       case 'marcar-adjudicada': hecho = await marcarEstado('Adjudicada'); break;
       case 'marcar-perdida': hecho = await marcarEstado('Perdida'); break;
+      case 'marcar-cerrada': hecho = await marcarEstado('Cerrada'); break;
+      case 'reabrir': hecho = await marcarEstado('Adjudicada'); break;
       case 'abrir-af': window.open(enlaceAF(p), '_blank', 'noopener'); break;
       default: break;
     }
@@ -4805,10 +4811,10 @@
     const html = linea(`<span class="chip ${x.cls}">${x.t}</span> Mercado Público · ${enlaceMP(fila.url, fila.codigo)}${acta}.${det}`)
       + (lics && lics.consultado ? `<p class="af-nota">Revisado en Mercado Público el ${esc(fechaHora(lics.consultado))}.</p>` : '');
     // Un clic para dejar la oferta como dice Mercado Público (el estado sigue siendo de quien formula).
-    const cerrada = p.estado === 'Adjudicada' || p.estado === 'Perdida' || p.estado === 'Descartada';
-    const boton = fila.resultado === 'ganada' && p.estado !== 'Adjudicada'
+    const resuelta = GANADAS.includes(p.estado) || p.estado === 'Perdida' || p.estado === 'Descartada';
+    const boton = fila.resultado === 'ganada' && !GANADAS.includes(p.estado)
       ? '<button type="button" class="btn" data-act="sigue" data-accion="marcar-adjudicada">Marcar como Adjudicada</button>'
-      : ['perdida', 'desierta', 'revocada'].includes(fila.resultado) && !cerrada
+      : ['perdida', 'desierta', 'revocada'].includes(fila.resultado) && !resuelta
         ? '<button type="button" class="btn" data-act="sigue" data-accion="marcar-perdida">Marcar como Perdida</button>' : '';
     return { html, boton };
   }
@@ -5028,7 +5034,7 @@
     // 5. Ejecución: costos y venta al Análisis Financiero (viajan juntos al pasar a ejecución)
     const vAF = vinculoAF(p);
     let tVenta = '', bVenta = '';
-    if (p.estado === 'Adjudicada' && vAF) {
+    if (GANADAS.includes(p.estado) && vAF) {
       const mv = montoVenta(p, cots);
       const q = ((af && af.proyectos) || []).find((x) => x.tag === vAF.tag);
       const ven = q && q.venta;
@@ -5043,7 +5049,7 @@
     const abrirAF = vAF ? `<a class="btn" href="${esc(enlaceAF(p))}" target="_blank" rel="noopener">${ICON.open}Ver la ficha en Análisis Financiero</a>` : '';
     html.ejecucion = bloqueAF(tVenta || bVenta || abrirAF ? `<div class="herr-cuerpo herr-venta">${tVenta}${acciones(bVenta + abrirAF)}</div>` : '');
     // La carpeta de la oferta: al adjudicarse, su copia en Gestión de Proyectos y el original en Adjudicadas (2026-10-19)
-    const vCarpeta = p.estado === 'Adjudicada' && ofertaActiva() ? QO().vinculo(p) : null;
+    const vCarpeta = GANADAS.includes(p.estado) && ofertaActiva() ? QO().vinculo(p) : null;
     if (vCarpeta) {
       const copia = QO().copiaEnGestion(vCarpeta);
       const abrirO = `<button type="button" class="btn" data-act="oferta-abrir">${ICON.folder}Abrir ${copia ? 'el original' : 'la carpeta'}</button>`;
@@ -5059,6 +5065,14 @@
     // 6. Cierre
     const qAF = vAF ? ((af && af.proyectos) || []).find((x) => x.tag === vAF.tag) : null;
     if (qAF && ok(Number(qAF.avance))) html.cierre = linea(`Avance en el Análisis Financiero: <b>${pct(Number(qAF.avance))}</b>${Number(qAF.avance) >= 1 ? ': lo gastado frente a lo presupuestado ya cuenta en el sesgo real del simulador (paso 5).' : '. Se registra en su tablero, pestaña «Ingresar datos».'}`);
+    // Cerrada: el estado lo describe en todas las herramientas (2026-10-26). Se puede volver a ejecución.
+    if (p.estado === 'Cerrada') {
+      html.cierre = (html.cierre || '') + linea('Estado del proyecto: <span class="estado" data-e="Cerrada">Cerrada</span>. Ya no aparece en la Planificación semanal del Portal; en el Recorrido de proyectos queda en «Cierre».')
+        + acciones('<button type="button" class="btn btn-ghost" data-act="sigue" data-accion="reabrir">Volver a «Adjudicada» (sigue en ejecución)</button>');
+    } else if (p.estado === 'Adjudicada') {
+      html.cierre = (html.cierre || '') + linea('Cuando la ejecución termine, márcalo como Cerrada: sale de la Planificación semanal y queda descrito como terminado en el Portal.')
+        + acciones('<button type="button" class="btn" data-act="sigue" data-accion="marcar-cerrada">Cerrar el proyecto</button>');
+    }
 
     const l = QH().lecturaEstado(estado);
     herrDe = { uid: p.uid, html, aviso: '', pulso: l ? `<p class="af-nota herr-pulso${l.detenido ? ' detenido' : ''}"${l.detenido ? ' role="alert"' : ''}><span class="dot ${l.nivel}" aria-hidden="true"></span> ${esc(l.texto)} <button type="button" class="link-btn" data-act="herr-actualizar">Actualizar</button></p>` : '' };

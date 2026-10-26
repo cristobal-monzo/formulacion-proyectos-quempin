@@ -27,9 +27,11 @@
       hace: 'Al terminar, lo gastado frente a lo presupuestado vuelve al Formulador como sesgo real para las próximas ofertas.' }
   ];
   const EN_FORMULACION = ['Borrador', 'En revisión'];
+  /* Ganadas: la adjudicada y la que ya cerró su ejecución («Cerrada», 2026-10-26). */
+  const GANADAS = ['Adjudicada', 'Cerrada'];
   /* Lo que la Planilla de Ingreso debe mostrar según el estado de la oferta (mismo mapa que
-     herramientas.js cambiosParaPlanilla). */
-  const EN_PLANILLA = { 'Enviada': 'Ofertado', 'Adjudicada': 'Adjudicado', 'Perdida': 'No adjudicado', 'Descartada': 'Descartado' };
+     herramientas.js cambiosParaPlanilla). Un proyecto cerrado sigue «Adjudicado» en la planilla. */
+  const EN_PLANILLA = { 'Enviada': 'Ofertado', 'Adjudicada': 'Adjudicado', 'Cerrada': 'Adjudicado', 'Perdida': 'No adjudicado', 'Descartada': 'Descartado' };
   const igual = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 
   /* Lo que se sabe del proyecto, con o sin lo publicado por las demás herramientas.
@@ -62,6 +64,7 @@
     return {
       p, estado, req: ctx.req || null,
       enFormulacion: EN_FORMULACION.includes(estado),
+      cerrado: estado === 'Cerrada',
       conError, sinHacer, conAviso,
       carpetaFalta: ctx.carpeta === false,
       cotizacion: {
@@ -85,7 +88,8 @@
   /* La acción que sigue: { etapa, texto, corto, accion?, boton?, paso?, motivo?, espera?, fin?, alternativas? }
      motivo (con 'ir-paso'): 'error' | 'pendiente' | 'aviso'
      accion: 'ir-req' | 'ir-paso' | 'oferta-elegir' | 'herr-cotizacion' | 'marcar-enviada' |
-             'marcar-adjudicada' | 'marcar-perdida' | 'herr-planilla' | 'enviar-af' | 'herr-venta' | 'abrir-af' */
+             'marcar-adjudicada' | 'marcar-perdida' | 'marcar-cerrada' | 'herr-planilla' | 'enviar-af' |
+             'herr-venta' | 'abrir-af' */
   function siguiente(h) {
     const conReq = !!h.req;
     if (!conReq) {
@@ -137,6 +141,14 @@
         alternativas: [{ accion: 'marcar-adjudicada', boton: 'Marcar como Adjudicada' }, { accion: 'marcar-perdida', boton: 'Marcar como Perdida' }],
         texto: 'Esperando la respuesta del cliente. Cuando llegue, marca la oferta como Adjudicada o Perdida: lo que sigue depende de eso.' };
     }
+    // Cerrada: la ejecución terminó y no se pide nada más (aunque nunca haya pasado por el Análisis Financiero,
+    // como los proyectos de antes). Si la planilla aún no dice «Adjudicado», queda como opción.
+    if (h.cerrado) {
+      return { etapa: 'cierre', fin: true, corto: 'Cerrado',
+        alternativas: h.planilla.avisada ? undefined : [{ accion: 'herr-planilla', boton: 'Avisar «Adjudicado» a la Planilla' }],
+        texto: 'Proyecto cerrado: su ejecución terminó y ya no aparece en la Planificación semanal del Portal.'
+          + (h.af.cerrado ? ' Lo gastado frente a lo presupuestado ya cuenta en el sesgo real que usa el simulador del paso 5.' : '') };
+    }
     if (h.estado === 'Adjudicada') {
       const af = h.af;
       if (!af.enviado) {
@@ -161,11 +173,13 @@
         return { etapa: 'ejecucion', accion: 'herr-planilla', boton: 'Avisar a la Planilla de Ingreso', corto: 'Avisar a la planilla',
           texto: 'Falta avisar a la Planilla de Ingreso que la oferta quedó «Adjudicado», con su valor.' };
       }
+      const cerrar = { accion: 'marcar-cerrada', boton: 'Cerrar el proyecto' };
       if (af.cerrado) {
-        return { etapa: 'cierre', fin: true, corto: 'Cerrado',
-          texto: 'Proyecto terminado: lo gastado frente a lo presupuestado ya cuenta en el sesgo real que usa el simulador del paso 5.' };
+        return { etapa: 'cierre', accion: 'marcar-cerrada', boton: 'Marcar como Cerrada', corto: 'Marcar como Cerrada',
+          texto: 'El Análisis Financiero ya tiene el 100 % de avance. Márcalo como Cerrada: queda descrito como terminado en todas las herramientas y sale de la Planificación semanal.' };
       }
       return { etapa: 'ejecucion', accion: 'abrir-af', boton: 'Abrir el tablero de Análisis Financiero', corto: 'En ejecución', fin: true,
+        alternativas: [cerrar],
         texto: 'En ejecución: no queda nada pendiente en el Formulador. El avance, las fechas y la mano de obra real se ingresan en el tablero de Análisis Financiero (pestaña «Ingresar datos»), y las facturas se registran en el Centro de Costos.' };
     }
     // Perdida o Descartada
@@ -174,14 +188,15 @@
       return { etapa: 'oferta', accion: 'herr-planilla', boton: 'Avisar a la Planilla de Ingreso', corto: 'Avisar a la planilla',
         texto: `Oferta ${palabra}. Avisa a la Planilla de Ingreso que quedó «${h.planilla.esperado}»: con eso se calcula la tasa de adjudicación que usa el Flujo de Caja.` };
     }
-    return { etapa: 'oferta', fin: true, corto: 'Cerrada', texto: `Oferta ${palabra}: no queda nada pendiente con este presupuesto.` };
+    return { etapa: 'oferta', fin: true, corto: 'Sin pendientes', texto: `Oferta ${palabra}: no queda nada pendiente con este presupuesto.` };
   }
 
   /* Estado de cada etapa: 'hecha' | 'actual' | 'espera' | 'pendiente' | 'omitida' | 'no-aplica', con
      una línea de detalle. Cada etapa se juzga por sí misma (una formulación lista se ve hecha aunque
      falte el N° de requerimiento); la de la acción que sigue es la actual. */
   function etapas(h, sig) {
-    const cerrada = h.estado === 'Perdida' || h.estado === 'Descartada';
+    const noGanada = h.estado === 'Perdida' || h.estado === 'Descartada';
+    const terminada = h.af.cerrado || h.cerrado;
     const c = h.cotizacion;
     const formulada = !h.enFormulacion || (!h.conError && !h.sinHacer && !h.conAviso && !h.carpetaFalta);
     const hecha = {
@@ -189,20 +204,20 @@
       formulacion: formulada,
       cotizacion: c.emitida,
       oferta: !h.enFormulacion && h.estado !== 'Enviada',
-      ejecucion: h.af.cerrado,
-      cierre: h.af.cerrado
+      ejecucion: terminada,
+      cierre: h.cerrado
     };
     const detalle = {
       requerimiento: h.req ? `N° ${h.req}` : 'Falta el N°',
       formulacion: formulada ? 'Lista' : h.conError ? `Errores en el paso ${h.conError.n}` : h.sinHacer ? `Paso ${h.sinHacer.n} pendiente` : h.conAviso ? `Avisos en el paso ${h.conAviso.n}` : 'Falta la carpeta',
       cotizacion: c.folio ? `N° ${c.folio}` : c.emitida ? 'Emitida' : c.enEspera ? 'En Sistema QUEMPIN' : c.descartada ? 'No se emitió' : h.enFormulacion ? 'Por preparar' : 'Sin registrar aquí',
       oferta: h.enFormulacion ? 'Por enviar' : h.estado,
-      ejecucion: cerrada ? 'No aplica' : h.estado !== 'Adjudicada' ? 'Al adjudicarse' : h.af.cerrado ? 'Terminada' : h.af.enviado ? 'En curso' : 'Por traspasar',
-      cierre: cerrada ? 'No aplica' : h.af.cerrado ? 'Terminado' : 'Al terminar'
+      ejecucion: noGanada ? 'No aplica' : !GANADAS.includes(h.estado) ? 'Al adjudicarse' : terminada ? 'Terminada' : h.af.enviado ? 'En curso' : 'Por traspasar',
+      cierre: noGanada ? 'No aplica' : h.cerrado ? 'Cerrado' : h.af.cerrado ? 'Por cerrar' : 'Al terminar'
     };
     return ETAPAS.map((e, i) => {
       let est;
-      if (cerrada && (e.id === 'ejecucion' || e.id === 'cierre')) est = 'no-aplica';
+      if (noGanada && (e.id === 'ejecucion' || e.id === 'cierre')) est = 'no-aplica';
       else if (e.id === sig.etapa) est = sig.espera ? 'espera' : sig.fin && e.id !== 'ejecucion' ? 'hecha' : 'actual';
       else if (hecha[e.id]) est = 'hecha';
       else if (e.id === 'cotizacion' && c.enEspera) est = 'espera';
@@ -220,5 +235,5 @@
     return { etapas: lista, actual: lista.findIndex((e) => e.id === sig.etapa), siguiente: sig };
   }
 
-  root.QFlujo = { ETAPAS, EN_PLANILLA, recorrido };
+  root.QFlujo = { ETAPAS, EN_PLANILLA, GANADAS, recorrido };
 })(typeof window !== 'undefined' ? window : globalThis);

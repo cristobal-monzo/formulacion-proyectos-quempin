@@ -13,7 +13,9 @@
   const LS_PROYECTOS = 'qpn.formulacion.proyectos.v1';
   const LS_CONFIG = 'qpn.formulacion.config.v1';
 
-  const ESTADOS = ['Borrador', 'En revisión', 'Enviada', 'Adjudicada', 'Perdida', 'Descartada'];
+  /* «Cerrada» (2026-10-26): el proyecto adjudicado terminó su ejecución. Va después de Adjudicada porque sigue
+     contando como ganado; sale de la Planificación semanal del Portal. */
+  const ESTADOS = ['Borrador', 'En revisión', 'Enviada', 'Adjudicada', 'Cerrada', 'Perdida', 'Descartada'];
   const UNIDADES = ['Un.', 'kg', 'm', 'm2', 'm3', 'gl', 'km', 'día', 'hr', 'lt', 'noche'];
 
   const DEFAULT_PARAMETROS = {

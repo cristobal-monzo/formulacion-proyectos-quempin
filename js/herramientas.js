@@ -254,13 +254,14 @@
     return m;
   }
 
-  /* Qué sugerir según el estado del proyecto: Enviada → Ofertado; Adjudicada → Adjudicado; Perdida →
+  /* Qué sugerir según el estado del proyecto: Enviada → Ofertado; Adjudicada y Cerrada → Adjudicado; Perdida →
      No adjudicado; Descartada → Descartado (estos dos sin valor). Con los perdidos la planilla calcula
      la tasa de adjudicación que usa el Flujo de Caja (requerimientos.py, resumen). */
   function cambiosParaPlanilla(p, valorConIva) {
     // Sin valor (proyecto en otra moneda y sin cotización en pesos) se avisa solo el estado
     const v = valorConIva > 0 ? Math.round(valorConIva) : null;
-    if (p.estado === 'Adjudicada') return Object.assign({ estado: 'Adjudicado' }, v ? { valorAdjudicado: v } : {});
+    // Cerrada (2026-10-26) es una adjudicada que terminó: en la planilla sigue «Adjudicado»
+    if (p.estado === 'Adjudicada' || p.estado === 'Cerrada') return Object.assign({ estado: 'Adjudicado' }, v ? { valorAdjudicado: v } : {});
     if (p.estado === 'Enviada') return Object.assign({ estado: 'Ofertado' }, v ? { valorOfertado: v } : {});
     if (p.estado === 'Perdida') return { estado: 'No adjudicado' };
     if (p.estado === 'Descartada') return { estado: 'Descartado' };
