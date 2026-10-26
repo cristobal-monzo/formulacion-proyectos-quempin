@@ -140,7 +140,8 @@
     // resp: '' (todos), '@yo' (Mis proyectos: el responsable es el usuario; se recuerda en este
     // navegador), '@sin' (sin responsable) o unas iniciales
     list: { q: '', estado: '', resp: misProyectosGuardado() ? '@yo' : '', mes: '', sort: { k: 'mod', dir: -1 } },
-    conflicto: false
+    conflicto: false,
+    buscando: null // uid del proyecto que un enlace pidió y todavía no llega de la carpeta compartida
   };
   /* Pendientes del equipo (ver pintarPendientes): lo último leído de la Planilla y del buzón.
      porNumero: filas de la Planilla por N° (los avisos «Cierra en N días» de la lista y del editor).
@@ -1055,6 +1056,7 @@
     if (dlg.open && dlg.dataset.ruta !== location.hash) dlg.close('');
     const parts = location.hash.replace(/^#\/?/, '').split('/');
     let where = 'lista';
+    state.buscando = null;
     if (parts[0] !== 'req' && parts[0] !== 'tag' && parts[0] !== 'oportunidad') state.avisoLista = null;
     if (parts[0] === 'oportunidad' && parts[1]) {
       // Desde el tablero «Oportunidades» (js/oportunidad.js). La primera vez trae los datos de la licitación:
@@ -1065,6 +1067,10 @@
       if (rutaOportunidad(parts[1])) return;
     } else if (parts[0] === 'p' && parts[1]) {
       const p = S.get(parts[1]);
+      // Un proyecto del equipo que este navegador todavía no tiene (el Seguimiento abierto desde el Portal
+      // o el Recorrido por un colega): llega con la primera vuelta de la carpeta compartida. Antes el
+      // enlace se perdía en la lista; ahora se espera esa vuelta y se abre (2026-10-25).
+      if (!p && esperandoCarpeta()) { renderBuscando(parts[1]); return; }
       if (!p) { toast('No se encontró el proyecto.', true); location.hash = '#/'; return; }
       if (p.eliminado) { toast('Ese proyecto está en la papelera. Restáuralo para editarlo.', true); location.hash = '#/papelera'; return; }
       // La Carta Gantt es una herramienta aparte desde el 2026-10-20 (gantt/): los enlaces antiguos llevan ahí
@@ -1097,6 +1103,30 @@
     window.scrollTo(0, 0);
   }
   window.addEventListener('hashchange', route);
+
+  /* ¿La primera vuelta de la carpeta compartida todavía no termina? Mientras tanto un proyecto del equipo
+     puede no estar aquí. Sin carpeta, sin permiso o con error no hay nada que esperar. */
+  function esperandoCarpeta() {
+    if (!compartiendo()) return false;
+    const i = QC().info();
+    return !i.ultima && !i.sinCarpeta && !i.sinPermiso && !i.error;
+  }
+  function renderBuscando(uid) {
+    state.project = null;
+    state.buscando = uid;
+    document.title = 'Buscando el proyecto — Formulación QUEMPIN';
+    app.innerHTML = `<div class="viz-container page">
+      <div class="panel buscando" role="status" aria-live="polite">
+        <span class="buscando-punto" aria-hidden="true"></span>
+        <div>
+          <strong>Buscando el proyecto en la carpeta del equipo…</strong>
+          <p class="muted">Todavía no está en este navegador: llega con la sincronización, en unos segundos.</p>
+          <a class="back" href="#/">← Ver la lista de proyectos</a>
+        </div>
+      </div>
+    </div>`;
+    renderModnav('lista');
+  }
 
   function renderModnav(where) {
     const p = state.project;
@@ -3435,6 +3465,12 @@
     if (ev.type === 'error') { toast(ev.mensaje, true); if (state.project) setSaveState(ev.mensaje, 'err'); return; }
     if (ev.type === 'oferta') { // el Excel de la carpeta de la oferta: pendiente, guardando, guardado o error
       if (state.project && ev.ids.includes(state.project.uid)) { updateHeader(); pintarEditorOferta(); }
+      return;
+    }
+    // El enlace a un proyecto que esperaba la carpeta: se vuelve a intentar cuando llega algo o termina la vuelta
+    if (state.buscando && (ev.type === 'remote' || (ev.type === 'sync' && !QC().info().sincronizando))) {
+      if (ev.type === 'remote' && ev.conflicto) alConflicto(ev);
+      route();
       return;
     }
     if (ev.type === 'sync') { showSyncState(); pintarCompartida(); pintarPendientes(); if (state.project) pintarEditorOferta(); return; }

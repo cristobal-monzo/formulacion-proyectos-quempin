@@ -19,6 +19,8 @@
  *    sigue en la base, se sube. Si cambiaron los dos, o la carpeta perdió una versión que subió
  *    este navegador (un conflicto de OneDrive), se trae la de la carpeta y los cambios de aquí
  *    quedan como una copia del proyecto: nunca se pierde trabajo.
+ *  - Si aquí no se tocó nada desde la base, nunca es un conflicto, aunque la historia de la
+ *    carpeta ya no alcance a la base (2026-10-25): ver decidir().
  *  - Eliminar manda a la papelera y el archivo queda; mientras se comparte no hay borrado
  *    definitivo desde la herramienta (igual que en SharePoint).
  */
@@ -28,13 +30,17 @@
   const ESQUEMA = 'quempin.intercambio/1';
   const RUTA = ['publicado', 'formulador'];
   const LS_ESTADO = 'qpn.formulacion.compartida.v1';
-  const MAX_HISTORIA = 50;
+  // Cada guardado que llega a la carpeta es una versión: con 50, una tarde de trabajo llenaba la
+  // historia (el 2026-10-22, 50 versiones en 16 minutos) y los demás equipos ya no reconocían la suya.
+  const MAX_HISTORIA = 200;
+  const HISTORIA_RECORTADA = 50; // el tope hasta el 2026-10-25: una historia así de larga pudo perder su comienzo
   const ESPERA_SUBIDA = 1500;   // ms desde el último guardado hasta copiarlo a la carpeta
   const INTERVALO = 20000;      // cada cuánto se revisa la carpeta con la página visible
 
   // ---- Decisión (sin efectos: se prueba en node) ----------------------------------------------
   /* L: el proyecto en este navegador, o null. R: { mod, historia } del archivo, o null.
-     b: { base, historia } lo último sincronizado aquí, o null.
+     b: { base, historia, propio } lo último sincronizado aquí, o null; propio: true si esa versión
+     la subió este navegador, false si la trajo de la carpeta (sin el dato: no se sabe).
      Devuelve 'igual' | 'subir' | 'bajar' | 'conflicto' | 'nada'. */
   function decidir(L, R, b) {
     if (!R) return L ? 'subir' : 'nada';
@@ -50,6 +56,14 @@
     }
     if (hist.includes(lm)) return 'bajar';                    // la carpeta ya incluye esta versión
     if (b && (b.historia || []).includes(R.mod)) return 'subir'; // la carpeta quedó atrás de lo subido
+    // Aquí no se tocó nada desde la base y la carpeta trae otra versión cuya historia ya no la nombra:
+    // otra persona siguió trabajando y la historia dejó atrás la base. Antes era un conflicto, y cada
+    // equipo que volvía dejaba una copia «(cambios sin subir)» con un código nuevo, sin haber editado
+    // nada (2026-10-22: tres copias de la 310). Una base traída de la carpeta no tiene nada que perder;
+    // una que subió este navegador pudo perderla OneDrive, así que se trae solo si la historia está
+    // llena y empieza después de ella.
+    if (base && lm === base && (b.propio === false ||
+        (hist.length >= HISTORIA_RECORTADA && String(hist[0]) > String(base)))) return 'bajar';
     return 'conflicto';
   }
   /* Historia del archivo que se sube: la de la base más la base misma. */
@@ -222,13 +236,14 @@
         if (d === 'conflicto' && mismoContenido(L, R.datos)) d = 'bajar';
         // Misma fecha en otro equipo (guardado en el mismo milisegundo) pero otro contenido.
         else if (d === 'igual' && (!b || b.base !== R.mod) && !mismoContenido(L, R.datos)) d = 'conflicto';
-        if (d === 'igual') mapa[uid] = { base: R.mod, historia: R.historia };
-        else if (d === 'bajar') { traer.push(R); mapa[uid] = { base: R.mod, historia: R.historia }; }
+        // «propio»: si la base la subió este navegador (decidir() lo usa cuando la historia no alcanza)
+        if (d === 'igual') mapa[uid] = { base: R.mod, historia: R.historia, propio: b && b.base === R.mod ? b.propio : undefined };
+        else if (d === 'bajar') { traer.push(R); mapa[uid] = { base: R.mod, historia: R.historia, propio: false }; }
         else if (d === 'subir') {
           const historia = historiaNueva(L, b);
           await escribir(dir, L, historia);
-          mapa[uid] = { base: L.modificado, historia };
-        } else if (d === 'conflicto') { conflictos.push({ L, R }); mapa[uid] = { base: R.mod, historia: R.historia }; }
+          mapa[uid] = { base: L.modificado, historia, propio: true };
+        } else if (d === 'conflicto') { conflictos.push({ L, R }); mapa[uid] = { base: R.mod, historia: R.historia, propio: false }; }
       }
       guardarEstado(est);
       const copia = (R) => JSON.parse(JSON.stringify(R.datos));
