@@ -185,7 +185,7 @@
 
   /* Qué es cada vista, en una frase, y cómo se usa (ayuda desplegable) */
   const PROPOSITO = {
-    ficha: 'Identifica el proyecto. Los parámetros de cálculo ya vienen con los valores habituales.',
+    ficha: 'Identifica el proyecto y su categoría. Los parámetros de cálculo ya vienen con los valores habituales.',
     partidas: 'Divide el trabajo en partidas, por ejemplo «3 medidores de 2"».',
     materiales: 'Insumos de cada partida, por una unidad de la partida: la herramienta multiplica por su cantidad.',
     equipos: 'Equipos que se compran o arriendan, por una unidad de la partida.',
@@ -962,7 +962,7 @@
   /* La primera fila que aparece o cambia entre dos fotos, empezando por la lista de la vista abierta. */
   function filaCambiada(antes, despues) {
     const a = JSON.parse(antes), b = JSON.parse(despues);
-    const listas = ['partidas'].concat(COSTOS);
+    const listas = ['partidas'].concat(COSTOS, ['entregables']);
     const orden = listas.includes(state.tab) ? [state.tab].concat(listas.filter((k) => k !== state.tab)) : listas;
     for (const k of orden) {
       const previo = new Map((a[k] || []).map((x) => [x.uid, JSON.stringify(x)]));
@@ -1222,7 +1222,7 @@
         <div class="viz-filterbar">
           <div class="viz-filtergrid">
             <div class="viz-field span-6"><label for="list-search">Buscar</label>
-              <input type="search" id="list-search" class="${L.q ? 'is-set' : ''}" placeholder="Código, título, cliente, ubicación o responsable" value="${esc(L.q)}" autocomplete="off"></div>
+              <input type="search" id="list-search" class="${L.q ? 'is-set' : ''}" placeholder="Código, título, cliente, categoría, ubicación o responsable" value="${esc(L.q)}" autocomplete="off"></div>
             <div class="viz-field span-3"><label for="list-mes">Ingresados en</label>
               <select id="list-mes" class="${L.mes ? 'is-set' : ''}">
                 <option value="">Todos los meses</option>
@@ -1269,7 +1269,7 @@
       .filter((p) => !L.estado || p.estado === L.estado)
       .filter((p) => pasaResponsable(p, L.resp))
       .filter((p) => !L.mes || mesIngreso(p) === L.mes)
-      .filter((p) => !q || norm([p.codigo, p.titulo, p.cliente, p.idLicitacion, p.responsable, p.ubicacion, QH() ? QH().reqDe(p) : '', (vinculoAF(p) || {}).tag].join(' ')).includes(q));
+      .filter((p) => !q || norm([p.codigo, p.titulo, p.cliente, p.idLicitacion, S.categoriaDe(p), p.responsable, p.ubicacion, QH() ? QH().reqDe(p) : '', (vinculoAF(p) || {}).tag].join(' ')).includes(q));
   }
   /* Proyectos de un N° de requerimiento o de un TAG del Análisis Financiero, del más nuevo al más viejo
      (versión más alta y, a igual versión, el último modificado). */
@@ -1408,7 +1408,7 @@
       const chipAlertas = nAlert ? `<span class="chip ${nErr ? 'bad' : 'warn'}" title="${plural(nAlert, 'alerta')}">${nErr ? '✖' : '▲'} ${nAlert}</span>` : '';
       return `<tr class="clickable" data-open="${p.uid}" data-destino="${destinoDe(p, r)}" tabindex="0" aria-label="Abrir ${esc(p.codigo)} ${esc(p.titulo || 'Sin título')}${s ? `. ${esc(s.corto)}` : ''}">
         <td class="nowrap code"><span class="code-badge" title="${esc(p.codigo || '')}">${esc(p.codigo || '—')}</span><span class="ver">v${esc(p.version)}</span>${chipAlertas ? `<div class="en-linea l2">${chipAlertas}</div>` : ''}</td>
-        <td class="col-titulo"><div class="proj-title">${esc(p.titulo || 'Sin título')}</div><div class="proj-sub">${esc([p.cliente, p.ubicacion].filter(Boolean).join(' · ') || '—')}</div>
+        <td class="col-titulo"><div class="proj-title">${esc(p.titulo || 'Sin título')}</div><div class="proj-sub">${esc([S.categoriaDe(p), p.cliente, p.ubicacion].filter(Boolean).join(' · ') || '—')}</div>
           <div class="proj-sub en-linea l1">${esc(p.responsable ? `Responsable: ${p.responsable}` : 'Sin responsable')}<span class="en-linea l2"> · ${esc(fechaCorta(p.fecha))}</span></div>${carpetaCorta(p)}${aqui.has(p.uid) ? '<span class="chip warn solo-aqui" title="No está en la carpeta del equipo">Solo en este navegador</span>' : ''}</td>
         <td class="col-resp" data-label="Responsable">${esc(p.responsable || '—')}</td>
         <td class="nowrap col-fecha" data-label="Fecha">${esc(fechaCorta(p.fecha))}</td>
@@ -1510,7 +1510,7 @@
     const sep = '<span class="sep" aria-hidden="true">·</span>';
     pintar($('#ed-meta'), `<span class="code-badge" title="${esc(p.codigo || '')}">${esc(p.codigo || 'SIN CÓDIGO')}</span><span>versión ${esc(p.version)}</span>
       <button type="button" class="estado" data-e="${esc(p.estado)}" data-picker="estado" aria-haspopup="listbox" aria-expanded="false" aria-label="Estado: ${esc(p.estado)}. Cambiar el estado">${esc(p.estado)}${svg('<path d="M6 9l6 6 6-6"/>')}</button>${chipPlazo(p)}
-      ${p.cliente ? `<span class="m-opc">${sep}<span>${esc(p.cliente)}</span></span>` : ''}${p.responsable ? `<span class="m-opc">${sep}<span>${esc(p.responsable)}</span></span>` : ''}${p.fecha ? `<span class="m-opc">${sep}<span>${esc(fechaCorta(p.fecha))}</span></span>` : ''}${metaCarpeta(p, sep)}`);
+      ${S.categoriaDe(p) ? `<span class="m-opc">${sep}<span>${esc(S.categoriaDe(p))}</span></span>` : ''}${p.cliente ? `<span class="m-opc">${sep}<span>${esc(p.cliente)}</span></span>` : ''}${p.responsable ? `<span class="m-opc">${sep}<span>${esc(p.responsable)}</span></span>` : ''}${p.fecha ? `<span class="m-opc">${sep}<span>${esc(fechaCorta(p.fecha))}</span></span>` : ''}${metaCarpeta(p, sep)}`);
     const titulo = `${p.codigo || ''} ${p.titulo || 'Proyecto'} — Formulación QUEMPIN`;
     if (document.title !== titulo) document.title = titulo;
     texto($('#hdr-sub'), SUBTITULO);
@@ -1522,8 +1522,9 @@
     }
   }
 
-  /* Lectura fija junto a los pasos: precio, margen y alertas (el botón de alertas abre la lista
-     y cada alerta lleva a la fila que hay que corregir) */
+  /* Lectura fija junto a los pasos: precio neto y bruto, margen y alertas (el botón de alertas abre la
+     lista y cada alerta lleva a la fila que hay que corregir). El bruto, con IVA, desde el 2026-10-27:
+     pedido del usuario, para verlo siempre sin ir al paso 4. */
   function renderLectura() {
     const el = $('#lectura');
     if (!el) return;
@@ -1531,8 +1532,10 @@
     const nErr = r.warnings.filter((w) => w.level === 'error').length;
     const nWarn = r.warnings.filter((w) => w.level === 'warn').length;
     const txt = nErr || nWarn ? [nErr ? plural(nErr, 'error', 'errores') : '', nWarn ? plural(nWarn, 'aviso') : ''].filter(Boolean).join(' y ') : 'sin alertas';
+    const iva = nf(num(state.project.parametros.iva));
     pintar(el, `
       <div class="lectura-item"><span class="l">Precio neto</span><span class="v">${dinero(r.totals.precioNeto)}</span></div>
+      <div class="lectura-item" title="Precio neto + IVA ${iva} %: lo que paga el cliente"><span class="l">Precio bruto</span><span class="v">${dinero(r.totals.precioBruto)}</span></div>
       <div class="lectura-item"><span class="l">Margen</span><span class="v"><span class="dot ${r.status.margen}" aria-hidden="true" style="margin:0"></span>${pct(r.kpis.margen)}</span></div>
       <div class="lectura-item"><span class="l">Alertas</span><button type="button" class="v" data-menu="alertas" aria-haspopup="menu" aria-expanded="false" aria-label="Alertas: ${txt}. Ver y corregir">${nErr ? `<span class="chip bad">✖ ${nErr}</span>` : ''}${nWarn ? `<span class="chip warn">▲ ${nWarn}</span>` : ''}${!nErr && !nWarn ? '<span class="chip ok">✔ 0</span>' : ''}</button></div>`);
   }
@@ -1744,9 +1747,51 @@
   const resumenMetas = (par) => `Margen objetivo ${nf(num(par.margenObjetivo))} % · mínimo ${nf(num(par.margenMinimo))} % · ${num(par.metaUtilidadDH) > 0 ? `meta ${dinero(num(par.metaUtilidadDH))} por día-hombre` : 'sin meta por día-hombre'}`;
   const resumenCatalogo = (p) => `${plural((p.catalogoOtros || []).length, 'referencia')} para agregar rápido en Costos · Otros`;
 
+  /* Categoría del proyecto (2026-10-27): dice si lleva ID de licitación y presupuesto del mandante
+     (store.js CATEGORIAS). Sin elegirla, la deduce el ID de Mercado Público. */
+  function campoCategoria(p) {
+    const actual = S.categoriaDe(p);
+    const c = S.infoCategoria(p);
+    const hint = c ? c.desc + (p.categoria !== actual ? ' Según su ID.' : '') : 'Cómo se postula: dice si lleva ID de licitación y presupuesto del mandante.';
+    return `<div class="campo"><label for="f-categoria">Categoría</label>
+      <select class="input" id="f-categoria" data-f="categoria" aria-describedby="categoria-hint">
+        <option value="" ${actual ? '' : 'selected'}>Sin definir</option>${S.CATEGORIAS.map((x) => `<option value="${esc(x.nombre)}" ${x.nombre === actual ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select>
+      <span class="hint" id="categoria-hint">${esc(hint)}</span></div>`;
+  }
+  /* Entregables para postular (2026-10-27): lo que piden las bases, opcional, plegado en una línea con su avance */
+  function resumenEntregables(p) {
+    const l = p.entregables || [];
+    if (!l.length) return 'Sin entregables · anota los anexos que piden las bases y márcalos a medida que estén listos';
+    const listos = l.filter((e) => e.listo).length;
+    const porTipo = S.TIPOS_ENTREGABLE.map((t) => [t, l.filter((e) => e.tipo === t).length]).filter(([, n]) => n).map(([t, n]) => plural(n, t.toLowerCase()));
+    return `${listos === l.length ? 'Todos listos' : `${listos} de ${l.length} listos`} · ${porTipo.join(' · ')}`;
+  }
+  function cuerpoEntregables(p) {
+    const l = p.entregables || [];
+    const equipo = QU() ? QU().LISTA : [];
+    const filas = l.map((e, i) => {
+      const n = `entregable ${i + 1}`;
+      const resp = [''].concat(equipo, e.responsable && !equipo.includes(e.responsable) ? [e.responsable] : []);
+      return `<tr data-row="${e.uid}" class="${e.listo ? 'listo' : ''}">
+        <td class="col-listo" data-label="Listo"><input type="checkbox" data-list="entregables" data-uid="${e.uid}" data-k="listo" data-t="bool" ${e.listo ? 'checked' : ''} aria-label="Listo: ${esc(e.nombre || n)}"></td>
+        <td class="col-ent" data-label="Entregable">${rowInput('entregables', e, 'nombre', `Nombre del ${n}`, 'desc', false, 'placeholder="Ej.: Anexo N° 2, declaración jurada"')}</td>
+        <td data-label="Tipo"><select class="ci" data-list="entregables" data-uid="${e.uid}" data-k="tipo" aria-label="Tipo del ${n}">${S.TIPOS_ENTREGABLE.map((t) => `<option ${t === e.tipo ? 'selected' : ''}>${t}</option>`).join('')}</select></td>
+        <td data-label="Responsable"><select class="ci" data-list="entregables" data-uid="${e.uid}" data-k="responsable" aria-label="Responsable del ${n}">${resp.map((v) => `<option value="${esc(v)}" ${v === (e.responsable || '') ? 'selected' : ''}>${v ? esc(v) : '—'}</option>`).join('')}</select></td>
+        <td class="cell-actions"><button type="button" class="icon-btn del" data-act="del-row" data-list="entregables" data-uid="${e.uid}" aria-label="Eliminar el ${n}" title="Eliminar">${ICON.trash}</button></td>
+      </tr>`;
+    }).join('');
+    return `<p class="panel-sub">Lo que piden las bases para postular: anexos administrativos, técnicos, la oferta económica… Márcalos a medida que estén listos: al marcar la oferta como Enviada se avisa si falta alguno.</p>
+      ${l.length ? `<div class="tabla-contenedor"><table class="tbl tbl-apilable tbl-entregables">
+        <thead><tr><th class="col-listo">Listo</th><th>Entregable</th><th>Tipo</th><th>Responsable</th><th><span class="visualmente-oculto">Acciones</span></th></tr></thead>
+        <tbody>${filas}</tbody></table></div>` : ''}
+      <div class="acciones-ent"><button type="button" class="btn btn-sm" data-act="add-row" data-list="entregables">${ICON.plus}Agregar entregable</button>
+        <button type="button" class="btn btn-sm" data-act="pegar-entregables" data-tip="<b>Pegar una lista</b>La lista de anexos copiada de las bases, un entregable por línea, o filas de un Excel.">${ICON.sheet}Pegar una lista…</button></div>`;
+  }
+
   function viewFicha() {
     const p = state.project;
     const par = p.parametros;
+    const cat = S.infoCategoria(p);
     const cuerpoPrecio = `<div class="fila-campos tres">
           ${fInput('parametros.iva', 'IVA', { type: 'num', suffix: '%' })}
           ${fInput('parametros.gastosGenerales', 'Gastos generales', { type: 'num', suffix: '%', hint: '% del costo directo' })}
@@ -1765,8 +1810,23 @@
           ${fInput('parametros.margenObjetivo', 'Margen objetivo', { type: 'num', suffix: '%' })}
           ${fInput('parametros.margenMinimo', 'Margen mínimo aceptable', { type: 'num', suffix: '%' })}
           ${fInput('parametros.metaUtilidadDH', 'Meta de utilidad por día-hombre', { type: 'num', prefix: simbolo(), hint: '0 = sin meta' })}
-          ${fInput('parametros.umbralAjustado', 'Oferta «ajustada» desde', { type: 'num', suffix: '%', hint: '% del presupuesto del mandante' })}
+          ${S.conPresupuesto(p) ? fInput('parametros.umbralAjustado', 'Oferta «ajustada» desde', { type: 'num', suffix: '%', hint: '% del presupuesto del mandante' }) : ''}
         </div>`;
+    const ppto = num(par.presupuestoMaximo);
+    const panelPresupuesto = S.conPresupuesto(p) ? `<section class="panel">
+          <h4 class="seccion-titulo">Presupuesto del mandante <span class="tn">(opcional)</span></h4>
+          <p class="panel-sub">Si lo conoces, la evaluación indica si la oferta cabe en él.</p>
+          <div class="fila-campos">
+            ${fInput('parametros.presupuestoMaximo', 'Presupuesto máximo', { type: 'num', prefix: simbolo(), placeholder: 'Sin informar' })}
+            <div class="campo"><span class="label" id="lbl-iva-ppto">Se informa</span>
+              ${seg('f-ppto-iva', [{ v: '0', l: 'Neto', checked: !par.presupuestoIncluyeIva }, { v: '1', l: 'Con IVA', checked: !!par.presupuestoIncluyeIva }], { label: 'El presupuesto se informa', data: 'data-f="parametros.presupuestoIncluyeIva" data-t="bool01"' })}</div>
+          </div>
+        </section>`
+      // Sin presupuesto con que competir: lo que estaba escrito no se borra, solo no se usa
+      : `<section class="panel panel-sin-ppto" id="sin-presupuesto">
+          <h4 class="seccion-titulo">Presupuesto del mandante</h4>
+          <p class="panel-sub">${esc(cat.nombre)}: no hay un presupuesto con que competir, así que la evaluación no compara la oferta con uno.${ppto > 0 ? ` El que estaba escrito (${dinero(ppto)}) queda guardado y vuelve si cambias la categoría.` : ''}</p>
+        </section>`;
     const cuerpoCatalogo = `<div class="tabla-contenedor">
           <table class="tbl tbl-catalogo">
             <thead><tr><th>Descripción</th><th>Unidad</th><th class="num">Costo unitario</th><th><span class="visualmente-oculto">Acciones</span></th></tr></thead>
@@ -1791,7 +1851,8 @@
             ${campoRequerimiento(p)}
             ${fInput('titulo', 'Título del proyecto', { cls: 'ancho', placeholder: 'Ej.: Instalación de medidores de gas natural' })}
             ${fInput('cliente', 'Cliente / mandante')}
-            ${fInput('idLicitacion', 'ID de licitación', { opcional: true, placeholder: 'Ej.: 1234-56-LE26' })}
+            ${campoCategoria(p)}
+            ${S.conId(p) ? fInput('idLicitacion', (cat && cat.id) || 'ID de licitación', { opcional: true, placeholder: `Ej.: ${(cat && cat.ej) || '1234-56-LE26'}` }) : ''}
             ${fInput('ubicacion', 'Ubicación')}
             ${campoResponsable(p)}
             ${fInput('fecha', 'Fecha de formulación', { type: 'date' })}
@@ -1806,15 +1867,7 @@
         </section>
       </div>
       <div class="col">
-        <section class="panel">
-          <h4 class="seccion-titulo">Presupuesto del mandante <span class="tn">(opcional)</span></h4>
-          <p class="panel-sub">Si lo conoces, la evaluación indica si la oferta cabe en él.</p>
-          <div class="fila-campos">
-            ${fInput('parametros.presupuestoMaximo', 'Presupuesto máximo', { type: 'num', prefix: simbolo(), placeholder: 'Sin informar' })}
-            <div class="campo"><span class="label" id="lbl-iva-ppto">Se informa</span>
-              ${seg('f-ppto-iva', [{ v: '0', l: 'Neto', checked: !par.presupuestoIncluyeIva }, { v: '1', l: 'Con IVA', checked: !!par.presupuestoIncluyeIva }], { label: 'El presupuesto se informa', data: 'data-f="parametros.presupuestoIncluyeIva" data-t="bool01"' })}</div>
-          </div>
-        </section>
+        ${panelPresupuesto}
         <div class="grupo-plegable">
           <p class="grupo-plegable-t">Parámetros de este proyecto <span class="tn">· ya vienen con los valores habituales</span></p>
           ${plegable('f-precio', 'Estructura de precio y tarifas', resumenPrecio(par), cuerpoPrecio)}
@@ -1823,14 +1876,22 @@
           <p class="pie-param">¿Son los habituales de QUEMPIN? <button type="button" class="link-btn" data-act="save-defaults">Usarlos en los proyectos nuevos</button></p>
         </div>
       </div>
-    </div>`;
+    </div>
+    ${plegable('f-entregables', 'Entregables para postular <span class="tn">(opcional)</span>', resumenEntregables(p), cuerpoEntregables(p), 'entregables')}`;
   }
   function refreshFicha() {
     const p = state.project;
-    const a = $('#res-f-precio'), b = $('#res-f-metas'), c = $('#res-f-catalogo');
+    const a = $('#res-f-precio'), b = $('#res-f-metas'), c = $('#res-f-catalogo'), e = $('#res-f-entregables');
     if (a) a.textContent = resumenPrecio(p.parametros);
     if (b) b.textContent = resumenMetas(p.parametros);
     if (c) c.textContent = resumenCatalogo(p);
+    if (e) {
+      texto(e, resumenEntregables(p));
+      $$('.tbl-entregables tr[data-row]', app).forEach((tr) => {
+        const it = (p.entregables || []).find((x) => x.uid === tr.dataset.row);
+        tr.classList.toggle('listo', !!(it && it.listo));
+      });
+    }
   }
 
   function updateCodigoHint() {
@@ -2300,6 +2361,8 @@
     const medComp = () => medidor({ v: k.competitividad, max: Math.max(1.2, Math.ceil(k.competitividad * 10) / 10), fill: st.competitividad, fmt: pctShort, label: 'Competitividad frente al presupuesto',
       ticks: [{ at: um, dash: true, tip: `Ajustada desde ${pct(um)}` }, { at: 1, show: true, tip: '100 % del presupuesto' }] });
     const linkDatos = (txt) => `<button type="button" class="link-btn" data-act="tab" data-tab="ficha">${txt}</button>`;
+    // Trato directo o formulación general: no hay un presupuesto con que competir (2026-10-27)
+    const sinPpto = S.conPresupuesto(state.project) ? '' : S.categoriaDe(state.project);
 
     // Aviso arriba cuando hay alertas
     put('res-aviso', nErr || nWarn ? `<div class="aviso ${nErr ? 'bad' : 'warn'} no-print">
@@ -2332,7 +2395,8 @@
     $$('[data-sem-total]', app).forEach((el) => { el.className = 'dot ' + st.margen; });
     // En trozos que no se cortan: la línea se parte entre ellos y no ensancha la columna
     put('meta-margen', [CHIP_TXT.margen[st.margen] || 'Sin datos', `objetivo ${pctShort(mObj)}`, `mínimo ${pctShort(mMin)}`].map((x) => `<span>${esc(x)}</span>`).join(' · '));
-    put('res-eval', k.competitividad === null
+    put('res-eval', sinPpto ? `<p class="hint-linea">${esc(sinPpto)}: no hay un presupuesto del mandante con que comparar la oferta.</p>`
+      : k.competitividad === null
       ? `<p class="hint-linea">Sin presupuesto del mandante: ${linkDatos('agrégalo en Datos del proyecto')} para saber si la oferta cabe.</p>`
       : `<div class="eval-item s-${st.competitividad}"><div class="eval-top"><span class="eval-n">Frente al presupuesto del mandante</span>${chip(st.competitividad, 'competitividad')}</div>
           <div class="eval-v">${pct(k.competitividad)}<span class="eval-sub">de ${dinero(k.presupuesto)}${par.presupuestoIncluyeIva ? ' (con IVA)' : ''}</span></div>${medComp()}</div>`);
@@ -2376,11 +2440,12 @@
         a: { ok: 'Sí: el margen supera el objetivo del proyecto.', warn: 'A medias: el margen está entre el mínimo y el objetivo.', bad: 'No: el margen está bajo el mínimo aceptable. Revisa la utilidad (paso 4).', na: 'Aún no hay precio: completa los costos y la utilidad.' }[st.margen] },
       { q: '¿Resiste sobrecostos?', s: escenario.length ? st.sensibilidad : 'na', to: 'sensibilidad',
         a: !escenario.length ? 'No hay alzas de costo simuladas.' : { ok: `Sí: con ${escenario.join(', ')} el margen se mantiene sobre el mínimo.`, warn: `Con ${escenario.join(', ')} el margen cae bajo el mínimo.`, bad: `No: con ${escenario.join(', ')} el proyecto pierde dinero.`, na: 'Aún no hay precio para simular.' }[st.sensibilidad] },
-      { q: '¿Cabe en el presupuesto del mandante?', s: st.competitividad, to: 'indicadores',
+      // Sin presupuesto con que competir la pregunta no aplica: el veredicto queda en tres
+      sinPpto ? null : { q: '¿Cabe en el presupuesto del mandante?', s: st.competitividad, to: 'indicadores',
         a: k.competitividad === null ? `Sin presupuesto informado. ${linkDatos('Agrégalo en Datos del proyecto')}.` : { ok: 'Sí, con holgura.', warn: 'Sí, pero ajustada: está cerca del máximo.', bad: 'No: la oferta excede el presupuesto.' }[st.competitividad] },
       { q: '¿Los números están completos?', s: estNum, to: 'alertas',
         a: nErr ? `No: ${nErr === 1 ? 'un costo no se suma' : `${nErr} costos no se suman`} al precio.${nWarn ? ` Además, ${plural(nWarn, 'aviso')}.` : ''}` : nWarn ? `${plural(nWarn, 'aviso')} por revisar.` : estNum === 'ok' ? 'Sí: todos los costos se suman y cada partida tiene utilidad.' : 'Aún no hay costos.' }
-    ];
+    ].filter(Boolean);
     const peor = preguntas.some((x) => x.s === 'bad') ? 'bad' : preguntas.some((x) => x.s === 'warn') ? 'warn' : preguntas.every((x) => x.s === 'ok' || x.s === 'na') && ok(k.margen) ? 'ok' : 'na';
     const titular = { ok: 'La oferta está lista para enviarse.', warn: 'La oferta se puede enviar, pero revisa los puntos en ámbar.', bad: 'Revisa los puntos en rojo antes de enviar la oferta.', na: 'Completa los costos y la utilidad para evaluar la oferta.' }[peor];
     const EST_T = { ok: 'Bien', warn: 'Revisar', bad: 'Problema', na: 'Sin datos', info: 'Referencial' };
@@ -2406,7 +2471,8 @@
         <div class="kpi-read">${reading}</div>
       </article>`;
     };
-    const compRead = k.competitividad === null
+    const compRead = sinPpto ? `${esc(sinPpto)}: no hay un presupuesto con que competir.`
+      : k.competitividad === null
       ? `Ingresa el presupuesto máximo del mandante en ${linkDatos('Datos del proyecto')} para evaluar la oferta.`
       : `La oferta ${par.presupuestoIncluyeIva ? 'con IVA' : 'neta'} (${dinero(k.precioComparable)}) equivale al ${pct(k.competitividad)} del presupuesto de ${dinero(k.presupuesto)}.`;
     put('res-kpis', [
@@ -2548,7 +2614,7 @@
       <section>
         <div class="section-head"><h3 class="seccion-titulo">Paso a paso</h3><p>Los mismos pasos que ves arriba al abrir un proyecto.</p></div>
         <ol class="guia-pasos">
-          ${paso(1, 'Datos del proyecto', 'Al crear el proyecto eliges la carpeta de su oferta, o la creas ahí mismo con «Crear nueva carpeta»: con el N° de la Planilla de Ingreso, el proyecto trae su título, su ubicación, el presupuesto del mandante y su responsable (el Evaluador de la planilla o, si no tiene, tu usuario: tus iniciales, arriba a la derecha). Completa el cliente.', 'los parámetros (IVA, tarifas, metas) ya vienen con los valores habituales; ábrelos solo si este proyecto es distinto.')}
+          ${paso(1, 'Datos del proyecto', 'Al crear el proyecto eliges la carpeta de su oferta, o la creas ahí mismo con «Crear nueva carpeta»: con el N° de la Planilla de Ingreso, el proyecto trae su título, su ubicación, el presupuesto del mandante y su responsable (el Evaluador de la planilla o, si no tiene, tu usuario: tus iniciales, arriba a la derecha). Completa el cliente y la <b>categoría</b> (licitación, compra ágil, trato directo, cliente privado o formulación general): un trato directo no lleva ID de licitación ni presupuesto con que competir. Si las bases piden anexos, anótalos en <b>Entregables para postular</b> y márcalos a medida que estén listos.', 'los parámetros (IVA, tarifas, metas) ya vienen con los valores habituales; ábrelos solo si este proyecto es distinto.')}
           ${paso(2, 'Partidas', 'Divide el trabajo en partidas con su unidad y cantidad, por ejemplo «3 medidores de 2"». Los costos comunes a todo el trabajo (instalación de faenas, traslados…) van en la <b>partida base</b>: no se cotiza sola y su costo se divide en partes iguales entre las demás partidas.', 'una partida por cada ítem que irá en la cotización.')}
           ${paso(3, 'Costos', 'En Materiales, Equipos, Mano de obra y Otros ingresa lo que necesita <b>una</b> unidad de la partida y elige a qué partida pertenece. La herramienta multiplica por la cantidad.', 'un costo sin partida no se suma al precio: la herramienta lo marca en rojo.')}
           ${paso(4, 'Utilidad y precio', 'Define la utilidad de cada partida (% de recargo, monto fijo o valor final) y copia los valores netos para la cotización.', '«Llevar al margen objetivo» calcula el recargo que deja el margen justo en la meta.')}
@@ -2639,6 +2705,8 @@
       if (el.dataset.sync) $$(`[data-sync="${el.dataset.sync}"]`).forEach((o) => { if (o !== el) o.value = el.value; });
       if (el.dataset.f === 'codigo' || el.dataset.f === 'version') updateCodigoHint();
       if (el.dataset.f === 'parametros.moneda') { recalc(); renderEditor(); scheduleSave(); return; }
+      // La categoría muestra u oculta el ID de licitación y el presupuesto del mandante
+      if (el.dataset.f === 'categoria') { recalc(); renderTab(focusKeyOf(el)); scheduleSave(); return; }
     } else if (el.dataset.list && el.dataset.uid && el.dataset.k) {
       const it = findItem(el.dataset.list, el.dataset.uid);
       if (!it) return;
@@ -2706,7 +2774,7 @@
     if (e.key === 'Enter' && el.matches && el.matches('tr[data-open]')) { location.hash = `#/p/${el.dataset.open}/${el.dataset.destino || 'ficha'}`; return; }
     if ((e.key === 'Enter' || e.key === ' ') && el.matches && el.matches('th[data-sort]')) { e.preventDefault(); sortBy(el.dataset.sort); return; }
     // Enter: baja a la fila siguiente; en la última fila agrega una nueva (excepto en Resumen)
-    if (e.key !== 'Enter' || !el.dataset || !el.dataset.list || el.tagName !== 'INPUT' || el.type === 'radio') return;
+    if (e.key !== 'Enter' || !el.dataset || !el.dataset.list || el.tagName !== 'INPUT' || el.type === 'radio' || el.type === 'checkbox') return;
     e.preventDefault();
     const rows = $$('tr[data-row]', $('#tab-body')).filter((tr) => $(`[data-k="${el.dataset.k}"]`, tr));
     const idx = rows.indexOf(el.closest('tr'));
@@ -2744,13 +2812,19 @@
       const last = cotizables(p).pop(); // la utilidad de la partida anterior (la base no tiene)
       // Un valor final no se copia: en cero dejaría la partida nueva con precio $0
       if (last) { it.utilidadTipo = last.utilidadTipo === 'final' ? 'monto' : last.utilidadTipo; it.utilidadValor = last.utilidadTipo === 'pct' ? last.utilidadValor : 0; }
+    } else if (list === 'entregables') {
+      // La lista nace con el primero; el nuevo, del tipo del anterior (suelen venir por grupos)
+      if (!Array.isArray(p.entregables)) p.entregables = [];
+      const ult = p.entregables[p.entregables.length - 1];
+      it = S.newEntregable(ult && ult.tipo);
+      state.abiertos.add('f-entregables');
     } else {
       const f = state.filtro[list];
       it = DETALLE[list].factory(f && f !== '__none__' ? f : (p.partidas.length === 1 ? p.partidas[0].uid : ''));
     }
     p[list].push(it);
     recalc();
-    renderTab(`[data-list="${list}"][data-uid="${it.uid}"][data-k="${focusField || 'descripcion'}"]`);
+    renderTab(`[data-list="${list}"][data-uid="${it.uid}"][data-k="${focusField || (list === 'entregables' ? 'nombre' : 'descripcion')}"]`);
     flashRow(it.uid);
     scheduleSave();
   }
@@ -2818,6 +2892,78 @@
     nuevas.forEach((it) => flashRow(it.uid));
     scheduleSave();
     toast(`${plural(nuevas.length, 'fila agregada', 'filas agregadas')} a ${cfg.titulo.toLowerCase()}${partida ? ` (${codP(partida)})` : ', sin partida: elígela en cada fila'}.`);
+  }
+
+  /* Entregables de una lista pegada (2026-10-27): la de anexos copiada de las bases, un entregable por línea, o
+     filas de un Excel (las celdas se juntan con « · »). Se quitan las viñetas y la numeración. El tipo sale de una
+     celda que lo diga, de la línea (administrativo, técnico, económico, precio), del último título de sección
+     («Antecedentes técnicos», «ANEXOS ADMINISTRATIVOS:», que no se agrega) o, si no, del que se elija. */
+  function leerEntregables(txt, porOmision) {
+    const tipoDe = (s) => { const t = norm(s); return /^administrativ/.test(t) ? 'Administrativo' : /^tecnic/.test(t) ? 'Técnico' : /^economic/.test(t) ? 'Económico' : /^otros?$/.test(t) ? 'Otro' : ''; };
+    const tipoEn = (s) => { const t = norm(s); return /administrativ/.test(t) ? 'Administrativo' : /tecnic/.test(t) ? 'Técnico' : /economic|\bprecio/.test(t) ? 'Económico' : ''; };
+    const out = [];
+    let seccion = '';
+    String(txt || '').split(/\r?\n/).forEach((l) => {
+      let tipo = '';
+      const celdas = l.split('\t').map((c) => c.replace(/\s+/g, ' ').trim())
+        .filter((c) => c && !/^\(?\d{1,3}[.)°º-]?\)?$|^[•·*–—-]$/.test(c))
+        .filter((c) => { const t = c.split(' ').length <= 2 && tipoDe(c); if (t && !tipo) { tipo = t; return false; } return true; });
+      const nombre = celdas.join(' · ').replace(/^[•·*–—-]+\s*/, '').replace(/^([a-zA-Z]|\d{1,3})[.)]\s+/, '').trim();
+      if (!nombre) { if (tipo) seccion = tipo; return; }   // una línea que solo dice «Técnicos»
+      // En plural: «Anexo técnico» puede ser un entregable; «Anexos técnicos», el título de un grupo
+      const m = /^(anexos|antecedentes|documentos|documentacion)\s+(\S+?):?$/.exec(norm(nombre));
+      if (m && tipoDe(m[2])) { seccion = tipoDe(m[2]); return; }
+      out.push({ nombre: (nombre.charAt(0).toLocaleUpperCase('es-CL') + nombre.slice(1)).slice(0, 300), tipo: tipo || tipoEn(nombre) || seccion || porOmision });
+    });
+    return out.slice(0, 200);
+  }
+  async function pegarEntregables() {
+    const p = state.project;
+    if (!p) return;
+    let leidos = [];
+    const prom = ask({
+      title: 'Pegar la lista de entregables',
+      wide: true,
+      body: `<p>Copia de las bases la lista de anexos y documentos que hay que presentar, un entregable por línea, o las filas de un Excel, y pégala aquí. Las viñetas y la numeración se quitan.</p>
+        <div class="campo"><label for="pe-texto">Lista copiada</label>
+          <textarea class="textarea" id="pe-texto" rows="8" spellcheck="false" data-sin-mayus placeholder="Antecedentes administrativos&#10;Anexo N° 1: Identificación del oferente&#10;Anexo N° 2: Declaración jurada&#10;Antecedentes técnicos&#10;Anexo N° 3: Experiencia"></textarea></div>
+        <div class="campo"><label for="pe-tipo">Tipo de los que no lo digan</label>
+          <select class="select" id="pe-tipo" aria-describedby="pe-tipo-hint">${S.TIPOS_ENTREGABLE.map((t) => `<option>${t}</option>`).join('')}</select>
+          <span class="hint" id="pe-tipo-hint">El tipo sale de la línea (administrativo, técnico, económico) o de un título como «Antecedentes técnicos».</span></div>
+        <p class="pe-previa" id="pe-previa" aria-live="polite"></p>`,
+      buttons: [{ label: 'Cancelar' }, { label: 'Agregar', value: 'ok', primary: true }]
+    });
+    const ta = $('#pe-texto'), tipo = $('#pe-tipo'), previa = $('#pe-previa');
+    const boton = $('#modal .modal-foot .btn-primario');
+    const pintarPrevia = () => {
+      leidos = leerEntregables(ta.value, tipo.value);
+      const n = leidos.length;
+      const cuenta = S.TIPOS_ENTREGABLE.map((t) => [t, leidos.filter((e) => e.tipo === t).length]).filter(([, k]) => k).map(([t, k]) => plural(k, t.toLowerCase()));
+      previa.textContent = n ? `${plural(n, 'entregable')} para agregar: ${cuenta.join(', ')}.` : ta.value.trim() ? 'No se reconoció ningún entregable.' : '';
+      boton.disabled = !n;
+      boton.textContent = n ? `Agregar ${plural(n, 'entregable')}` : 'Agregar';
+    };
+    ta.addEventListener('input', pintarPrevia);
+    tipo.addEventListener('change', pintarPrevia);
+    pintarPrevia();
+    ta.focus();
+    if ((await prom) !== 'ok' || !leidos.length || state.project !== p) return;
+    if (!Array.isArray(p.entregables)) p.entregables = [];
+    p.entregables.push(...leidos.map((e) => Object.assign(S.newEntregable(e.tipo), { nombre: e.nombre })));
+    state.abiertos.add('f-entregables');
+    recalc();
+    renderTab();
+    scheduleSave();
+    toast(`${plural(leidos.length, 'entregable agregado', 'entregables agregados')} a la lista.`);
+  }
+  /* Lleva a la lista de entregables, abierta (desde el Seguimiento y desde el aviso al marcar Enviada) */
+  function verEntregables() {
+    state.abiertos.add('f-entregables');
+    if (state.tab !== 'ficha') goTab('ficha');
+    const d = $('#f-entregables');
+    if (!d) return;
+    d.open = true;
+    setTimeout(() => d.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
   }
 
   function addFromCatalog(i) {
@@ -2950,6 +3096,7 @@
           const cfg = S.getConfig();
           const c = S.cloneProject(src, { codigo: S.nextCodigo(cfg.prefijo, new Date().getFullYear()), version: 1, titulo: (src.titulo || 'Proyecto') + ' (copia)', estado: 'Borrador', fecha: S.hoy() });
           delete c.vinculos; // otra oferta: el envío al Análisis Financiero era de la original
+          (c.entregables || []).forEach((e) => { e.listo = false; }); // y sus entregables se preparan de nuevo
           const sel = await elegirOfertaLocal({
             titulo: 'Duplicar: ¿de qué oferta es la copia?',
             texto: `Se crea una copia de <b>${esc(src.codigo)} v${esc(src.version)}</b>. Elige la carpeta de la oferta de la copia, o créala aquí.`,
@@ -3157,6 +3304,8 @@
         }
         case 'add-row': addRow(d.list); break;
         case 'pegar-filas': await pegarFilas(d.list); break;
+        case 'pegar-entregables': await pegarEntregables(); break;
+        case 'ver-entregables': verEntregables(); break;
         case 'add-base': {
           // Una sola partida base, siempre la primera de la lista
           if (p.partidas.some((x) => x.base)) break;
@@ -4407,8 +4556,9 @@
     const hechos = [];
     if (!String(p.titulo || '').trim() && r.titulo) { p.titulo = r.titulo; hechos.push('título'); }
     if (!String(p.ubicacion || '').trim() && r.ubicacion) { p.ubicacion = r.ubicacion; hechos.push('ubicación'); }
-    if (!String(p.idLicitacion || '').trim() && r.referencia) { p.idLicitacion = String(r.referencia); hechos.push('ID de licitación'); }
-    if (!(num(p.parametros.presupuestoMaximo) > 0) && ok(r.presupuesto) && r.presupuesto > 0) {
+    // Solo lo que lleva su categoría: un trato directo no tiene ID de licitación ni presupuesto con que competir
+    if (S.conId(p) && !String(p.idLicitacion || '').trim() && r.referencia) { p.idLicitacion = String(r.referencia); hechos.push('ID de licitación'); }
+    if (S.conPresupuesto(p) && !(num(p.parametros.presupuestoMaximo) > 0) && ok(r.presupuesto) && r.presupuesto > 0) {
       p.parametros.presupuestoMaximo = r.presupuesto;
       p.parametros.presupuestoIncluyeIva = true;
       hechos.push('presupuesto (con IVA)');
@@ -4777,12 +4927,29 @@
     // pestaña de «Marcar como Adjudicada», que cerraría el diálogo.
     if (p.estado === 'Adjudicada') setTimeout(() => { if (state.project && state.project.uid === p.uid) ofrecerTraslado(p.uid); }, 800);
   }
+  /* Antes de marcar la oferta como Enviada desde el recorrido: si la lista de entregables tiene pendientes, se
+     dicen (2026-10-27: la lista es para no olvidar ningún anexo al postular). true = seguir. */
+  async function entregablesListos(p) {
+    const faltan = (p.entregables || []).filter((e) => !e.listo);
+    if (!faltan.length) return true;
+    const uno = faltan.length === 1;
+    const v = await ask({
+      title: uno ? 'Falta un entregable por marcar' : `Faltan ${faltan.length} entregables por marcar`,
+      body: `<p>En los entregables para postular, ${uno ? 'este no está marcado como listo' : 'estos no están marcados como listos'}:</p>
+        <ul class="lista-faltan">${faltan.slice(0, 8).map((e) => `<li>${esc(e.nombre || 'Sin nombre')} <span class="muted">· ${esc(e.tipo)}</span></li>`).join('')}${faltan.length > 8 ? `<li class="muted">y ${faltan.length - 8} más</li>` : ''}</ul>
+        <p>¿La oferta ya salió con todo?</p>`,
+      buttons: [{ label: 'Revisar la lista', value: 'revisar' }, { label: 'Marcar como Enviada', value: 'ok', primary: true }]
+    });
+    if (v === 'revisar') verEntregables();
+    return v === 'ok';
+  }
   /* Cambia el estado desde el recorrido. Enviada, Perdida y Descartada avisan a la Planilla de Ingreso
      en el mismo clic (el recorrido lo dice); la adjudicación viaja con «Pasar a ejecución». Cerrada no
      avisa: en la planilla el proyecto sigue «Adjudicado». */
   async function marcarEstado(estado) {
     const p = state.project;
     if (!p) return false;
+    if (estado === 'Enviada' && p.estado !== 'Enviada' && !(await entregablesListos(p))) return false;
     if (p.estado !== estado) {
       p.estado = estado;
       updateHeader();
@@ -4975,7 +5142,13 @@
     const ps = estadoPasos();
     const falta = ps.find((x) => x.est === 'err') || ps.find((x) => x.est === 'pend');
     const vo = ofertaActiva() ? QO().vinculo(p) : null;
+    // Los entregables para postular, si el proyecto lleva la lista (2026-10-27)
+    const ents = p.entregables || [];
+    const faltanEnt = ents.filter((x) => !x.listo).map((x) => x.nombre || 'sin nombre');
+    const nombresEnt = faltanEnt.length > 3 ? `${faltanEnt.slice(0, 2).join(', ')} y ${faltanEnt.length - 2} más`
+      : faltanEnt.length > 1 ? `${faltanEnt.slice(0, -1).join(', ')} y ${faltanEnt[faltanEnt.length - 1]}` : (faltanEnt[0] || '');
     const resumenFormulacion = linea(`${falta ? `<span class="chip warn">Paso ${falta.n} pendiente</span> ${esc(falta.label)}: ${esc(falta.falta || 'por completar')}` : `<span class="chip ok">5 de 5 pasos</span> Precio neto <b>${dinero(r.totals.precioNeto)}</b> · margen ${pct(r.kpis.margen)}`}`)
+      + (ents.length ? linea(`<span class="chip ${faltanEnt.length ? 'warn' : 'ok'}">${ents.length - faltanEnt.length} de ${ents.length}</span> entregables para postular listos${faltanEnt.length ? `: falta${faltanEnt.length === 1 ? '' : 'n'} ${esc(nombresEnt)}` : ''}. <button type="button" class="link-btn" data-act="ver-entregables">Ver la lista</button>`) : '')
       + (vo ? linea(`${ICON.folder}<span class="rcl-carpeta">Carpeta de la oferta: <b>${esc(vo.nombre)}</b> · el Excel de la formulación se mantiene al día ahí.</span>`) : '');
     const bFormulacion = falta ? `<button type="button" class="btn" data-act="sigue" data-accion="ir-paso">Ir al paso ${falta.n}${ICON.arrow}</button>` : '<button type="button" class="btn" data-act="tab" data-tab="evaluacion">Ver la evaluación</button>';
     const bloqueAF = (venta) => `<div class="herr-af"><div class="af-panel" id="af-panel"></div>${venta || ''}</div>`;
@@ -5837,16 +6010,18 @@
 
   /* Pide a la Planilla de Ingreso la fila del proyecto nuevo (mensaje nuevo-requerimiento, 2026-10-26), con el
      formato de las demás: Estado «Evaluación», Canal «Otro» (o «Mercado Público» con ID de licitación),
-     Capt. quien lo crea, Eval. el responsable, «-» sin referencia y la Apertura de hoy. Devuelve si se pidió. */
+     Capt. quien lo crea, Eval. el responsable, «-» sin referencia y la Apertura de hoy. Devuelve si se pidió.
+     El ID y el presupuesto, solo si su categoría los lleva (2026-10-27). */
   async function registrarEnPlanilla(p, numero, op) {
     const par = p.parametros || {};
     const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const cierre = op && /^\d{4}-\d{2}-\d{2}/.test(String(op.cierre || '')) ? String(op.cierre).slice(0, 16) : '';
+    const id = S.conId(p) ? String(p.idLicitacion || '').trim() : '';
     const datos = {
-      numero, titulo: p.titulo || '', estado: 'Evaluación', canal: p.idLicitacion ? 'Mercado Público' : 'Otro',
+      numero, titulo: p.titulo || '', estado: 'Evaluación', canal: id ? 'Mercado Público' : 'Otro',
       captador: yo() || p.responsable || '', evaluador: p.responsable || yo() || '',
-      ubicacion: p.ubicacion || '', referencia: p.idLicitacion || '-', apertura: iso(new Date()), cierre,
-      presupuesto: par.presupuestoIncluyeIva && num(par.presupuestoMaximo) > 0 ? num(par.presupuestoMaximo) : null
+      ubicacion: p.ubicacion || '', referencia: id || '-', apertura: iso(new Date()), cierre,
+      presupuesto: S.conPresupuesto(p) && par.presupuestoIncluyeIva && num(par.presupuestoMaximo) > 0 ? num(par.presupuestoMaximo) : null
     };
     try {
       const m = QH().mensajeNuevoRequerimiento(p, datos, usuarioActual(p));
@@ -5924,8 +6099,8 @@
       if (ev) p.responsable = ev;
       if (!String(p.titulo || '').trim()) p.titulo = (r && r.titulo) || (c && c.titulo) || '';
       if (r && r.ubicacion && !String(p.ubicacion || '').trim()) p.ubicacion = r.ubicacion;
-      if (r && r.referencia && !String(p.idLicitacion || '').trim()) p.idLicitacion = String(r.referencia);
-      if (r && r.presupuesto && !(num(p.parametros.presupuestoMaximo) > 0)) {
+      if (r && r.referencia && S.conId(p) && !String(p.idLicitacion || '').trim()) p.idLicitacion = String(r.referencia);
+      if (r && r.presupuesto && S.conPresupuesto(p) && !(num(p.parametros.presupuestoMaximo) > 0)) {
         p.parametros.presupuestoMaximo = r.presupuesto;
         p.parametros.presupuestoIncluyeIva = true;
       }
@@ -6345,7 +6520,7 @@
     const moneda = monedaDe({ parametros: S.getConfig().parametros });
     const cerro = op.cierre && new Date(op.cierre) < new Date();
     const datos = [
-      ['Título', c.titulo], ['Cliente', c.cliente], ['ID de licitación', c.idLicitacion], ['Ubicación', c.ubicacion],
+      ['Título', c.titulo], ['Cliente', c.cliente], ['Categoría', c.categoria], [op.compraAgil ? 'ID de la compra ágil' : 'ID de licitación', c.idLicitacion], ['Ubicación', c.ubicacion],
       ['Presupuesto', !c.presupuesto ? 'no publicado' : moneda !== 'CLP' ? `no se lleva: los proyectos nuevos son en ${MONEDAS[moneda].corto}` : `${dinero(c.presupuesto, 'CLP')} con IVA`],
       ['Cierre', op.cierre ? QOp().fechaHora(op.cierre) + (cerro ? ' (ya cerró)' : '') : ''],
       ['Planilla de Ingreso', op.req ? `N° ${op.req}: sus datos mandan` : '']

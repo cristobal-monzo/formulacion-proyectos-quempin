@@ -145,6 +145,9 @@
     wb.calcProperties = { fullCalcOnLoad: true };
 
     const wsF = wb.addWorksheet('Ficha', { properties: { tabColor: { argb: C.brand } }, views: [{ showGridLines: false }] });
+    // Entregables para postular (2026-10-27): solo si el proyecto lleva la lista, junto a la Ficha
+    const ents = Array.isArray(p.entregables) ? p.entregables : [];
+    const wsEnt = ents.length ? wb.addWorksheet('Entregables', { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }] }) : null;
     const wsPar = wb.addWorksheet('Parámetros', { views: [{ showGridLines: false }] });
     const wsP = wb.addWorksheet('Partidas', { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }] });
     const wsM = wb.addWorksheet('Materiales', { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }] });
@@ -168,7 +171,9 @@
       ['t1', 'Tarifa día-hombre Nivel 1', num(par.tarifaN1), FMT_M, 'Costo empresa por día de una persona de nivel 1.'],
       ['t2', 'Tarifa día-hombre Nivel 2', num(par.tarifaN2), FMT_M, 'Costo empresa por día de una persona de nivel 2.'],
       ['t3', 'Tarifa día-hombre Nivel 3', num(par.tarifaN3), FMT_M, 'Costo empresa por día de una persona de nivel 3.'],
-      ['pres', 'Presupuesto máximo del mandante', num(par.presupuestoMaximo), FMT_M, 'Dejar en 0 si no se conoce.'],
+      // Sin presupuesto con que competir (trato directo, formulación general) va en 0: la competitividad no se calcula
+      root.QStore.conPresupuesto(p) ? ['pres', 'Presupuesto máximo del mandante', num(par.presupuestoMaximo), FMT_M, 'Dejar en 0 si no se conoce.']
+        : ['pres', 'Presupuesto máximo del mandante', 0, FMT_M, `${root.QStore.categoriaDe(p)}: no hay un presupuesto con que competir.`],
       ['presIva', 'Presupuesto incluye IVA (Sí/No)', par.presupuestoIncluyeIva ? 'Sí' : 'No', null, 'Define si la competitividad se mide con precio bruto o neto.'],
       ['mObj', 'Margen objetivo', num(par.margenObjetivo) / 100, FMT.pct, 'Sobre este margen el semáforo queda en verde.'],
       ['mMin', 'Margen mínimo', num(par.margenMinimo) / 100, FMT.pct, 'Bajo este margen el semáforo queda en rojo.'],
@@ -492,7 +497,8 @@
     const m = (x) => (x || 0);
     const fmtDH = Number.isInteger(Math.round(m(k.dh) * 100) / 100) ? FMT.int : '#,##0.0#';
     const mObj = num(par.margenObjetivo) / 100, mMin = num(par.margenMinimo) / 100;
-    const metaDH = num(par.metaUtilidadDH), pres = num(par.presupuestoMaximo), ajust = num(par.umbralAjustado || 95) / 100;
+    // El presupuesto que usan las fórmulas: 0 sin presupuesto con que competir (como en la hoja Parámetros)
+    const metaDH = num(par.metaUtilidadDH), pres = root.QStore.conPresupuesto(p) ? num(par.presupuestoMaximo) : 0, ajust = num(par.umbralAjustado || 95) / 100;
     const deltaF = `(${A.mat}*${PR.sMat}+${A.eq}*${PR.sEq}+${A.mo}*${PR.sMo}+${A.ot}*${PR.sOt})`;
     const compF = `IF(${PR.pres}>0,IF(${PR.presIva}="Sí",${A.pb},${A.pn})/${PR.pres},0)`;
     const indicadores = [
@@ -593,10 +599,16 @@
 
     // ---- Datos del proyecto ----
     section('DATOS DEL PROYECTO');
+    // La categoría y, si la lleva, su ID (2026-10-27); los entregables, con su avance (detalle en su hoja)
+    const cat = root.QStore.infoCategoria(p);
+    const entListos = ents.filter((e) => e.listo).length;
     const idRows = [
       ['Código', p.codigo], ['Versión', p.version], ['Título', p.titulo], ['Cliente / mandante', p.cliente],
-      ['ID de licitación', p.idLicitacion], ['Ubicación', p.ubicacion], ['Responsable', p.responsable], ['Fecha de formulación', p.fecha],
+      ['Categoría', cat ? cat.nombre : 'Sin definir'],
+      ...(root.QStore.conId(p) ? [[(cat && cat.id) || 'ID de licitación', p.idLicitacion]] : []),
+      ['Ubicación', p.ubicacion], ['Responsable', p.responsable], ['Fecha de formulación', p.fecha],
       ['Estado', p.estado], ['Descripción', p.descripcion],
+      ...(ents.length ? [['Entregables para postular', `${entListos === ents.length ? 'Todos listos' : `${entListos} de ${ents.length} listos`} (hoja Entregables)`]] : []),
       [copia ? 'Actualizado el' : 'Exportado el', new Date().toLocaleString('es-CL')], ['ID interno', p.uid]
     ];
     idRows.forEach(([key, v]) => {
@@ -678,13 +690,33 @@
       gr++;
     });
 
+    // ---------------- Entregables para postular ----------------
+    if (wsEnt) {
+      styleTitle(wsEnt, 'ENTREGABLES PARA POSTULAR', `${ident} — ${entListos === ents.length ? 'todos listos' : `${entListos} de ${ents.length} listos`}`, 5);
+      wsEnt.columns = [{ width: 6 }, { width: 70 }, { width: 16 }, { width: 14 }, { width: 13 }];
+      const he = wsEnt.getRow(4); he.values = ['N°', 'Entregable', 'Tipo', 'Responsable', 'Estado']; styleHeader(he);
+      ents.forEach((e, i) => {
+        const row = wsEnt.getRow(5 + i);
+        row.values = [i + 1, e.nombre || '', e.tipo, e.responsable || '', e.listo ? '✔ Listo' : 'Pendiente'];
+        row.getCell(1).alignment = { horizontal: 'center', vertical: 'top' };
+        row.getCell(2).alignment = { wrapText: true, vertical: 'top' };
+        row.getCell(5).font = { name: FONT, size: 10, bold: true, color: { argb: e.listo ? C.okFg : C.warnFg } };
+        row.eachCell({ includeEmpty: true }, (c) => {
+          if (i % 2) c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.zebra } };
+          c.border = { bottom: { style: 'hair', color: { argb: C.line } } };
+        });
+      });
+      wsEnt.pageSetup = { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+      wsEnt.headerFooter = { oddFooter: `&L${p.codigo} v${p.version}&RPágina &P de &N` };
+    }
+
     // ---------------- Datos para re-importar ----------------
     const json = JSON.stringify(p);
     wsD.getCell('A1').value = root.QStore.SCHEMA;
     const CH = 30000;
     for (let i = 0, rr = 2; i < json.length; i += CH, rr++) wsD.getCell(`A${rr}`).value = json.slice(i, i + CH);
 
-    [wsF, wsPar, wsP, wsM, wsE, wsH, wsO, wsG].forEach(baseFont);
+    [wsF, wsEnt, wsPar, wsP, wsM, wsE, wsH, wsO, wsG].filter(Boolean).forEach(baseFont);
     // Filas alternadas en las tablas de detalle (sin tapar los rellenos de aviso)
     [[wsP, pEnd, 17], [wsM, mEnd, 8], [wsE, eEnd, 8], [wsH, hEnd, 13], [wsO, oEnd, 8]].forEach(([ws, end, nc]) => {
       for (let rr = 5; rr <= end; rr++) {
@@ -719,9 +751,9 @@
     const wb = new ExcelJS.Workbook();
     wb.creator = 'QUEMPIN · Formulación de proyectos';
     const ws = wb.addWorksheet('Cartera', { views: [{ state: 'frozen', ySplit: 3, showGridLines: false }] });
-    styleTitle(ws, 'CARTERA DE PROYECTOS FORMULADOS', `Exportado el ${new Date().toLocaleString('es-CL')} · ${projects.length} proyecto(s)`, 21);
+    styleTitle(ws, 'CARTERA DE PROYECTOS FORMULADOS', `Exportado el ${new Date().toLocaleString('es-CL')} · ${projects.length} proyecto(s)`, 22);
     const cols = [
-      ['Código', 16], ['Versión', 8], ['Título', 40], ['Cliente', 24], ['Ubicación', 16], ['Responsable', 20], ['Fecha', 12], ['Estado', 13],
+      ['Código', 16], ['Versión', 8], ['Título', 40], ['Cliente', 24], ['Ubicación', 16], ['Responsable', 20], ['Fecha', 12], ['Estado', 13], ['Categoría', 18],
       ['Costo directo', 15], ['Costo total', 15], ['Utilidad', 15], ['Precio neto', 15], ['Precio bruto', 15],
       ['Margen', 9], ['Markup', 9], ['Días-Hombre', 10], ['Utilidad / DH', 13], ['Incidencia MO', 11], ['Competitividad', 12], ['Alertas', 8], ['Modificado', 18]
     ];
@@ -731,13 +763,13 @@
       const r = root.QCalc.computeProject(p);
       const t = r.totals, k = r.kpis;
       const row = ws.getRow(4 + i);
-      row.values = [p.codigo, p.version, p.titulo, p.cliente, p.ubicacion, p.responsable, p.fecha, p.estado,
+      row.values = [p.codigo, p.version, p.titulo, p.cliente, p.ubicacion, p.responsable, p.fecha, p.estado, root.QStore.categoriaDe(p),
         t.cd, t.costoTotal, t.utilidad, t.precioNeto, t.precioBruto,
         k.margen || 0, k.markup || 0, k.dh, k.rentDH || 0, k.incidenciaMO || 0, k.competitividad === null ? '' : k.competitividad,
         r.warnings.filter((w) => w.level !== 'info').length, p.modificado ? new Date(p.modificado).toLocaleString('es-CL') : ''];
-      [9, 10, 11, 12, 13, 17].forEach((c) => { row.getCell(c).numFmt = fmtMoneda(p); });
-      [14, 15, 18, 19].forEach((c) => { row.getCell(c).numFmt = FMT.pct; });
-      row.getCell(16).numFmt = FMT.num;
+      [10, 11, 12, 13, 14, 18].forEach((c) => { row.getCell(c).numFmt = fmtMoneda(p); });
+      [15, 16, 19, 20].forEach((c) => { row.getCell(c).numFmt = FMT.pct; });
+      row.getCell(17).numFmt = FMT.num;
     });
     ws.autoFilter = { from: 'A3', to: `${colL(cols.length)}3` };
     baseFont(ws);

@@ -225,7 +225,10 @@
     const deltaCosto = t.mat * sv.mat + t.eq * sv.eq + t.mo * sv.mo + t.otros * sv.otros;
     const utilidadSens = t.utilidad - deltaCosto;
 
-    const presupuesto = num(par.presupuestoMaximo);
+    // Sin un presupuesto con que competir (trato directo, formulación general: store.js CATEGORIAS) no hay
+    // competitividad, aunque quede escrito uno de antes
+    const S = root.QStore;
+    const presupuesto = S && S.conPresupuesto && !S.conPresupuesto(p) ? 0 : num(par.presupuestoMaximo);
     const precioComparable = par.presupuestoIncluyeIva ? t.precioBruto : t.precioNeto;
 
     const k = {

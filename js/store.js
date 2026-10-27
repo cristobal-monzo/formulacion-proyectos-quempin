@@ -18,6 +18,39 @@
   const ESTADOS = ['Borrador', 'En revisión', 'Enviada', 'Adjudicada', 'Cerrada', 'Perdida', 'Descartada'];
   const UNIDADES = ['Un.', 'kg', 'm', 'm2', 'm3', 'gl', 'km', 'día', 'hr', 'lt', 'noche'];
 
+  /* Categoría del proyecto (pedido del usuario, 2026-10-27): cómo se postula, y con eso qué datos tiene. Un trato
+     directo no tiene ID de licitación ni un presupuesto con que competir. id: el rótulo y el ejemplo del ID (null =
+     sin ID); presupuesto: si hay un monto del mandante con que comparar la oferta. Sin categoría (los proyectos de
+     antes, sin ID de Mercado Público) se muestra y se cuenta todo, como siempre. */
+  const CATEGORIAS = [
+    { nombre: 'Licitación', id: 'ID de licitación', ej: '1234-56-LE26', presupuesto: true, desc: 'Mercado Público u otra licitación: con su ID y el presupuesto con que se compite.' },
+    { nombre: 'Compra ágil', id: 'ID de la compra ágil', ej: '1234-56-COT26', presupuesto: true, desc: 'Compra ágil de Mercado Público: con su ID y el monto disponible.' },
+    { nombre: 'Trato directo', id: null, presupuesto: false, desc: 'Sin ID de licitación ni presupuesto con que competir.' },
+    { nombre: 'Cliente privado', id: null, presupuesto: true, desc: 'Cotización a una empresa o persona: sin ID, y con su presupuesto si lo informó.' },
+    { nombre: 'Formulación general', id: null, presupuesto: false, desc: 'Costos y precio sin un proceso de compra: sin ID ni presupuesto.' }
+  ];
+  /* ID de Mercado Público: «1234-56-LE26», «2345-678-COT26». El tipo va en las letras: COT es una compra ágil; L1,
+     LE, LP, LQ, LR, CO, B2… son licitaciones (públicas o privadas). */
+  const ID_MP = /^\d{1,7}-\d{1,4}-([A-Z]{1,3})\d{0,3}$/;
+  /* La categoría elegida o, sin elegir, la que dice el ID de Mercado Público. '' = sin categoría. */
+  function categoriaDe(p) {
+    const c = p && p.categoria;
+    if (c && CATEGORIAS.some((x) => x.nombre === c)) return c;
+    const m = ID_MP.exec(String((p && p.idLicitacion) || '').trim().toUpperCase());
+    if (!m || m[1] === 'TD') return '';
+    return m[1] === 'COT' ? 'Compra ágil' : 'Licitación';
+  }
+  const infoCategoria = (p) => CATEGORIAS.find((x) => x.nombre === categoriaDe(p)) || null;
+  /* ¿El proyecto lleva ID de licitación y presupuesto del mandante? Lo que su categoría no tiene se oculta y no se
+     usa, pero queda guardado: vuelve si se cambia la categoría. */
+  const conId = (p) => { const c = infoCategoria(p); return !c || !!c.id; };
+  const conPresupuesto = (p) => { const c = infoCategoria(p); return !c || c.presupuesto; };
+
+  /* Entregables para postular (2026-10-27): lo que piden las bases (anexos administrativos, técnicos, la oferta
+     económica), con quién lo prepara y si ya está listo. La lista es opcional: sin ella el proyecto no lleva
+     el campo. */
+  const TIPOS_ENTREGABLE = ['Administrativo', 'Técnico', 'Económico', 'Otro'];
+
   const DEFAULT_PARAMETROS = {
     moneda: 'CLP',
     iva: 19,
@@ -279,6 +312,7 @@
   const newEquipo = (partida) => ({ uid: uid(), descripcion: '', partida: partida || '', unidad: 'día', cantidad: 1, costoUnitario: 0 });
   const newManoObra = (partida) => ({ uid: uid(), descripcion: '', partida: partida || '', n1p: 0, n1d: 0, n2p: 0, n2d: 0, n3p: 0, n3d: 0 });
   const newOtro = (partida) => ({ uid: uid(), descripcion: '', partida: partida || '', unidad: 'Un.', cantidad: 1, costoUnitario: 0 });
+  const newEntregable = (tipo) => ({ uid: uid(), nombre: '', tipo: TIPOS_ENTREGABLE.includes(tipo) ? tipo : TIPOS_ENTREGABLE[0], listo: false, responsable: '' });
 
   /* Completa campos faltantes (proyectos importados o de versiones anteriores). */
   function normalize(p) {
@@ -293,6 +327,13 @@
     ['partidas', 'materiales', 'equipos', 'manoObra', 'otros'].forEach((k) => {
       out[k] = Array.isArray(out[k]) ? out[k].map((it) => Object.assign({}, it, { uid: it.uid || uid() })) : [];
     });
+    // La categoría y los entregables (2026-10-27) quedan solo en los proyectos que los tienen: un campo vacío
+    // agregado aquí haría que la copia de este navegador y la de la carpeta del equipo dejaran de ser iguales
+    if (typeof out.categoria !== 'string') delete out.categoria;
+    if (Array.isArray(out.entregables)) {
+      out.entregables = out.entregables.filter((e) => e && typeof e === 'object').map((e) => Object.assign(newEntregable(e.tipo), e,
+        { uid: e.uid || uid(), tipo: TIPOS_ENTREGABLE.includes(e.tipo) ? e.tipo : TIPOS_ENTREGABLE[0], listo: e.listo === true }));
+    } else delete out.entregables;
     // Carta Gantt (2026-10-13 a 2026-10-20): desde el 2026-10-20 es una herramienta aparte (gantt/) con sus
     // propios datos. El Formulador ya no la usa, pero conserva p.gantt de los proyectos que la tenían: de
     // ahí la traspasa la herramienta nueva (gantt/datos.js), en cualquier navegador y cuando sea.
@@ -381,9 +422,10 @@
 
   const api = {
     SCHEMA, ESTADOS, UNIDADES, DEFAULT_PARAMETROS, DEFAULT_CATALOGO,
+    CATEGORIAS, categoriaDe, infoCategoria, conId, conPresupuesto, TIPOS_ENTREGABLE,
     uid, hoy, clone, getConfig, setConfig,
     all, trash, get, upsert, remove, restore, purge, nextCodigo, normalize, cloneProject,
-    newProject, newPartida, newPartidaBase, newMaterial, newEquipo, newManoObra, newOtro, exampleProject,
+    newProject, newPartida, newPartidaBase, newMaterial, newEquipo, newManoObra, newOtro, newEntregable, exampleProject,
     on, emit, getMode, getUser, applyRemote, localProjects,
     _resetCache: () => { cache = null; }
   };

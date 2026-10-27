@@ -1031,6 +1031,32 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
 .plegable-sec > summary::after { content: 'Ver'; margin-left: auto; font-size: 12px; font-weight: 700; color: var(--brand-orange-ink); }
 .plegable-sec[open] > summary::after { content: 'Ocultar'; }
 
+/* Paso 1 (2026-10-27): el presupuesto que la categoría no lleva y los entregables para postular, a todo el ancho */
+.panel-sin-ppto .panel-sub { margin-bottom: 0; }
+.grid-2 + .plegable { margin-top: 16px; }
+.tbl.tbl-entregables { min-width: 0; }
+.tbl-entregables th.col-listo, .tbl-entregables td.col-listo { width: 56px; text-align: center; }
+.tbl-entregables td.col-listo input { width: 18px; height: 18px; margin: 0; vertical-align: middle; accent-color: var(--brand-orange); cursor: pointer; }
+.tbl.tbl-entregables tr td.col-ent { width: 100%; }   /* el nombre se lleva el espacio libre; tipo y responsable, lo justo */
+.tbl-entregables .ci.desc { min-width: 180px; }
+select.ci { align-items: center; }   /* con appearance: base-select el texto quedaba arriba */
+.tbl-entregables select.ci { width: auto; min-width: 136px; }
+.tbl-entregables td[data-label="Responsable"] select.ci { min-width: 84px; }
+.tbl-entregables tr.listo .ci.desc { color: var(--text-muted); }
+.acciones-ent { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.lista-faltan { margin: 0 0 12px; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; }
+.pe-previa { margin: 4px 0 0; font-size: 13px; color: var(--text-secondary); }
+.pe-previa:empty { display: none; }
+/* En el teléfono: la casilla, el nombre y eliminar en la primera línea; el tipo y el responsable debajo */
+@media (max-width: 640px) {
+  /* con «tr»: las reglas generales de .tbl-apilable (más abajo) tienen la misma especificidad sin él */
+  .tbl-apilable.tbl-entregables tr td.col-listo { grid-column: 1 / span 1; grid-row: 1; align-self: center; text-align: left; }
+  .tbl-apilable.tbl-entregables tr td.col-ent { grid-column: 2 / span 4; grid-row: 1; }
+  .tbl-apilable.tbl-entregables tr td.cell-actions { grid-column: 6 / span 1; grid-row: 1; }
+  .tbl-apilable.tbl-entregables td.col-listo::before, .tbl-apilable.tbl-entregables td.col-ent::before { display: none; }
+  .tbl-entregables .ci.desc, .tbl-entregables select.ci { min-width: 0; width: 100%; }
+}
+
 /* Mano de obra: personas × días de cada nivel en una sola celda */
 .pxd { display: flex; align-items: center; gap: 4px; }
 .pxd .por { color: var(--text-muted); font-size: 12px; }

@@ -12,7 +12,7 @@
  * Solo interpreta y arma los campos: app.js crea el proyecto y lo pinta.
  *   leer(texto)               → la oportunidad validada, o null
  *   codificar(datos)          → el texto para el enlace (lo mismo que hace el tablero)
- *   campos(op)                → { titulo, cliente, idLicitacion, ubicacion, presupuesto, descripcion }
+ *   campos(op)                → { titulo, cliente, categoria, idLicitacion, ubicacion, presupuesto, descripcion }
  *   aplicar(p, op, moneda)    → llena los campos vacíos del proyecto; devuelve qué llenó
  *   nombreCarpeta(op)         → el nombre con que se propone «Nueva carpeta» (hasta 100 caracteres)
  *   esDe(p, codigo)           → si el proyecto es de esa licitación (por su ID de licitación)
@@ -106,6 +106,7 @@
     return {
       titulo: op.nombre,
       cliente: op.organismo,
+      categoria: op.compraAgil ? 'Compra ágil' : 'Licitación',
       idLicitacion: op.codigo,
       ubicacion: ubicacion(op),
       presupuesto: op.monto,
@@ -115,11 +116,12 @@
 
   const vacio = (v) => !String(v === null || v === undefined ? '' : v).trim();
   /* Llena solo lo que el proyecto tiene vacío: lo que ya trajo la Planilla de Ingreso (o la carpeta)
-     manda. El presupuesto, en pesos y con IVA (como el de la planilla), solo si el proyecto es en pesos. */
+     manda. El presupuesto, en pesos y con IVA (como el de la planilla), solo si el proyecto es en pesos.
+     La categoría (2026-10-27) la dice Mercado Público: compra ágil o licitación. */
   function aplicar(p, op, moneda) {
     const c = campos(op);
     const hechos = [];
-    [['titulo', 'título'], ['cliente', 'cliente'], ['idLicitacion', 'ID de licitación'], ['ubicacion', 'ubicación'], ['descripcion', 'descripción']].forEach(([k, nombre]) => {
+    [['categoria', `categoría ${c.categoria}`], ['titulo', 'título'], ['cliente', 'cliente'], ['idLicitacion', op.compraAgil ? 'ID de la compra ágil' : 'ID de licitación'], ['ubicacion', 'ubicación'], ['descripcion', 'descripción']].forEach(([k, nombre]) => {
       if (c[k] && vacio(p[k])) { p[k] = c[k]; hechos.push(nombre); }
     });
     const par = p.parametros || (p.parametros = {});
