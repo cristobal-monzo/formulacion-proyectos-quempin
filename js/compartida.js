@@ -36,6 +36,10 @@
   const HISTORIA_RECORTADA = 50; // el tope hasta el 2026-10-25: una historia así de larga pudo perder su comienzo
   const ESPERA_SUBIDA = 1500;   // ms desde el último guardado hasta copiarlo a la carpeta
   const INTERVALO = 20000;      // cada cuánto se revisa la carpeta con la página visible
+  // Sin una revisión completa en este tiempo, el indicador lo dice (2026-10-27: un equipo mostró «guardado en la
+  // carpeta» mientras otro cambiaba el precio, y nunca le llegó; el aviso solo hablaba de lo que subía él).
+  const ATRASO = 120000;
+  const INICIO = Date.now();
 
   // ---- Decisión (sin efectos: se prueba en node) ----------------------------------------------
   /* L: el proyecto en este navegador, o null. R: { mod, historia } del archivo, o null.
@@ -187,14 +191,26 @@
 
   // ---- Sincronización -------------------------------------------------------------------------
   const sucios = new Set();   // guardados aquí que aún no se copian a la carpeta
+  const vistos = new Map();   // uid -> { mod, autor }: la versión de cada proyecto en la carpeta, en la última revisión
   let inf = { sincronizando: false, ultima: null, error: '', sinCarpeta: false, sinPermiso: false, enCarpeta: 0 };
-  function info() { return Object.assign({ pendientes: sucios.size }, inf); }
+  /* true si hace más de ATRASO que no se completa una revisión de la carpeta, sin una en curso a tiempo:
+     lo que guardaron los demás puede no estar llegando. Con la página oculta no se revisa, y no cuenta. */
+  function atrasada(ahora) {
+    if (!activa() || inf.sinCarpeta || inf.sinPermiso || inf.error) return false;
+    if (root.document && root.document.visibilityState === 'hidden') return false;
+    const t = ahora || Date.now();
+    if (t - Math.max(Date.parse(inf.ultima || '') || 0, INICIO) <= ATRASO) return false;
+    return !(corriendo && t - desde <= ATRASO);
+  }
+  function info() { return Object.assign({ pendientes: sucios.size, atrasada: atrasada() }, inf); }
+  /* { mod, autor } de la versión de este proyecto que había en la carpeta en la última revisión, o null. */
+  const enCarpeta = (uid) => vistos.get(uid) || null;
   function avisar(cambios) {
     Object.assign(inf, cambios);
     if (S()) S().emit({ type: 'sync', pendientes: sucios.size });
   }
 
-  let timer = null, corriendo = null, otraVez = false;
+  let timer = null, corriendo = null, otraVez = false, desde = 0;   // desde: cuándo empezó la vuelta en curso
   function programar(ms) {
     if (!activa()) return;
     clearTimeout(timer);
@@ -204,6 +220,7 @@
   function sincronizar() {
     if (corriendo) { otraVez = true; return corriendo; }
     const candado = (fn) => (root.navigator && root.navigator.locks ? root.navigator.locks.request('qpn-formulador-compartida', fn) : fn());
+    desde = Date.now();
     corriendo = (async () => {
       try { do { otraVez = false; await candado(correr); } while (otraVez); } finally { corriendo = null; }
     })();
@@ -227,6 +244,8 @@
       // Lo de este navegador se lee de localStorage, no de la memoria de esta página: si otra
       // pestaña acaba de guardar, manda su versión.
       const locales = new Map(S().localProjects().map((p) => [p.uid, p]));
+      vistos.clear();
+      remotos.forEach((R, uid) => vistos.set(uid, { mod: R.mod, autor: R.autor }));
       const est = leerEstado();
       const mapa = est.proyectos || (est.proyectos = {});
       const traer = [], conflictos = [];
@@ -243,6 +262,7 @@
           const historia = historiaNueva(L, b);
           await escribir(dir, L, historia);
           mapa[uid] = { base: L.modificado, historia, propio: true };
+          vistos.set(uid, { mod: L.modificado, autor: autor() });
         } else if (d === 'conflicto') { conflictos.push({ L, R }); mapa[uid] = { base: R.mod, historia: R.historia, propio: false }; }
       }
       guardarEstado(est);
@@ -324,7 +344,7 @@
   }
 
   const api = {
-    decidir, historiaNueva, nombreArchivo, mismoContenido, resumen, estado, info, activa, activar, sincronizar, iniciar,
+    decidir, historiaNueva, nombreArchivo, mismoContenido, resumen, estado, info, enCarpeta, activa, activar, sincronizar, iniciar,
     enRepositorio, entregado, sinSubir, mensajeFormulacion, descargar
   };
   root.QCompartida = api;

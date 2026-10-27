@@ -762,8 +762,10 @@
   let saveTimer = null;
   function setSaveState(text, cls) {
     const el = $('#save-state');
-    if (el) { el.textContent = text; el.title = text; el.className = 'en-vivo ' + (cls || ''); }
+    if (el && (el.textContent !== text || el.className !== 'en-vivo ' + (cls || ''))) { el.textContent = text; el.title = text; el.className = 'en-vivo ' + (cls || ''); }
   }
+  // Una revisión trabada no avisa con ningún evento: el indicador se repinta solo para que se note (QC().info().atrasada)
+  setInterval(() => { if (compartiendo() && QC().info().atrasada) { showSyncState(); pintarCompartida(); } }, 20000);
   /* campo: el campo de texto que se está escribiendo; mientras se siga en él, es un solo paso para
      Deshacer (ver anotarCambio). */
   function scheduleSave(campo) {
@@ -787,14 +789,31 @@
   }
   window.addEventListener('beforeunload', () => { if (saveTimer) saveNow(); });
 
-  /* Texto del indicador de guardado según la sincronización con la carpeta del equipo. */
+  /* Hora de una fecha ISO: «14:15» si es de hoy, «22-10 18:04» si no. */
+  function horaCorta(iso) {
+    const d = new Date(iso);
+    if (!iso || isNaN(d)) return '';
+    const h = d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    return d.toDateString() === new Date().toDateString() ? h
+      : `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')} ${h}`;
+  }
+  /* Texto del indicador de guardado según la sincronización con la carpeta del equipo. Dice también qué
+     versión del proyecto hay en la carpeta, de quién, y cuándo se revisó: «guardado en la carpeta» solo
+     hablaba de lo que subía este navegador, y el 2026-10-27 un equipo lo mostraba mientras el precio que
+     cambió otro nunca le llegó. */
   function textoGuardado() {
     if (!compartiendo()) return ['Guardado en este navegador', ''];
     const i = QC().info();
     if (i.sinPermiso || i.sinCarpeta) return ['Guardado solo en este navegador', 'saving'];
     if (i.error) return ['Guardado en este navegador; no se pudo copiar a la carpeta compartida', 'err'];
+    if (i.atrasada) {
+      return [`Sin revisar la carpeta del equipo desde ${i.ultima ? 'las ' + horaCorta(i.ultima) : 'que se abrió la página'}: puede que no veas los cambios de otros. Recarga la página (F5).`, 'err'];
+    }
     if (i.pendientes > 0) return ['Guardado en este navegador · copiando a la carpeta compartida…', 'saving'];
-    return ['Guardado en este navegador y en la carpeta compartida', ''];
+    const v = state.project && QC().enCarpeta(state.project.uid);
+    const version = v ? ` · versión ${v.autor ? 'de ' + v.autor + ', ' : 'de las '}${horaCorta(v.mod)}` : '';
+    const revisada = i.ultima ? ` · revisada ${horaCorta(i.ultima)}` : '';
+    return [`Guardado en la carpeta del equipo${version}${revisada}`, ''];
   }
   function showSyncState() {
     if (saveTimer || state.conflicto) return;
@@ -5377,6 +5396,7 @@
     } else {
       const i = QC().info();
       txt = i.error ? `<span class="dot bad" aria-hidden="true"></span>No se pudo sincronizar con la carpeta del equipo: ${esc(i.error)} <button type="button" class="link-btn" data-act="compartir-ya">Reintentar</button>`
+        : i.atrasada ? `<span class="dot bad" aria-hidden="true"></span><strong>Sin revisar la carpeta del equipo desde ${i.ultima ? 'las ' + esc(horaCorta(i.ultima)) : 'que se abrió la página'}:</strong> puede que no veas los cambios de otros. Recarga la página (F5).`
         : `<span class="dot ${i.pendientes ? 'warn' : 'ok'}" aria-hidden="true"></span>Guardados en la carpeta del equipo «${esc(e.nombre)}»${i.ultima ? ` · revisada a las ${esc(new Date(i.ultima).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }))}` : ' · sincronizando…'}`;
       const pulso = QH() ? QH().lecturaEstado(await QH().publicacion('estado')) : null;
       if (pulso && pulso.detenido) html = notaPulso(pulso);
