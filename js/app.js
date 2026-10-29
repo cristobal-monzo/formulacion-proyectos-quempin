@@ -567,9 +567,9 @@
         enEditor ? { sep: true } : null,
         enEditor ? null : { icon: ICON.open, title: 'Abrir', act: 'abrir', id },
         vo ? { icon: ICON.folder, title: 'Abrir la carpeta en el Explorador', desc: `Formulación de proyectos · ${vo.nombre}`, act: 'oferta-abrir', id } : null,
-        vo && QO().copiaEnGestion(vo) ? { icon: ICON.folder, title: 'Abrir la de Gestión de Proyectos', desc: 'La copia donde sigue la ejecución', act: 'oferta-abrir-gestion', id } : null,
+        vo && QO().copiaEnGestion(vo) ? { icon: ICON.folder, title: 'Abrir la de Gestión de Proyectos', desc: 'Donde sigue la ejecución, con «Formulación» y «Facturas del proyecto»', act: 'oferta-abrir-gestion', id } : null,
         vo && QO().escribible(vo) ? { icon: ICON.sheet, title: 'Guardar Excel en la carpeta de la oferta', desc: vo.nombre, act: 'oferta-guardar', id } : null,
-        vo && QO().escribible(vo) && !(QO().copiaEnGestion(vo) || {}).copiada && GANADAS.includes((S.get(id) || {}).estado) ? { icon: ICON.folder, title: 'Copiar la carpeta a Gestión de Proyectos', desc: 'El original pasa a 0 OFERTAS ADJUDICADAS', act: 'oferta-trasladar', id } : null,
+        vo && QO().escribible(vo) && !(QO().copiaEnGestion(vo) || {}).copiada && GANADAS.includes((S.get(id) || {}).estado) ? { icon: ICON.folder, title: 'Copiar la carpeta a Gestión de Proyectos', desc: 'Con «Formulación» y «Facturas del proyecto»; el original pasa a 0 OFERTAS ADJUDICADAS', act: 'oferta-trasladar', id } : null,
         vo === null ? { icon: ICON.folder, title: 'Elegir la carpeta de la oferta', desc: 'Para dejar ahí una copia en Excel, al día', act: 'oferta-elegir', id } : null,
         enEditor ? null : { icon: ICON.download, title: 'Exportar a Excel', desc: 'Planilla con fórmulas vivas y ficha de KPI', act: 'exp-xlsx', id },
         { icon: ICON.file, title: 'Exportar a JSON', desc: 'Para respaldar o compartir y volver a importar', act: 'exp-json', id },
@@ -6335,7 +6335,9 @@
      las direcciones quempin://carpeta y quempin://trasladar (js/oferta.js; Sistema QUEMPIN app/carpetas.py).
      Windows solo las abre desde un clic de la persona, así que se piden en el mismo clic. Al adjudicarse, la
      carpeta se copia a Gestión de Proyectos y el original pasa a «0 OFERTAS ADJUDICADAS» (lo eligió el
-     usuario, como lo hacía el equipo a mano): el vínculo sigue en el original, con su Excel al día. */
+     usuario, como lo hacía el equipo a mano). Desde QUEMPIN.exe 1.3.15 (2026-10-28) la carpeta de Gestión trae
+     «Formulación», con la copia, y «Facturas del proyecto», que el procesador lleva al Centro de Costos. El
+     vínculo sigue en el original, con su Excel al día. */
   const proyectoDe = (uid) => ((state.project && state.project.uid === uid) ? state.project : S.get(uid));
   const SIN_EXE = 'Si no se abre, abre una vez QUEMPIN.exe 1.3.10 o más nuevo (en «Cotizaciones y OC - Documentos») y vuelve a intentarlo.';
   function abrirEnlace(url) {
@@ -6394,9 +6396,10 @@
       title: 'Copiar la carpeta a Gestión de Proyectos',
       body: `<p>${p.estado === 'Adjudicada' ? 'La oferta quedó <b>Adjudicada</b>. ' : ''}¿Pasar su carpeta <b>«${esc(v.nombre)}»</b> a <b>Gestión de Proyectos</b>, donde sigue el trabajo de ejecución?</p>
         <ul class="np-lista">
-          <li>Se copia completa a la raíz de «Gestión de Proyectos - Documentos». Si allá ya hay una carpeta con ese nombre, no se copia otra vez ni se juntan archivos.</li>
+          <li>En «Gestión de Proyectos - Documentos» se crea la carpeta del proyecto con dos subcarpetas: <b>«Formulación»</b>, con la copia completa de esta carpeta, y <b>«Facturas del proyecto»</b>: las facturas y boletas que se dejen ahí llegan solas al Centro de Costos. Al lado se pueden crear las demás carpetas que necesite el proyecto.</li>
+          <li>Si allá ya hay una carpeta con ese nombre, se le agrega lo que falta sin tocar lo que tiene.</li>
           <li>El original pasa a «Formulación de proyectos › 0 OFERTAS ADJUDICADAS», con el Excel de la formulación, que sigue al día ahí.</li>
-          <li>Lo hace QUEMPIN.exe (1.3.10 o más nuevo) en este computador: pregunta otra vez, muestra el avance y al terminar abre la copia.</li>
+          <li>Lo hace QUEMPIN.exe (1.3.15 o más nuevo) en este computador: pregunta otra vez, muestra el avance y al terminar abre la carpeta de Gestión.</li>
         </ul>`,
       buttons: [{ label: 'Ahora no' }, { label: 'Copiar la carpeta', value: 'si', primary: true }]
     });
@@ -6444,7 +6447,7 @@
   }
   function cerrarTraslado(nombre, ruta, confirmada) {
     cambiarVinculoCarpeta(nombre, (v) => (QO().trasladoPedido(v) ? QO().conCopiaEnGestion(v, ruta, confirmada) : v));
-    if (confirmada) toast(`Listo: la copia de «${nombre}» quedó en Gestión de Proyectos y el original en 0 OFERTAS ADJUDICADAS.`, false, 6000);
+    if (confirmada) toast(`Listo: «${nombre}» quedó en Gestión de Proyectos, con «Formulación» y «Facturas del proyecto», y el original en 0 OFERTAS ADJUDICADAS.`, false, 7000);
   }
   function cancelarTraslado(uid) {
     const p = proyectoDe(uid);
