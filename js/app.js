@@ -2831,8 +2831,10 @@
 
   /* «Pegar desde Excel» (js/pegar.js, 2026-10-14): filas de una planilla de formulación antigua, de
      cualquier Excel o de la cotización del tablero del Cotizador Histórico, con vista previa. Todas van a
-     la partida que se elija; la cantidad es por una unidad de la partida, como en la tabla. */
-  async function pegarFilas(list) {
+     la partida que se elija; la cantidad es por una unidad de la partida, como en la tabla.
+     llegada (2026-10-29): { texto, origen } con las filas ya pegadas, cuando el Portal trae la cotización
+     del Cotizador Histórico a este proyecto («Llevar a un proyecto…» de su carrito). */
+  async function pegarFilas(list, llegada) {
     const p = state.project;
     const cfg = DETALLE[list];
     if (!p || !cfg || !window.QPegar) return;
@@ -2843,7 +2845,8 @@
     const prom = ask({
       title: `Pegar ${cfg.titulo.toLowerCase()} desde Excel`,
       wide: true,
-      body: `<p>Copia las filas en Excel (una planilla de formulación, una lista de materiales o la cotización del Cotizador Histórico) y pégalas aquí. Se reconocen descripción, unidad, cantidad y costo unitario, con o sin encabezados.</p>
+      body: `${llegada ? `<p class="pg-origen"><b>${esc(llegada.origen)}</b> Elige la partida y agrégalas; antes puedes corregir las filas aquí.</p>`
+        : '<p>Copia las filas en Excel (una planilla de formulación, una lista de materiales o la cotización del Cotizador Histórico) y pégalas aquí. Se reconocen descripción, unidad, cantidad y costo unitario, con o sin encabezados.</p>'}
         <div class="campo"><label for="pg-texto">Filas copiadas</label>
           <textarea class="textarea pg-texto" id="pg-texto" rows="6" spellcheck="false" placeholder="Pega aquí (Ctrl+V)"></textarea></div>
         <div class="fila-campos pg-opciones">
@@ -2875,8 +2878,9 @@
     };
     ta.addEventListener('input', pintarPrevia);
     chkIva.addEventListener('change', () => { ivaTocado = true; pintarPrevia(); });
+    if (llegada) ta.value = llegada.texto;
     pintarPrevia();
-    ta.focus();
+    if (llegada && $('#pg-partida')) $('#pg-partida').focus(); else ta.focus();
     const v = await prom;
     if (v !== 'ok' || !leido.filas.length) return;
     const sel = $('#pg-partida');
@@ -2893,6 +2897,16 @@
     scheduleSave();
     toast(`${plural(nuevas.length, 'fila agregada', 'filas agregadas')} a ${cfg.titulo.toLowerCase()}${partida ? ` (${codP(partida)})` : ', sin partida: elígela en cada fila'}.`);
   }
+  /* La cotización del carrito del Cotizador Histórico que el Portal trae a este proyecto (2026-10-29): llega
+     cuando el proyecto ya está abierto en esa tabla y sin otro diálogo encima, y abre su «Pegar desde Excel»
+     con las filas. Solo del mismo sitio (el Portal); el texto pasa por el mismo lector que lo pegado a mano. */
+  window.addEventListener('message', (e) => {
+    const m = e.data;
+    if (e.origin !== location.origin || !m || typeof m !== 'object' || m.tipo !== 'quempin-pegar-costos') return;
+    const p = state.project;
+    if (!p || p.uid !== m.proyecto || !['materiales', 'equipos', 'otros'].includes(m.lista) || typeof m.texto !== 'string' || $('#modal').open) return;
+    pegarFilas(m.lista, { texto: m.texto.slice(0, 200000), origen: String(m.origen || 'Costos traídos desde el Portal.').slice(0, 200) });
+  });
 
   /* Entregables de una lista pegada (2026-10-27): la de anexos copiada de las bases, un entregable por línea, o
      filas de un Excel (las celdas se juntan con « · »). Se quitan las viñetas y la numeración. El tipo sale de una
