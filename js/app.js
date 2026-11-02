@@ -6559,7 +6559,6 @@
     };
   }
   const textoDesdeOportunidad = (hechos) => (hechos.length ? `Desde Mercado Público: ${hechos.join(', ')}.` : 'Los datos ya venían de la Planilla de Ingreso.');
-  const textoCreadoDesdeOportunidad = (np, hechos) => `Proyecto ${np.codigo} creado. ${textoDesdeOportunidad(hechos)}`;
 
   /* «Crear el proyecto» del aviso: el mismo camino que «Nuevo proyecto», y después los datos de la
      oportunidad en lo que la planilla y la carpeta dejaron vacío */
