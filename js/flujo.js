@@ -1,7 +1,7 @@
 /*
  * flujo.js — El recorrido de una oferta por las herramientas de QUEMPIN: en qué etapa está y qué
  * sigue. Son las mismas seis etapas de «El viaje de un proyecto» en la guía del equipo
- * (Proyectos Claude/Guia flujo herramientas): requerimiento → formulación → cotización → oferta y
+ * (Proyectos Claude/Documentación/Guia flujo herramientas): requerimiento → formulación → cotización → oferta y
  * adjudicación → ejecución → cierre. Pedido del usuario (2026-10-05): que quede claro qué hace cada
  * herramienta y qué sigue al terminar una etapa.
  *

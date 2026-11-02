@@ -1,7 +1,7 @@
 /*
  * herramientas.js — Lo que el formulador intercambia con las demás herramientas de QUEMPIN,
  * además de los costos al Análisis Financiero (ese canal vive en intercambio.js y app.js).
- * Plan de integración del 2026-09-30 (Proyectos Claude/2026-09-30-plan-integracion-herramientas.md):
+ * Plan de integración del 2026-09-30 (Proyectos Claude/Documentación/Planes y análisis/2026-09-30-plan-integracion-herramientas.md):
  *
  *   lee        requerimientos.json        Planilla de Ingreso (N° de requerimiento, presupuesto…); con
  *                                         la biblioteca conectada, la planilla misma (al día)
