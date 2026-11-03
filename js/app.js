@@ -4263,7 +4263,10 @@
     // El proyecto del AF con el mismo N° de requerimiento es el que corresponde; si no hay, el más parecido
     const req = QH() ? QH().reqDe(p) : null;
     const porReq = req ? proyectos.find((q) => String(q.req || '') === req) : null;
-    const sugerido = v0 ? v0.tag : porReq ? porReq.tag : sugerirTag(p, proyectos);
+    // La ficha que lleva el N° manda sobre la que se recuerda del envío anterior: si aquel fue a la ficha de otro
+    // proyecto (con el mismo nombre de cliente), no se vuelve a proponer (2026-11-03).
+    const recordadaOtra = !!(v0 && porReq && porReq.tag !== v0.tag);
+    const sugerido = recordadaOtra ? porReq.tag : v0 ? v0.tag : porReq ? porReq.tag : sugerirTag(p, proyectos);
     const costos = X.costosAF(r.totals);
     const opciones = proyectos.map((q) => `<option value="${esc(q.tag)}" ${q.tag === sugerido ? 'selected' : ''}>${esc(q.tag)} · ${esc(q.nombre || '')}${q.cliente && q.cliente !== q.nombre ? ` (${esc(q.cliente)})` : ''}</option>`).join('');
     const enLista = proyectos.some((q) => q.tag === sugerido);
@@ -4289,6 +4292,7 @@
       body: `<p>Los costos de <b>${esc(p.codigo || 'este proyecto')} v${esc(p.version)}</b> pasan a ser los <b>costos proyectados</b> del proyecto que elijas${extra ? '; en el mismo envío van la venta y el aviso a la planilla' : ''}.
           Se aplican en la próxima actualización del Análisis Financiero, con respaldo, y nunca reemplazan un valor escrito a mano que no se vea acá.</p>
         ${cat ? '' : '<p class="af-linea af-aviso">La carpeta todavía no tiene la lista de proyectos del Análisis Financiero (se publica en su próxima actualización). Puedes enviar escribiendo el TAG.</p>'}
+        ${recordadaOtra ? `<p class="af-linea af-aviso">La vez anterior se envió a <b>${esc(v0.tag)}</b>, pero la ficha del N° ${esc(req)} en el Análisis Financiero es <b>${esc(porReq.tag)}</b>: se propone esa.</p>` : ''}
         <div class="fila-campos">
           <div class="campo ancho"><label for="af-tag">Proyecto en el Análisis Financiero</label>
             <select class="input" id="af-tag">
