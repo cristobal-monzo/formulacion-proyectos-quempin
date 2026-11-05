@@ -589,6 +589,7 @@
         vo === null ? { icon: ICON.folder, title: 'Elegir la carpeta de la oferta', desc: 'Para dejar ahí una copia en Excel, al día', act: 'oferta-elegir', id } : null,
         enEditor ? null : { icon: ICON.download, title: 'Exportar a Excel', desc: 'Planilla con fórmulas vivas y ficha de KPI', act: 'exp-xlsx', id },
         { icon: ICON.file, title: 'Exportar a JSON', desc: 'Para respaldar o compartir y volver a importar', act: 'exp-json', id },
+        enEditor ? { icon: ICON.sheet, title: 'Exportar a la Planilla de Ingreso', desc: 'Estado, valores y datos del proyecto a su fila del Excel', act: 'exp-planilla', id } : null,
         { icon: ICON.enviar, title: 'Enviar costos al Análisis Financiero', desc: 'Como costos proyectados del proyecto adjudicado', act: 'enviar-af', id },
         { sep: true },
         { icon: ICON.layers, title: 'Duplicar como proyecto nuevo', desc: 'En otra oferta: su carpeta le da el código', act: 'duplicar', id },
@@ -3231,6 +3232,7 @@
         case 'herr-cotizacion': await prepararCotizacion(); break;
         case 'herr-venta': await enviarVenta(); break;
         case 'herr-planilla': await avisarPlanilla(); break;
+        case 'exp-planilla': await exportarAPlanilla(); break;
         // Qué sigue con la oferta (recorrido del paso 5, aviso del editor y pie del paso 5)
         case 'sigue': await hacerSiguiente(d.accion); break;
         case 'ver-recorrido': goTab('seguimiento'); break;
@@ -5036,6 +5038,7 @@
       case 'oferta-elegir': await elegirOfertaPara(p.uid); break;
       case 'herr-cotizacion': hecho = await prepararCotizacion(); break;
       case 'herr-planilla': hecho = await avisarPlanilla(); break;
+      case 'exp-planilla': hecho = await exportarAPlanilla(); break;
       case 'herr-venta': hecho = await enviarVenta(); break;
       case 'enviar-af': hecho = await enviarAF(); break;
       case 'marcar-enviada': hecho = await marcarEstado('Enviada'); break;
@@ -5136,7 +5139,8 @@
     Object.keys(cambios).forEach((k) => { reemplaza[k] = fila ? (fila[k] === undefined ? null : fila[k]) : null; });
     const m = QH().mensajeSugerencia(p, req, cambios, reemplaza, usuarioActual(p));
     await QH().enviar(m);
-    p.vinculos = Object.assign({}, p.vinculos, { planilla: { ultimaSugerencia: { id: m.id, fecha: m.origen.enviado, cambios } } });
+    // Sin borrar lo demás que recuerda de la planilla (el registro y la última exportación)
+    p.vinculos = Object.assign({}, p.vinculos, { planilla: Object.assign({}, (p.vinculos || {}).planilla, { ultimaSugerencia: { id: m.id, fecha: m.origen.enviado, cambios } }) });
     return m;
   }
 
@@ -5234,6 +5238,9 @@
     if (herrDe.uid !== p.uid) { herrDe = { uid: p.uid, html: { formulacion: resumenFormulacion + acciones(bFormulacion) }, aviso: '', pulso: '<p class="af-nota herr-pulso">Revisando la carpeta del equipo…</p>' }; pintarRecorrido(recorridoDe(p)); }
     const [docs, af, folios, reqs, estado, lics] = await Promise.all(['documentos-comerciales', 'analisis-financiero', 'folios', 'requerimientos', 'estado', 'licitaciones']
       .map((n) => (n === 'requerimientos' ? QH().requerimientos() : QH().publicacion(n))));
+    // Lo que respondió el Excel a la última exportación a la planilla (null = todavía espera en el buzón)
+    const expo = (v.planilla || {}).ultimaExportacion || null;
+    const resExpo = expo ? await QI().resultadoDe(expo.archivo, expo.fecha).catch(() => null) : null;
     if (state.project !== p || !$('#recorrido')) return;
     const cots = QH().cotizacionesDe(p, docs);
     const filaReq = req ? ((reqs && reqs.requerimientos) || []).find((x) => String(x.numero) === req) || null : null;
@@ -5305,17 +5312,28 @@
       const cambios = QH().cambiosParaPlanilla(p, vi.valor);
       const ult = (v.planilla || {}).ultimaSugerencia;
       const yaEsta = !!cambios && planillaMuestra(filaReq, cambios);
-      const avisado = !!cambios && !!ult && mismosCambios(ult.cambios, cambios);
+      // Una exportación que ya lleva ese estado y ese valor (y no se rechazó) vale como aviso
+      const exportado = !!cambios && !!expo && !(resExpo && (resExpo.estado === 'rechazado' || resExpo.estado === 'reemplazado'))
+        && Object.keys(cambios).every((k) => expo.cambios && expo.cambios[k] !== undefined && igualCampo(k, expo.cambios[k], cambios[k]));
+      const avisado = !!cambios && ((!!ult && mismosCambios(ult.cambios, cambios)) || exportado);
       const valor = cambios ? cambios.valorOfertado || cambios.valorAdjudicado : 0;
       tPla += (!cambios ? linea('Cuando la oferta se envíe o tenga respuesta (Adjudicada, Perdida o Descartada), se avisa el estado a la Planilla de Ingreso.')
         : yaEsta ? linea('<span class="chip ok">Al día</span> La Planilla de Ingreso ya muestra el estado de esta oferta.')
-          : (avisado ? '' : linea(`Se avisaría a la planilla: <b>${esc(cambios.estado)}</b>${valor ? ` con ${dinero(valor, 'CLP')} (${esc(vi.texto)})` : ''}.`))
-            + (ult ? linea(`${chipEstado('pendiente')} Aviso${(ult.cambios || {}).estado ? ` «${esc(ult.cambios.estado)}»` : ''} enviado el ${esc(fechaHora(ult.fecha))}: espera que quien lleva la planilla lo pase.`) : ''));
-      if (cambios && !yaEsta && !avisado) bPla = `<button type="button" class="btn" data-act="herr-planilla">${ICON.enviar}Avisar a la Planilla de Ingreso</button>`;
+          : (avisado ? '' : linea(`Falta en la planilla: <b>${esc(cambios.estado)}</b>${valor ? ` con ${dinero(valor, 'CLP')} (${esc(vi.texto)})` : ''}.`))
+            // El aviso que dejó «Marcar como…» espera a una persona; exportarlo lo escribe sin esperarla
+            + (ult && !exportado ? linea(`${chipEstado('pendiente')} Aviso${(ult.cambios || {}).estado ? ` «${esc(ult.cambios.estado)}»` : ''} enviado el ${esc(fechaHora(ult.fecha))}: espera que quien lleva la planilla lo pase, o expórtalo tú.`) : ''));
       const mp = bloqueMercadoPublico(p, r, ((lics && lics.licitaciones) || []).find((x) => String(x.req) === req), lics);
       tPla += mp.html;
       bPla = mp.boton + bPla;
-    } else tPla += linea('Con el N° de requerimiento, el estado y el valor se avisan a la Planilla de Ingreso en el mismo clic.');
+    } else tPla += linea(`Sin N° de requerimiento ${infoTexto('«Exportar a la Planilla» lo registra como fila nueva, con el siguiente N° libre.')}`);
+    if (expo) {
+      const que = `Exportado a la planilla el ${esc(fechaHora(expo.fecha))} (N° ${esc(expo.numero)}: ${esc((expo.etiquetas || []).join(', '))})`;
+      tPla += linea(!resExpo ? `${chipEstado('pendiente')} ${que}: se escribe en el Excel en unos 10 minutos ${infoTexto('Lo escribe la tarea de cada 10 minutos, si el computador que la hace está encendido.')}`
+        : resExpo.estado === 'aplicado' || resExpo.estado === 'sin-cambios' ? `${chipEstado(resExpo.estado)} ${que}: ya está en el Excel.`
+          : `${chipEstado(resExpo.estado)} ${que}: ${esc((resExpo.detalle || []).join(' ') || 'no se escribió')}`);
+    }
+    // Los datos del proyecto a su fila del Excel, de verdad y no como aviso (2026-11-02)
+    bPla += `<button type="button" class="btn" data-act="exp-planilla">${ICON.sheet}Exportar a la Planilla…</button>`;
     html.oferta = tPla + acciones(bPla);
 
     // 5. Ejecución: costos y venta al Análisis Financiero (viajan juntos al pasar a ejecución)
@@ -5473,6 +5491,131 @@
     pintarHerramientas();
     pintarSigue();
     if (silencio !== true) toast(`Aviso «${cambios.estado}» enviado a la Planilla de Ingreso: quien la lleva lo pasa a mano.`);
+    return true;
+  }
+
+  /* «Exportar a la Planilla» (pedido del usuario, 2026-11-02): los datos del proyecto a su fila de la Planilla de
+     Ingreso, escritos de verdad y no como sugerencia. Muestra qué casillas cambiarían, con lo que dice hoy la
+     planilla, y deja en el buzón solo lo marcado (editar-requerimiento); planilla_escritura.py (Sistema
+     Intercambio) lo escribe con Excel cada 10 minutos. Sin fila en la planilla, la pide (nuevo-requerimiento).
+     true = quedó en el buzón. */
+  async function exportarAPlanilla() {
+    const p = state.project;
+    if (!p || !QH() || !QI() || !(await asegurarCarpeta())) return false;
+    if (saveTimer) saveNow();
+    const [docs, reqs, pub, pedidos] = await Promise.all([
+      QH().publicacion('documentos-comerciales', true), QH().requerimientos(true), QH().publicacion('requerimientos', true),
+      QI().leerBuzon({ tipos: ['nuevo-requerimiento'] }).catch(() => [])
+    ]);
+    const filas = (reqs && reqs.requerimientos) || [];
+    if (!filas.length) { toast('No se pudo leer la Planilla de Ingreso: sin ella no se sabe qué cambia. Prueba de nuevo en unos minutos.', true); return false; }
+    const vi = valorConIva(p, QH().cotizacionesDe(p, docs));
+    const par = p.parametros || {};
+    // La planilla lleva pesos con IVA: el presupuesto solo si su categoría lo lleva y está en pesos con IVA
+    const datos = {
+      valor: vi.valor,
+      presupuesto: S.conPresupuesto(p) && monedaDe(p) === 'CLP' && par.presupuestoIncluyeIva && num(par.presupuestoMaximo) > 0 ? num(par.presupuestoMaximo) : null,
+      referencia: S.conId(p) ? String(p.idLicitacion || '').trim() : ''
+    };
+    const req = QH().reqDe(p);
+    const r = req ? filas.find((x) => String(x.numero) === req) || null : null;
+    if (req && !r && pedidos.some((m) => String((m.requerimiento || {}).numero) === req)) {
+      toast(`El N° ${req} ya se pidió a la Planilla de Ingreso y espera a que se escriba (cada 10 minutos). Exporta de nuevo cuando aparezca.`, true, 8000);
+      return false;
+    }
+    if (!r) return exportarFilaNueva(p, filas, pedidos, req, datos);
+
+    // La casilla de un dato geográfico de Excel se lee vacía en el navegador: vale lo que publica el procesador
+    const rp = ((pub && pub.requerimientos) || []).find((x) => String(x.numero) === req && norm(x.titulo) === norm(r.titulo)) || {};
+    const fila = Object.assign({}, r);
+    ['ubicacion', 'cliente'].forEach((k) => { if ((fila[k] === null || fila[k] === undefined || fila[k] === '') && rp[k]) fila[k] = rp[k]; });
+    const campos = QH().camposParaExportar(p, fila, datos);
+    if (!campos.length) { toast(`La Planilla de Ingreso ya dice lo mismo que el proyecto en el N° ${req}.`); return false; }
+    // La fila de ese N° tiene que ser este proyecto: el 2026-11-02 la planilla volvió a numerar con fórmula y se corrieron 104 N°
+    const vr = (p.vinculos && p.vinculos.requerimiento) || {};
+    const mismo = coincidePlanilla(p.titulo, r.titulo) || (!!vr.titulo && norm(vr.titulo).trim() === norm(r.titulo).trim());
+    const previa = ((p.vinculos || {}).planilla || {}).ultimaExportacion;
+    const esperando = !!previa && await QI().enBuzon(previa.id).catch(() => false);
+    const ver = (c, v) => (v === null || v === undefined || v === '' ? '<span class="xp-vacia">vacía</span>'
+      : ['presupuesto', 'valorOfertado', 'valorAdjudicado'].includes(c.campo) && ok(Number(v)) ? dinero(Number(v), 'CLP') : esc(String(v)));
+    const promesa = ask({
+      title: 'Exportar a la Planilla de Ingreso',
+      wide: true,
+      // Interfaz limpia (2026-11-06): a la vista, qué fila; cómo se escribe, en el «i». Los avisos de abajo sí se ven.
+      body: `<p>Fila del <b>N° ${esc(req)}</b>, «${esc(r.titulo || 'sin título')}» ${info('Lo marcado se escribe en unos 10 minutos, con Excel, con respaldo y sin tocar las demás casillas. Lo que la planilla ya tiene escrito con otro texto (un título, un cliente) parte sin marcar: pudo escribirlo alguien a propósito. Si alguien cambia esa misma casilla en el Excel mientras tanto, queda el cambio más reciente.')}</p>
+        ${mismo ? '' : `<p class="af-linea af-aviso">▲ En la planilla, el N° ${esc(req)} es «${esc(r.titulo || 'sin título')}», que no parece ser este proyecto («${esc(p.titulo || 'sin título')}»). Revisa el N° antes de exportar.</p>
+          <label class="check-l"><input type="checkbox" id="xp-misma"> Es la misma oferta: exportar igual</label>`}
+        ${esperando ? `<p class="af-linea">La exportación del ${esc(fechaHora(previa.fecha))} todavía no se escribe: esta se suma a ella.</p>` : ''}
+        <div class="tabla-contenedor"><table class="tbl xp-tabla"><thead><tr><th aria-label="Exportar"></th><th>Casilla</th><th>En la planilla</th><th>Desde el proyecto</th></tr></thead><tbody>
+          ${campos.map((c, i) => `<tr><td><input type="checkbox" id="xp-${i}" data-xp="${i}" ${c.marcado ? 'checked' : ''}></td><td><label for="xp-${i}">${esc(c.etiqueta)}</label></td>
+            <td>${ver(c, c.actual)}</td><td><b>${ver(c, c.nuevo)}</b>${c.campo === 'valorOfertado' || c.campo === 'valorAdjudicado' ? `<span class="hint">${esc(vi.texto)}</span>` : ''}</td></tr>`).join('')}
+        </tbody></table></div>`,
+      buttons: [{ label: 'Cancelar' }, { label: 'Exportar a la Planilla', value: 'ok', primary: true }]
+    });
+    const v = await promesa;
+    if (v !== 'ok') return false;
+    if (!mismo && !($('#xp-misma') || {}).checked) { toast(`No se exportó: el N° ${req} de la planilla no parece ser este proyecto. Revisa el N° en los datos del proyecto.`, true, 8000); return false; }
+    const marcados = campos.filter((c, i) => ($(`#xp-${i}`) || {}).checked);
+    if (!marcados.length) { toast('No marcaste ninguna casilla: no se exportó nada.', true); return false; }
+    const m = QH().mensajeEditarRequerimiento(p, req, r.titulo, marcados, usuarioActual(p));
+    try { await QH().enviar(m); } catch (e) { toast('No se pudo exportar: ' + ((e && e.message) || e), true); return false; }
+    recordarExportacion(p, m, req, marcados);
+    scheduleSave();
+    QH().olvidar();
+    pintarHerramientas();
+    pintarSigue();
+    toast(`Exportado a la Planilla de Ingreso, N° ${req} (${marcados.map((c) => c.etiqueta).join(', ')}): queda en el Excel en unos 10 minutos.`, false, 7000);
+    return true;
+  }
+  function recordarExportacion(p, m, numero, campos) {
+    const ultimaExportacion = { id: m.id, fecha: m.origen.enviado, archivo: QI().nombreArchivo(m), numero: Number(numero), cambios: m.cambios, etiquetas: campos.map((c) => c.etiqueta) };
+    p.vinculos = Object.assign({}, p.vinculos, { planilla: Object.assign({}, (p.vinculos || {}).planilla, { ultimaExportacion }) });
+  }
+  /* El proyecto todavía no tiene fila en la planilla (sin N°, o con un N° que no está): la pide con el formato de las
+     demás (registrarEnPlanilla), con el estado de la oferta. Lo que la fila nueva no lleva (cliente y valores) va en un
+     cambio a esa misma fila, que se escribe junto con ella. */
+  async function exportarFilaNueva(p, filas, pedidos, req, datos) {
+    if (!String(p.titulo || '').trim()) { toast('Ponle nombre al proyecto antes de registrarlo en la Planilla de Ingreso.', true); return false; }
+    let numero = req;
+    if (!numero) {
+      let carpetas = [];
+      try { carpetas = (QO() && await QO().carpetas(true)) || []; } catch (e) { carpetas = []; }
+      numero = String(QH().siguienteNumero(filas.map((x) => x.numero), carpetas.map((c) => c.numero),
+        pedidos.map((m) => (m.requerimiento || {}).numero), S.all().concat(S.trash()).map((x) => QH().reqDe(x))));
+    }
+    const est = QH().cambiosParaPlanilla(p, datos.valor);
+    const estado = est ? est.estado : 'Evaluación';
+    const extra = QH().camposParaExportar(p, null, datos).filter((c) => ['cliente', 'valorOfertado', 'valorAdjudicado'].includes(c.campo));
+    const id = datos.referencia;
+    const filasVista = [['N°', numero], ['Estado', estado], ['Canal', id ? 'Mercado Público' : 'Otro'], ['Título', p.titulo], ['Cliente', p.cliente],
+      ['Ubicación', p.ubicacion], ['ID o referencia', id || '-'], ['Eval.', p.responsable || yo()], ['Presupuesto (IVA inc.)', ok(datos.presupuesto) ? dinero(datos.presupuesto, 'CLP') : ''],
+      ...extra.filter((c) => c.campo !== 'cliente').map((c) => [c.etiqueta, dinero(c.nuevo, 'CLP')])].filter(([, x]) => String(x || '').trim());
+    const v = await ask({
+      title: 'Registrar en la Planilla de Ingreso',
+      wide: true,
+      body: `<p>${req ? `El N° <b>${esc(req)}</b> no está en la planilla: fila nueva` : `Sin N° de requerimiento: fila nueva con el siguiente N° libre, el <b>${esc(numero)}</b>`} ${info(`Se escribe en unos 10 minutos, con el formato de las demás filas${req ? '' : ', y el proyecto queda unido a ese N°'}. El N° lo pone la fórmula de la planilla: si en esos minutos ese N° deja de estar libre, la fila no se escribe y el Seguimiento lo avisa.`)}</p>
+        <div class="tabla-contenedor"><table class="tbl xp-tabla"><tbody>${filasVista.map(([k, x]) => `<tr><th scope="row">${esc(k)}</th><td>${/^\$/.test(String(x)) ? x : esc(String(x))}</td></tr>`).join('')}</tbody></table></div>`,
+      buttons: [{ label: 'Cancelar' }, { label: 'Registrar en la Planilla', value: 'ok', primary: true }]
+    });
+    if (v !== 'ok') return false;
+    if (!req) {
+      p.vinculos = Object.assign({}, p.vinculos, { requerimiento: { numero, titulo: p.titulo } });
+      ajustarCodigo(p, numero);
+    }
+    if (!(await registrarEnPlanilla(p, numero, null, estado))) return false;
+    if (extra.length) {
+      const m = QH().mensajeEditarRequerimiento(p, numero, p.titulo, extra, usuarioActual(p));
+      try { await QH().enviar(m); recordarExportacion(p, m, numero, extra); } catch (e) { toast(`El registro quedó pedido, pero no ${extra.map((c) => c.etiqueta).join(' ni ')}: ${(e && e.message) || e}. Exporta de nuevo cuando aparezca.`, true, 9000); }
+    }
+    scheduleSave();
+    QH().olvidar();
+    updateHeader();
+    pintarRequerimiento();
+    pintarHerramientas();
+    pintarSigue();
+    const vo = QO() && QO().vinculo(p);
+    const carpeta = vo && !/^\d{1,6}\.\s/.test(vo.nombre) ? ` La carpeta «${vo.nombre}» sigue sin el N°: renómbrala «${numero}. …» y el proyecto la sigue.` : '';
+    toast(`Pedido a la Planilla de Ingreso: N° ${numero}, fila nueva en unos 10 minutos.${carpeta}`, false, 8000);
     return true;
   }
 
@@ -6070,17 +6213,19 @@
   /* Pide a la Planilla de Ingreso la fila del proyecto nuevo (mensaje nuevo-requerimiento, 2026-10-26), con el
      formato de las demás: Estado «Evaluación», Canal «Otro» (o «Mercado Público» con ID de licitación),
      Capt. quien lo crea, Eval. el responsable, «-» sin referencia y la Apertura de hoy. Devuelve si se pidió.
-     El ID y el presupuesto, solo si su categoría los lleva (2026-10-27). */
-  async function registrarEnPlanilla(p, numero, op) {
+     El ID y el presupuesto, solo si su categoría los lleva (2026-10-27). estado: el de la oferta, si ya no está
+     en evaluación («Exportar a la Planilla» de un proyecto ya enviado). */
+  async function registrarEnPlanilla(p, numero, op, estado) {
     const par = p.parametros || {};
     const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const cierre = op && /^\d{4}-\d{2}-\d{2}/.test(String(op.cierre || '')) ? String(op.cierre).slice(0, 16) : '';
     const id = S.conId(p) ? String(p.idLicitacion || '').trim() : '';
     const datos = {
-      numero, titulo: p.titulo || '', estado: 'Evaluación', canal: id ? 'Mercado Público' : 'Otro',
+      numero, titulo: p.titulo || '', estado: estado || 'Evaluación', canal: id ? 'Mercado Público' : 'Otro',
       captador: yo() || p.responsable || '', evaluador: p.responsable || yo() || '',
       ubicacion: p.ubicacion || '', referencia: id || '-', apertura: iso(new Date()), cierre,
-      presupuesto: S.conPresupuesto(p) && par.presupuestoIncluyeIva && num(par.presupuestoMaximo) > 0 ? num(par.presupuestoMaximo) : null
+      // La planilla lleva pesos: un presupuesto en otra moneda no se manda
+      presupuesto: S.conPresupuesto(p) && monedaDe(p) === 'CLP' && par.presupuestoIncluyeIva && num(par.presupuestoMaximo) > 0 ? num(par.presupuestoMaximo) : null
     };
     try {
       const m = QH().mensajeNuevoRequerimiento(p, datos, usuarioActual(p));

@@ -57,8 +57,11 @@
     const folio = emitidas.length ? emitidas[0].folio : (borr && borr.folio) || '';
     const envioAF = ((v.analisisFinanciero || {}).ultimoEnvio) || null;
     const sug = (v.planilla || {}).ultimaSugerencia || null;
+    // «Exportar a la Planilla» (2026-11-02) también le lleva el estado: ya no hace falta el aviso
+    const exp = (v.planilla || {}).ultimaExportacion || null;
     const enPlanilla = EN_PLANILLA[estado] || null;
     const avisada = !!enPlanilla && ((sug && sug.cambios && igual(sug.cambios.estado, enPlanilla))
+      || (exp && exp.cambios && igual(exp.cambios.estado, enPlanilla))
       || (ctx.filaPlanilla && igual(ctx.filaPlanilla.estado, enPlanilla)));
     const af = ctx.proyectoAF || null;
     return {
@@ -88,7 +91,7 @@
   /* La acción que sigue: { etapa, texto, corto, accion?, boton?, paso?, motivo?, espera?, fin?, alternativas? }
      motivo (con 'ir-paso'): 'error' | 'pendiente' | 'aviso'
      accion: 'ir-req' | 'ir-paso' | 'oferta-elegir' | 'herr-cotizacion' | 'marcar-enviada' |
-             'marcar-adjudicada' | 'marcar-perdida' | 'marcar-cerrada' | 'herr-planilla' | 'enviar-af' |
+             'marcar-adjudicada' | 'marcar-perdida' | 'marcar-cerrada' | 'exp-planilla' | 'enviar-af' |
              'herr-venta' | 'abrir-af' */
   function siguiente(h) {
     const conReq = !!h.req;
@@ -134,8 +137,8 @@
     }
     if (h.estado === 'Enviada') {
       if (!h.planilla.avisada) {
-        return { etapa: 'oferta', accion: 'herr-planilla', boton: 'Avisar a la Planilla de Ingreso', corto: 'Avisar a la planilla',
-          texto: 'La oferta está enviada. Avisa a la Planilla de Ingreso que quedó «Ofertado», con su valor: quien la lleva lo pasa a mano.' };
+        return { etapa: 'oferta', accion: 'exp-planilla', boton: 'Exportar a la Planilla…', corto: 'Exportar a la planilla',
+          texto: 'La oferta está enviada. Exporta a la Planilla de Ingreso que quedó «Ofertado», con su valor: se escribe en el Excel en unos minutos.' };
       }
       return { etapa: 'oferta', espera: true, corto: 'Esperando respuesta',
         alternativas: [{ accion: 'marcar-adjudicada', boton: 'Marcar como Adjudicada' }, { accion: 'marcar-perdida', boton: 'Marcar como Perdida' }],
@@ -145,7 +148,7 @@
     // como los proyectos de antes). Si la planilla aún no dice «Adjudicado», queda como opción.
     if (h.cerrado) {
       return { etapa: 'cierre', fin: true, corto: 'Cerrado',
-        alternativas: h.planilla.avisada ? undefined : [{ accion: 'herr-planilla', boton: 'Avisar «Adjudicado» a la Planilla' }],
+        alternativas: h.planilla.avisada ? undefined : [{ accion: 'exp-planilla', boton: 'Exportar «Adjudicado» a la Planilla…' }],
         texto: 'Proyecto cerrado: su ejecución terminó y ya no aparece en la Planificación semanal del Portal.'
           + (h.af.cerrado ? ' Lo gastado frente a lo presupuestado ya cuenta en el sesgo real que usa el simulador del paso 5.' : '') };
     }
@@ -170,8 +173,8 @@
           texto: 'Falta enviar el monto de venta al Análisis Financiero: sin él, el proyecto no entra completo a sus indicadores.' };
       }
       if (!h.planilla.avisada) {
-        return { etapa: 'ejecucion', accion: 'herr-planilla', boton: 'Avisar a la Planilla de Ingreso', corto: 'Avisar a la planilla',
-          texto: 'Falta avisar a la Planilla de Ingreso que la oferta quedó «Adjudicado», con su valor.' };
+        return { etapa: 'ejecucion', accion: 'exp-planilla', boton: 'Exportar a la Planilla…', corto: 'Exportar a la planilla',
+          texto: 'Falta llevar a la Planilla de Ingreso que la oferta quedó «Adjudicado», con su valor.' };
       }
       const cerrar = { accion: 'marcar-cerrada', boton: 'Cerrar el proyecto' };
       if (af.cerrado) {
@@ -185,8 +188,8 @@
     // Perdida o Descartada
     const palabra = h.estado === 'Perdida' ? 'perdida' : 'descartada';
     if (!h.planilla.avisada) {
-      return { etapa: 'oferta', accion: 'herr-planilla', boton: 'Avisar a la Planilla de Ingreso', corto: 'Avisar a la planilla',
-        texto: `Oferta ${palabra}. Avisa a la Planilla de Ingreso que quedó «${h.planilla.esperado}»: con eso se calcula la tasa de adjudicación que usa el Flujo de Caja.` };
+      return { etapa: 'oferta', accion: 'exp-planilla', boton: 'Exportar a la Planilla…', corto: 'Exportar a la planilla',
+        texto: `Oferta ${palabra}. Exporta a la Planilla de Ingreso que quedó «${h.planilla.esperado}»: con eso se calcula la tasa de adjudicación que usa el Flujo de Caja.` };
     }
     return { etapa: 'oferta', fin: true, corto: 'Sin pendientes', texto: `Oferta ${palabra}: no queda nada pendiente con este presupuesto.` };
   }

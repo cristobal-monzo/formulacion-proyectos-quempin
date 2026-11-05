@@ -262,6 +262,21 @@
     for await (const nombre of buzon.keys()) if (nombre.indexOf(id) >= 0 && /\.json$/i.test(nombre)) return true;
     return false;
   }
+  /* El resultado con que su destinatario atendió un mensaje ({ estado, fecha, detalle… }), o null si todavía no lo
+     atiende. Lo archiva con el mismo nombre en procesado/AAAA-MM/, el mes en que lo atendió: el del envío o el siguiente. */
+  async function resultadoDe(archivo, enviado) {
+    const h = await cargar();
+    const proc = h && await sub(h, 'procesado');
+    const d = new Date(enviado);
+    if (!proc || !archivo || isNaN(d)) return null;
+    for (const k of [0, 1]) {
+      const f = new Date(d.getFullYear(), d.getMonth() + k, 1);
+      const mes = await sub(proc, `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}`);
+      const m = mes && await leerJSON(mes, archivo);
+      if (m && m.resultado) return m.resultado;
+    }
+    return null;
+  }
   /* Sin la API del navegador: descargar el mensaje para dejarlo a mano en «buzon». */
   function descargar(m) {
     const a = document.createElement('a');
@@ -319,6 +334,6 @@
   root.QIntercambio = {
     ESQUEMA, CATEGORIAS_AF, BIBLIOTECA, CARPETA_HERRAMIENTAS, disponible, estado, conectar, permitir, desconectar, onCambio,
     carpeta: carpetaConPermiso, biblioteca: bibliotecaConPermiso, estadoBiblioteca,
-    leerCatalogoAF, leerPublicacion, leerRaiz, enviar, enBuzon, leerBuzon, descargar, mensajePresupuesto, costosAF, nombreArchivo, nuevoId, isoLocal
+    leerCatalogoAF, leerPublicacion, leerRaiz, enviar, enBuzon, leerBuzon, resultadoDe, descargar, mensajePresupuesto, costosAF, nombreArchivo, nuevoId, isoLocal
   };
 })(window);

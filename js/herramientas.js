@@ -15,6 +15,7 @@
  *              registro-documento         → Sistema QUEMPIN (Control de Documentos, tipo 81)
  *              actualizar-requerimiento   → Planilla de Ingreso (sugerencia que una persona pasa)
  *              nuevo-requerimiento        → Planilla de Ingreso (proyecto nuevo sin N°: se escribe solo)
+ *              editar-requerimiento       → Planilla de Ingreso («Exportar a la Planilla»: lo marcado se escribe solo)
  *
  * Todo lo que se envía se valida antes con el catálogo de esquemas que el procesador deja en la
  * carpeta (esquemas.json, ver js/esquemas.js). Nada de este archivo pinta: lo usa app.js.
@@ -47,7 +48,7 @@
   const PLANILLA = 'Planilla de Ingreso de Requerimientos.xlsx';
   const HOJA = 'Listado Requerimientos';
   const COLUMNAS = {
-    n: 'numero', estado: 'estado', canal: 'canal', capt: 'captador', eval: 'evaluador', titulo: 'titulo',
+    n: 'numero', estado: 'estado', canal: 'canal', capt: 'captador', eval: 'evaluador', titulo: 'titulo', cliente: 'cliente',
     ubicacion: 'ubicacion', 'id o referencia': 'referencia', apertura: 'apertura', cierre: 'cierre',
     visita: 'visita', visitador: 'visitador', 'presupuesto (iva inc)': 'presupuesto',
     'valor ofertado (iva inc)': 'valorOfertado', 'valor adjudicado (iva inc)': 'valorAdjudicado',
@@ -297,6 +298,59 @@
     return null;
   }
 
+  // ---- «Exportar a la Planilla» (pedido del usuario, 2026-11-02) ----------------------------------
+  /* Lo que el proyecto le puede escribir a su fila de la Planilla de Ingreso, en el orden de la planilla. */
+  const CAMPOS_EXPORTAR = [
+    ['estado', 'Estado'], ['titulo', 'Título'], ['cliente', 'Cliente'], ['ubicacion', 'Ubicación'], ['referencia', 'ID o referencia'],
+    ['evaluador', 'Eval.'], ['presupuesto', 'Presupuesto (IVA inc.)'], ['valorOfertado', 'Valor ofertado (IVA inc.)'],
+    ['valorAdjudicado', 'Valor adjudicado (IVA inc.)']
+  ];
+  const MONTOS = ['presupuesto', 'valorOfertado', 'valorAdjudicado'];
+  const comparable = (v) => String(v === null || v === undefined ? '' : v).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  // «-» es la referencia de las filas sin ID: para la planilla es una casilla vacía
+  const vacioEnPlanilla = (k, v) => (MONTOS.includes(k) ? !(Number(v) > 0) : !comparable(v) || (k === 'referencia' && comparable(v) === '-'));
+  const igualEnPlanilla = (k, a, b) => (MONTOS.includes(k) ? Math.abs((Number(a) || 0) - (Number(b) || 0)) < 1 : comparable(a) === comparable(b));
+  /* Las casillas en que la planilla no dice lo que dice el proyecto: [{ campo, etiqueta, actual, nuevo, marcado }].
+     datos: { valor (con IVA: el ofertado o el adjudicado, según el estado), presupuesto (con IVA), referencia (el ID,
+     si su categoría lo lleva) }. Lo que el proyecto no tiene no se ofrece: nunca vacía una casilla. Parten marcados
+     el estado, los valores y lo que la planilla tiene vacío; lo que ya dice otra cosa (título, cliente…) parte sin
+     marcar, porque pudo escribirlo alguien a propósito. */
+  function camposParaExportar(p, fila, datos) {
+    const d = datos || {};
+    const est = cambiosParaPlanilla(p, d.valor) || {};
+    const propio = {
+      estado: est.estado, titulo: p.titulo, cliente: p.cliente, ubicacion: p.ubicacion, referencia: d.referencia,
+      evaluador: p.responsable, presupuesto: d.presupuesto, valorOfertado: est.valorOfertado, valorAdjudicado: est.valorAdjudicado
+    };
+    const f = fila || {};
+    const out = [];
+    CAMPOS_EXPORTAR.forEach(([campo, etiqueta]) => {
+      const v = propio[campo];
+      const nuevo = MONTOS.includes(campo) ? (Number(v) > 0 ? Math.round(Number(v)) : null)
+        : String(v === null || v === undefined ? '' : v).replace(/\s+/g, ' ').trim() || null;
+      if (nuevo === null) return;
+      const actual = f[campo] === undefined || f[campo] === '' ? null : f[campo];
+      if (igualEnPlanilla(campo, actual, nuevo)) return;
+      out.push({ campo, etiqueta, actual, nuevo, marcado: vacioEnPlanilla(campo, actual) || ['estado', 'valorOfertado', 'valorAdjudicado'].includes(campo) });
+    });
+    return out;
+  }
+  /* Lo marcado en «Exportar a la Planilla». planilla_escritura.py (Sistema Intercambio) lo escribe con Excel cada
+     10 minutos, en la fila de ese N° cuyo título es el que se vio (titulo). reemplaza lleva lo que mostraba la
+     planilla en cada casilla: si alguien la cambió también allá, manda el cambio más reciente. */
+  function mensajeEditarRequerimiento(p, numero, titulo, campos, usuario) {
+    const m = sobre('editar-requerimiento', 'planilla-requerimientos', usuario);
+    m.requerimiento = Object.assign({ numero: Number(numero) }, String(titulo || '').trim() ? { titulo: String(titulo) } : {});
+    m.cambios = {};
+    m.reemplaza = {};
+    campos.forEach((c) => {
+      m.cambios[c.campo] = c.nuevo;
+      m.reemplaza[c.campo] = c.actual === null || c.actual === undefined ? null : MONTOS.includes(c.campo) ? c.actual : String(c.actual);
+    });
+    m.fuente = { herramienta: HERRAMIENTA, uid: p.uid, codigo: p.codigo || '' };
+    return m;
+  }
+
   // ---- Sesgo del presupuesto (Análisis Financiero) ---------------------------------------------
   const SESGO_A_SENS = { Materiales: 'mat', Equipos: 'eq', 'Mano de Obra': 'mo', Otros: 'otros' };
   /* {mat, eq, mo, otros} en % (1 decimal) desde el sesgo publicado; null si no hay base. */
@@ -356,7 +410,7 @@
     publicacion, requerimientos, olvidar, paquete, validar, enviar,
     reqDe, tagDe, proyecto,
     mensajeBorrador, mensajeVenta, mensajeRegistro, mensajeSugerencia, cambiosParaPlanilla,
-    mensajeNuevoRequerimiento, siguienteNumero,
+    mensajeNuevoRequerimiento, siguienteNumero, camposParaExportar, mensajeEditarRequerimiento, igualEnPlanilla,
     sensibilidadDesdeSesgo, preciosReferencia, buscarPrecios,
     cotizacionesDe, estadoEnSistema, siguienteFolio, lecturaEstado
   };

@@ -332,6 +332,13 @@ select.is-set { border-color: var(--brand-orange) !important; box-shadow: inset 
 .pg-aviso { margin: 0; font-size: 13px; color: var(--status-warning); }
 .pg-tabla { font-size: 12.5px; }
 .pg-tabla td, .pg-tabla th { padding: 6px 10px; }
+/* «Exportar a la Planilla»: casilla, lo que dice la planilla y lo que dice el proyecto (2026-11-02) */
+.xp-tabla { font-size: 12.5px; min-width: 0; }
+.xp-tabla td, .xp-tabla th { padding: 6px 10px; vertical-align: top; }
+.xp-tabla td:first-child { width: 28px; }
+.xp-tabla tbody th { text-align: left; font-weight: 600; white-space: nowrap; }
+.xp-tabla .hint { display: block; margin-top: 2px; }
+.xp-vacia { color: var(--text-secondary); font-style: italic; }
 /* Aviso de cierre de la licitación (fecha de cierre de la Planilla): lista, encabezado del proyecto y pendientes */
 .chip-plazo svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
 .chip-plazo.info { font-weight: 700; }
