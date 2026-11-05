@@ -13,7 +13,9 @@
  *   envía      borrador-cotizacion        → Sistema QUEMPIN (una persona la revisa y la emite)
  *              venta-proyecto             → Análisis Financiero
  *              registro-documento         → Sistema QUEMPIN (Control de Documentos, tipo 81)
- *              actualizar-requerimiento   → Planilla de Ingreso (sugerencia que una persona pasa)
+ *              actualizar-requerimiento   → Planilla de Ingreso (el valor: sugerencia que una persona pasa)
+ *              editar-requerimiento       → Planilla de Ingreso (el estado: se escribe solo)
+ *              mover-carpeta              → la carpeta del proyecto, según su estado (la mueve el procesador)
  *              nuevo-requerimiento        → Planilla de Ingreso (proyecto nuevo sin N°: se escribe solo)
  *
  * Todo lo que se envía se valida antes con el catálogo de esquemas que el procesador deja en la
@@ -245,7 +247,24 @@
     return m;
   }
 
-  /* Sugerencia para la Planilla de Ingreso: estado y valor ofertado o adjudicado (con IVA). */
+  /* El Estado del proyecto va directo a la Planilla de Ingreso (2026-11-02), como lo cambiado en el Portal: lo escribe
+     planilla_escritura.py cada 10 minutos, y mientras tanto todo el Portal ya lo muestra. visto: lo que decía la fila. */
+  function mensajeEstado(numero, titulo, estado, visto, usuario) {
+    const m = sobre('editar-requerimiento', 'planilla-requerimientos', usuario);
+    m.requerimiento = Object.assign({ numero: Number(numero) }, titulo ? { titulo: String(titulo) } : {});
+    m.cambios = { estado };
+    m.reemplaza = { estado: visto === undefined ? null : visto };
+    return m;
+  }
+  /* Después del aviso de adónde va (js/oferta.js): la carpeta del proyecto, según su Estado. La mueve el computador
+     del procesador (Sistema Intercambio/carpetas_oferta.py), que decide el lugar; aquí solo se dice el N° y el estado. */
+  function mensajeMoverCarpeta(numero, titulo, estado, usuario) {
+    const m = sobre('mover-carpeta', 'carpetas-proyecto', usuario);
+    m.requerimiento = Object.assign({ numero: Number(numero) }, titulo ? { titulo: String(titulo) } : {});
+    m.estado = estado;
+    return m;
+  }
+  /* Sugerencia para la Planilla de Ingreso: valor ofertado o adjudicado (con IVA), que pasa a mano una persona. */
   function mensajeSugerencia(p, numero, cambios, reemplaza, usuario) {
     const m = sobre('actualizar-requerimiento', 'planilla-requerimientos', usuario);
     m.requerimiento = { numero: Number(numero) };
@@ -283,14 +302,14 @@
     return max + 1;
   }
 
-  /* Qué sugerir según el estado del proyecto: Enviada → Ofertado; Adjudicada y Cerrada → Adjudicado; Perdida →
-     No adjudicado; Descartada → Descartado (estos dos sin valor). Con los perdidos la planilla calcula
-     la tasa de adjudicación que usa el Flujo de Caja (requerimientos.py, resumen). */
+  /* Qué avisar según el estado del proyecto: Enviada → Ofertado; Adjudicada → Adjudicado; Post-venta → Post-venta;
+     Cerrada → Cerrado; Perdida → No adjudicado; Descartada → Descartado (estos dos sin valor). Con los perdidos la
+     planilla calcula la tasa de adjudicación que usa el Flujo de Caja (requerimientos.py, resumen). */
   function cambiosParaPlanilla(p, valorConIva) {
     // Sin valor (proyecto en otra moneda y sin cotización en pesos) se avisa solo el estado
     const v = valorConIva > 0 ? Math.round(valorConIva) : null;
-    // Cerrada (2026-10-26) es una adjudicada que terminó: en la planilla sigue «Adjudicado»
-    if (p.estado === 'Adjudicada' || p.estado === 'Cerrada') return Object.assign({ estado: 'Adjudicado' }, v ? { valorAdjudicado: v } : {});
+    const ganada = { 'Adjudicada': 'Adjudicado', 'Post-venta': 'Post-venta', 'Cerrada': 'Cerrado' }[p.estado];
+    if (ganada) return Object.assign({ estado: ganada }, v ? { valorAdjudicado: v } : {});
     if (p.estado === 'Enviada') return Object.assign({ estado: 'Ofertado' }, v ? { valorOfertado: v } : {});
     if (p.estado === 'Perdida') return { estado: 'No adjudicado' };
     if (p.estado === 'Descartada') return { estado: 'Descartado' };
@@ -355,7 +374,7 @@
   root.QHerramientas = {
     publicacion, requerimientos, olvidar, paquete, validar, enviar,
     reqDe, tagDe, proyecto,
-    mensajeBorrador, mensajeVenta, mensajeRegistro, mensajeSugerencia, cambiosParaPlanilla,
+    mensajeBorrador, mensajeVenta, mensajeRegistro, mensajeSugerencia, mensajeEstado, mensajeMoverCarpeta, cambiosParaPlanilla,
     mensajeNuevoRequerimiento, siguienteNumero,
     sensibilidadDesdeSesgo, preciosReferencia, buscarPrecios,
     cotizacionesDe, estadoEnSistema, siguienteFolio, lecturaEstado

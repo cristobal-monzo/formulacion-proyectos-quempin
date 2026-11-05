@@ -13,9 +13,10 @@
   const LS_PROYECTOS = 'qpn.formulacion.proyectos.v1';
   const LS_CONFIG = 'qpn.formulacion.config.v1';
 
-  /* «Cerrada» (2026-10-26): el proyecto adjudicado terminó su ejecución. Va después de Adjudicada porque sigue
-     contando como ganado; sale de la Planificación semanal del Portal. */
-  const ESTADOS = ['Borrador', 'En revisión', 'Enviada', 'Adjudicada', 'Cerrada', 'Perdida', 'Descartada'];
+  /* «Cerrada» (2026-10-26): el proyecto adjudicado terminó su ejecución. «Post-venta» (2026-11-02): ya se entregó y se
+     sigue atendiendo. Van después de Adjudicada porque siguen contando como ganados; salen de la Planificación semanal
+     del Portal. */
+  const ESTADOS = ['Borrador', 'En revisión', 'Enviada', 'Adjudicada', 'Post-venta', 'Cerrada', 'Perdida', 'Descartada'];
   const UNIDADES = ['Un.', 'kg', 'm', 'm2', 'm3', 'gl', 'km', 'día', 'hr', 'lt', 'noche'];
 
   /* Categoría del proyecto (pedido del usuario, 2026-10-27): cómo se postula, y con eso qué datos tiene. Un trato

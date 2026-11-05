@@ -27,11 +27,13 @@
       hace: 'Al terminar, lo gastado frente a lo presupuestado vuelve al Formulador como sesgo real para las próximas ofertas.' }
   ];
   const EN_FORMULACION = ['Borrador', 'En revisión'];
-  /* Ganadas: la adjudicada y la que ya cerró su ejecución («Cerrada», 2026-10-26). */
-  const GANADAS = ['Adjudicada', 'Cerrada'];
+  /* Ganadas: la adjudicada, la que ya se entregó y se sigue atendiendo («Post-venta», 2026-11-02) y la que ya cerró su
+     ejecución («Cerrada», 2026-10-26). */
+  const GANADAS = ['Adjudicada', 'Post-venta', 'Cerrada'];
   /* Lo que la Planilla de Ingreso debe mostrar según el estado de la oferta (mismo mapa que
-     herramientas.js cambiosParaPlanilla). Un proyecto cerrado sigue «Adjudicado» en la planilla. */
-  const EN_PLANILLA = { 'Enviada': 'Ofertado', 'Adjudicada': 'Adjudicado', 'Cerrada': 'Adjudicado', 'Perdida': 'No adjudicado', 'Descartada': 'Descartado' };
+     herramientas.js cambiosParaPlanilla y Sistema Intercambio/formulaciones.py, EN_PLANILLA). Desde el 2026-11-02 el
+     estado se escribe solo en la Planilla y de ahí llega a todo el Portal. Mientras se formula, «Evaluación». */
+  const EN_PLANILLA = { 'Enviada': 'Ofertado', 'Adjudicada': 'Adjudicado', 'Post-venta': 'Post-venta', 'Cerrada': 'Cerrado', 'Perdida': 'No adjudicado', 'Descartada': 'Descartado' };
   const igual = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
 
   /* Lo que se sabe del proyecto, con o sin lo publicado por las demás herramientas.
@@ -65,6 +67,7 @@
       p, estado, req: ctx.req || null,
       enFormulacion: EN_FORMULACION.includes(estado),
       cerrado: estado === 'Cerrada',
+      postVenta: estado === 'Post-venta',
       conError, sinHacer, conAviso,
       carpetaFalta: ctx.carpeta === false,
       cotizacion: {
@@ -88,7 +91,7 @@
   /* La acción que sigue: { etapa, texto, corto, accion?, boton?, paso?, motivo?, espera?, fin?, alternativas? }
      motivo (con 'ir-paso'): 'error' | 'pendiente' | 'aviso'
      accion: 'ir-req' | 'ir-paso' | 'oferta-elegir' | 'herr-cotizacion' | 'marcar-enviada' |
-             'marcar-adjudicada' | 'marcar-perdida' | 'marcar-cerrada' | 'herr-planilla' | 'enviar-af' |
+             'marcar-adjudicada' | 'marcar-perdida' | 'marcar-postventa' | 'marcar-cerrada' | 'herr-planilla' | 'enviar-af' |
              'herr-venta' | 'abrir-af' */
   function siguiente(h) {
     const conReq = !!h.req;
@@ -120,7 +123,7 @@
       const yaEnviada = { accion: 'marcar-enviada', boton: 'Ya la envié: marcar como Enviada' };
       if (c.emitida) {
         return { etapa: 'oferta', accion: 'marcar-enviada', boton: 'Marcar como Enviada', corto: 'Enviar al cliente',
-          texto: `La cotización${c.folio ? ` ${c.folio}` : ''} ya está emitida. Cuando la envíes al cliente, márcala como Enviada: se avisa el valor ofertado a la Planilla de Ingreso.` };
+          texto: `La cotización${c.folio ? ` ${c.folio}` : ''} ya está emitida. Cuando la envíes al cliente, márcala como Enviada: la Planilla de Ingreso queda en «Ofertado» y se avisa el valor ofertado.` };
       }
       if (c.enEspera) {
         return { etapa: 'cotizacion', espera: true, corto: 'En Sistema QUEMPIN', alternativas: [yaEnviada],
@@ -135,19 +138,25 @@
     if (h.estado === 'Enviada') {
       if (!h.planilla.avisada) {
         return { etapa: 'oferta', accion: 'herr-planilla', boton: 'Avisar a la Planilla de Ingreso', corto: 'Avisar a la planilla',
-          texto: 'La oferta está enviada. Avisa a la Planilla de Ingreso que quedó «Ofertado», con su valor: quien la lleva lo pasa a mano.' };
+          texto: 'La oferta está enviada. Avisa a la Planilla de Ingreso que quedó «Ofertado»: el estado se escribe solo en unos minutos y su valor lo pasa quien la lleva.' };
       }
       return { etapa: 'oferta', espera: true, corto: 'Esperando respuesta',
         alternativas: [{ accion: 'marcar-adjudicada', boton: 'Marcar como Adjudicada' }, { accion: 'marcar-perdida', boton: 'Marcar como Perdida' }],
         texto: 'Esperando la respuesta del cliente. Cuando llegue, marca la oferta como Adjudicada o Perdida: lo que sigue depende de eso.' };
     }
     // Cerrada: la ejecución terminó y no se pide nada más (aunque nunca haya pasado por el Análisis Financiero,
-    // como los proyectos de antes). Si la planilla aún no dice «Adjudicado», queda como opción.
+    // como los proyectos de antes). Si la planilla aún no dice «Cerrado», queda como opción.
     if (h.cerrado) {
       return { etapa: 'cierre', fin: true, corto: 'Cerrado',
-        alternativas: h.planilla.avisada ? undefined : [{ accion: 'herr-planilla', boton: 'Avisar «Adjudicado» a la Planilla' }],
+        alternativas: h.planilla.avisada ? undefined : [{ accion: 'herr-planilla', boton: 'Avisar «Cerrado» a la Planilla' }],
         texto: 'Proyecto cerrado: su ejecución terminó y ya no aparece en la Planificación semanal del Portal.'
           + (h.af.cerrado ? ' Lo gastado frente a lo presupuestado ya cuenta en el sesgo real que usa el simulador del paso 5.' : '') };
+    }
+    // Post-venta (2026-11-02): ya se entregó y se sigue atendiendo; lo único que sigue es cerrarlo
+    if (h.postVenta) {
+      return { etapa: 'cierre', fin: true, corto: 'Post-venta',
+        alternativas: [{ accion: 'marcar-cerrada', boton: 'Cerrar el proyecto' }].concat(h.planilla.avisada ? [] : [{ accion: 'herr-planilla', boton: 'Avisar «Post-venta» a la Planilla' }]),
+        texto: 'Entregado y en post-venta: se sigue atendiendo. Ya no aparece solo en la Planificación semanal del Portal (se puede agregar a mano a una semana). Cuando termine del todo, ciérralo.' };
     }
     if (h.estado === 'Adjudicada') {
       const af = h.af;
@@ -174,12 +183,14 @@
           texto: 'Falta avisar a la Planilla de Ingreso que la oferta quedó «Adjudicado», con su valor.' };
       }
       const cerrar = { accion: 'marcar-cerrada', boton: 'Cerrar el proyecto' };
+      const aPostVenta = { accion: 'marcar-postventa', boton: 'Pasar a Post-venta' };
       if (af.cerrado) {
         return { etapa: 'cierre', accion: 'marcar-cerrada', boton: 'Marcar como Cerrada', corto: 'Marcar como Cerrada',
-          texto: 'El Análisis Financiero ya tiene el 100 % de avance. Márcalo como Cerrada: queda descrito como terminado en todas las herramientas y sale de la Planificación semanal.' };
+          alternativas: [aPostVenta],
+          texto: 'El Análisis Financiero ya tiene el 100 % de avance. Márcalo como Cerrada: queda descrito como terminado en todas las herramientas y sale de la Planificación semanal. Si se sigue atendiendo, pásalo a Post-venta.' };
       }
       return { etapa: 'ejecucion', accion: 'abrir-af', boton: 'Abrir el tablero de Análisis Financiero', corto: 'En ejecución', fin: true,
-        alternativas: [cerrar],
+        alternativas: [aPostVenta, cerrar],
         texto: 'En ejecución: no queda nada pendiente en el Formulador. El avance, las fechas y la mano de obra real se ingresan en el tablero de Análisis Financiero (pestaña «Ingresar datos»), y las facturas se registran en el Centro de Costos.' };
     }
     // Perdida o Descartada
@@ -196,7 +207,7 @@
      falte el N° de requerimiento); la de la acción que sigue es la actual. */
   function etapas(h, sig) {
     const noGanada = h.estado === 'Perdida' || h.estado === 'Descartada';
-    const terminada = h.af.cerrado || h.cerrado;
+    const terminada = h.af.cerrado || h.cerrado || h.postVenta;
     const c = h.cotizacion;
     const formulada = !h.enFormulacion || (!h.conError && !h.sinHacer && !h.conAviso && !h.carpetaFalta);
     const hecha = {
@@ -213,7 +224,7 @@
       cotizacion: c.folio ? `N° ${c.folio}` : c.emitida ? 'Emitida' : c.enEspera ? 'En Sistema QUEMPIN' : c.descartada ? 'No se emitió' : h.enFormulacion ? 'Por preparar' : 'Sin registrar aquí',
       oferta: h.enFormulacion ? 'Por enviar' : h.estado,
       ejecucion: noGanada ? 'No aplica' : !GANADAS.includes(h.estado) ? 'Al adjudicarse' : terminada ? 'Terminada' : h.af.enviado ? 'En curso' : 'Por traspasar',
-      cierre: noGanada ? 'No aplica' : h.cerrado ? 'Cerrado' : h.af.cerrado ? 'Por cerrar' : 'Al terminar'
+      cierre: noGanada ? 'No aplica' : h.cerrado ? 'Cerrado' : h.postVenta ? 'En post-venta' : h.af.cerrado ? 'Por cerrar' : 'Al terminar'
     };
     return ETAPAS.map((e, i) => {
       let est;

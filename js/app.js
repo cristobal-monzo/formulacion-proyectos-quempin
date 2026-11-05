@@ -212,13 +212,14 @@
     'En revisión': { cls: 'eb-revision', desc: 'Lista para revisión interna' },
     'Enviada': { cls: 'eb-enviada', desc: 'Oferta enviada al cliente' },
     'Adjudicada': { cls: 'eb-adjudicada', desc: 'El cliente aceptó la oferta' },
+    'Post-venta': { cls: 'eb-postventa', desc: 'Entregado: se sigue atendiendo' },
     'Cerrada': { cls: 'eb-cerrada', desc: 'Proyecto terminado: ya no está en ejecución' },
     'Perdida': { cls: 'eb-perdida', desc: 'Se adjudicó a otro oferente' },
     'Descartada': { cls: 'eb-descartada', desc: 'No se presentó la oferta' }
   };
   const EN_CURSO = ['Borrador', 'En revisión', 'Enviada'];
   const EN_FORMULACION = ['Borrador', 'En revisión'];   // los demás estados ya salieron de la formulación
-  const GANADAS = ['Adjudicada', 'Cerrada'];   // Cerrada (2026-10-26): adjudicada y con la ejecución terminada
+  const GANADAS = ['Adjudicada', 'Post-venta', 'Cerrada'];   // las dos últimas: adjudicadas, ya entregadas o terminadas
 
   const UNIDAD_NOMBRE = { 'Un.': 'Unidad', kg: 'Kilogramo', m: 'Metro lineal', m2: 'Metro cuadrado', m3: 'Metro cúbico', gl: 'Global', km: 'Kilómetro', 'día': 'Día', hr: 'Hora', lt: 'Litro', noche: 'Noche' };
 
@@ -568,8 +569,8 @@
         enEditor ? null : { icon: ICON.open, title: 'Abrir', act: 'abrir', id },
         vo ? { icon: ICON.folder, title: 'Abrir la carpeta en el Explorador', desc: `Formulación de proyectos · ${vo.nombre}`, act: 'oferta-abrir', id } : null,
         vo && QO().copiaEnGestion(vo) ? { icon: ICON.folder, title: 'Abrir la de Gestión de Proyectos', desc: 'Donde sigue la ejecución, con «Formulación» y el acceso a sus facturas', act: 'oferta-abrir-gestion', id } : null,
-        vo && QO().escribible(vo) ? { icon: ICON.sheet, title: 'Guardar Excel en la carpeta de la oferta', desc: vo.nombre, act: 'oferta-guardar', id } : null,
-        vo && QO().escribible(vo) && !(QO().copiaEnGestion(vo) || {}).copiada && GANADAS.includes((S.get(id) || {}).estado) ? { icon: ICON.folder, title: 'Copiar la carpeta a Gestión de Proyectos', desc: 'Con «Formulación»; el original pasa a 0 OFERTAS ADJUDICADAS', act: 'oferta-trasladar', id } : null,
+        vo ? { icon: ICON.sheet, title: 'Guardar Excel en la carpeta de la oferta', desc: vo.nombre, act: 'oferta-guardar', id } : null,
+        vo && !QO().copiaEnGestion(vo) && GANADAS.includes((S.get(id) || {}).estado) ? { icon: ICON.folder, title: 'Pasar la carpeta a Gestión de Proyectos', desc: 'Con «Formulación»; el original pasa a 0 OFERTAS ADJUDICADAS', act: 'oferta-mover', id } : null,
         vo === null ? { icon: ICON.folder, title: 'Elegir la carpeta de la oferta', desc: 'Para dejar ahí una copia en Excel, al día', act: 'oferta-elegir', id } : null,
         enEditor ? null : { icon: ICON.download, title: 'Exportar a Excel', desc: 'Planilla con fórmulas vivas y ficha de KPI', act: 'exp-xlsx', id },
         { icon: ICON.file, title: 'Exportar a JSON', desc: 'Para respaldar o compartir y volver a importar', act: 'exp-json', id },
@@ -741,14 +742,12 @@
       openPop(btn, {
         kind: 'listbox', align: 'left', label: 'Estado del proyecto', minWidth: 260,
         items: S.ESTADOS.map((e) => ({ value: e, title: e, desc: ESTADO_INFO[e].desc, selected: p.estado === e, lead: `<span class="swatch ${ESTADO_INFO[e].cls}"></span>` })),
-        onPick: (o) => {
-          const cambio = p.estado !== o.value;
-          p.estado = o.value;
-          const sel = $('#f-estado');
-          if (sel) sel.value = o.value;
-          updateHeader();
-          scheduleSave();
-          if (cambio) alCambiarEstado();
+        onPick: async (o) => {
+          // Va por el mismo camino que los botones del recorrido: el aviso si mueve su carpeta, y a la Planilla de Ingreso
+          if (p.estado !== o.value && await marcarEstado(o.value)) {
+            const sel = $('#f-estado');
+            if (sel) sel.value = o.value;
+          }
           const b = $('#ed-meta [data-picker="estado"]');
           if (b) b.focus();
         }
@@ -3243,8 +3242,7 @@
         case 'oferta-omitir': if (p) { ofertaOmitida.add(p.uid); pintarEditorOferta(); } break;
         case 'oferta-abrir': abrirCarpetaOferta(id || (p && p.uid)); break;
         case 'oferta-abrir-gestion': abrirCarpetaOferta(id || (p && p.uid), true); break;
-        case 'oferta-trasladar': await ofrecerTraslado(id || (p && p.uid), true); break;
-        case 'oferta-traslado-cancelar': cancelarTraslado(id || (p && p.uid)); break;
+        case 'oferta-mover': await moverCarpetaSegunEstado(id || (p && p.uid)); break;
         case 'oferta-guardar': {
           const uid = id || (p && p.uid);
           if (p && p.uid === uid && saveTimer) saveNow();
@@ -4923,7 +4921,7 @@
     if (el && state.project) el.innerHTML = pieSigue(siguienteAccion(rec));
   }
   /* Al cambiar el estado de la oferta: la barra, el pie y el seguimiento se ponen al día, y se dice qué sigue. */
-  function alCambiarEstado(avisada) {
+  function alCambiarEstado(avisada, mueve) {
     const p = state.project;
     if (!p) return;
     pintarSigue();
@@ -4935,11 +4933,85 @@
       : s.fin ? (s.etapa === 'ejecucion' ? ' En ejecución: lo que sigue se registra en el tablero de Análisis Financiero.' : ' No queda nada pendiente.')
         : s.espera ? ` Ahora: ${min(s.corto)}.`
           : ` Siguiente: ${min(s.boton ? s.boton.replace(/…$/, '') : s.corto)}.`;
-    toast(p.estado === 'Cerrada' ? 'Proyecto cerrado: sale de la Planificación semanal del Portal.'
-      : `Oferta ${p.estado}${avisada ? ', con aviso a la Planilla de Ingreso' : ''}.${que}`, false, 6000);
-    // Adjudicada: ¿la carpeta de la oferta se copia a Gestión de Proyectos? (2026-10-19). Después del cambio de
-    // pestaña de «Marcar como Adjudicada», que cerraría el diálogo.
-    if (p.estado === 'Adjudicada') setTimeout(() => { if (state.project && state.project.uid === p.uid) ofrecerTraslado(p.uid); }, 800);
+    const carpeta = mueve ? ' Su carpeta se mueve en unos 10 minutos.' : '';
+    toast((p.estado === 'Cerrada' ? 'Proyecto cerrado: sale de la Planificación semanal del Portal.'
+      : p.estado === 'Post-venta' ? 'Proyecto en post-venta: sale de la Planificación semanal del Portal.'
+        : `Oferta ${p.estado}${avisada ? ', con aviso a la Planilla de Ingreso' : ''}.${que}`) + carpeta, false, 6000);
+  }
+  /* Dónde está la carpeta del proyecto en cada biblioteca: { f, g }, rutas o null. La de Gestión la dice proyectos.json;
+     la de Formulación, el vínculo si tiene (buscándola si se movió) o proyectos.json. */
+  async function rutasCarpeta(p, req) {
+    const pub = await QH().publicacion('proyectos', true).catch(() => null);
+    const c = ((pub && pub.proyectos) || []).find((x) => String(x.req) === String(req));
+    const tramos = (x) => String(x || '').split('/').filter(Boolean);
+    const car = (c && c.carpetas) || {};
+    let f = (car.oferta || []).length ? tramos(car.oferta[0]) : null;
+    const g = (car.ejecucion || []).length ? tramos(car.ejecucion[0]) : null;
+    const v = QO() && QO().vinculo(p);
+    if (v) {
+      const r = await QO().rutaActual(v).catch(() => null);
+      f = r && r.length ? r : f || v.ruta;
+    }
+    return { f, g };
+  }
+  /* El aviso de lo que le pasará a la carpeta (pedido del usuario, 2026-11-02). */
+  function preguntarMover(p, titulo, plan, rutas, boton) {
+    return ask({
+      title: titulo,
+      body: `<p>La carpeta <b>«${esc(plan.nombre)}»</b> se va a mover:</p>
+        <ul class="np-lista">${QO().pasosCarpeta(plan, rutas.g).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+        <p class="small muted">La mueve el computador del procesador en unos 10 minutos; si hay un archivo abierto, reintenta. Nada se borra. El Excel de la formulación sigue en la carpeta de la oferta.</p>`,
+      buttons: [{ label: 'Cancelar' }, { label: boton, value: 'si', primary: true }]
+    });
+  }
+  /* Antes de cambiar el estado: si eso mueve la carpeta del proyecto, se avisa. null = se canceló; si no, { plan } con lo
+     que hay que pedir después (o sin plan, si no se mueve). Sin N° no hay Estado en la Planilla ni carpeta que mover. */
+  async function avisoDeCarpeta(p, nuevo) {
+    const req = QH() && QH().reqDe(p);
+    if (!req || !QF() || !QO() || !ofertaActiva()) return {};
+    const enPlanilla = (e) => QF().EN_PLANILLA[e] || 'Evaluación';
+    if (enPlanilla(p.estado) === enPlanilla(nuevo)) return {};
+    const rutas = await rutasCarpeta(p, req);
+    const plan = QO().planCarpeta(enPlanilla(nuevo), rutas.f, rutas.g, new Date().getFullYear());
+    if (!plan.formulacion && !plan.gestion) return {};
+    const v = await preguntarMover(p, `Pasar a «${nuevo}» mueve su carpeta`, plan, rutas, 'Cambiar y mover la carpeta');
+    return v === 'si' ? { plan, estado: enPlanilla(nuevo) } : null;
+  }
+  /* Pide mover la carpeta. true = quedó pedido. */
+  async function pedirMover(p, req, estadoPlanilla, plan) {
+    try {
+      await QH().enviar(QH().mensajeMoverCarpeta(req, ((p.vinculos || {}).requerimiento || {}).titulo || '', estadoPlanilla, usuarioActual(p)));
+    } catch (e) {
+      toast(`No se pudo pedir que se mueva la carpeta: ${(e && e.message) || e}`, true, 8000);
+      return false;
+    }
+    // Se crea su copia en Gestión: desde ya se ofrece abrirla (si todavía no está, el programa la busca por su nombre)
+    const v = QO().vinculo(p);
+    if (v && plan.gestion && plan.gestion.accion === 'crear') p.vinculos = Object.assign({}, p.vinculos, { carpetaOferta: QO().conCopiaEnGestion(v) });
+    return true;
+  }
+  /* «Pasar a Gestión de Proyectos» y lo demás que deja la carpeta donde dice su estado, sin cambiar el estado. */
+  async function moverCarpetaSegunEstado(uid) {
+    const p = proyectoDe(uid);
+    const req = p && QH() && QH().reqDe(p);
+    if (!p) return;
+    if (!req) { toast('Falta el N° de requerimiento: la carpeta se mueve según el estado de su fila en la Planilla de Ingreso.', true); return; }
+    if (!(await asegurarCarpeta())) return;
+    const estadoP = QF().EN_PLANILLA[p.estado] || 'Evaluación';
+    const rutas = await rutasCarpeta(p, req);
+    const plan = QO().planCarpeta(estadoP, rutas.f, rutas.g, new Date().getFullYear());
+    if (!plan.formulacion && !plan.gestion) { toast('La carpeta ya está donde corresponde a su estado.'); return; }
+    if (await preguntarMover(p, 'Mover la carpeta del proyecto', plan, rutas, 'Mover la carpeta') !== 'si') return;
+    if (saveTimer && state.project === p) saveNow();
+    const reqs = await QH().requerimientos(true);
+    const fila = ((reqs && reqs.requerimientos) || []).find((x) => String(x.numero) === String(req)) || null;
+    // Se mueve cuando la Planilla ya dice ese estado: si dice otro (un aviso que no se alcanzó a dejar), se le lleva
+    if (!fila || !igualCampo('estado', fila.estado, estadoP)) {
+      try { await dejarAviso(p, req, { estado: estadoP }, fila); } catch (e) { toast('No se pudo dejar el aviso: ' + ((e && e.message) || e), true); return; }
+    }
+    if (!await pedirMover(p, req, estadoP, plan)) return;
+    if (state.project === p) { saveNow(); updateHeader(); pintarEditorOferta(); if (state.tab === 'seguimiento') pintarHerramientas(); } else { S.upsert(p); refreshList(); }
+    toast(`«${plan.nombre}»: se mueve en unos 10 minutos.`, false, 6000);
   }
   /* Antes de marcar la oferta como Enviada desde el recorrido: si la lista de entregables tiene pendientes, se
      dicen (2026-10-27: la lista es para no olvidar ningún anexo al postular). true = seguir. */
@@ -4957,20 +5029,25 @@
     if (v === 'revisar') verEntregables();
     return v === 'ok';
   }
-  /* Cambia el estado desde el recorrido. Enviada, Perdida y Descartada avisan a la Planilla de Ingreso
-     en el mismo clic (el recorrido lo dice); la adjudicación viaja con «Pasar a ejecución». Cerrada no
-     avisa: en la planilla el proyecto sigue «Adjudicado». */
+  /* Cambia el estado, desde el recorrido o desde la lista de estados. Desde el 2026-11-02 todo cambio llega en el mismo clic
+     a la Planilla de Ingreso, y de ahí a todo el Portal. Si eso mueve la carpeta del proyecto, se avisa antes. */
   async function marcarEstado(estado) {
     const p = state.project;
     if (!p) return false;
     if (estado === 'Enviada' && p.estado !== 'Enviada' && !(await entregablesListos(p))) return false;
+    const aviso = await avisoDeCarpeta(p, estado);
+    if (!aviso) return false;
+    if (state.project !== p) return false;
     if (p.estado !== estado) {
       p.estado = estado;
       updateHeader();
       scheduleSave();
     }
-    const avisada = !GANADAS.includes(estado) && !!(QH() && QH().reqDe(p)) && await avisarPlanilla(true);
-    alCambiarEstado(avisada);
+    const req = QH() && QH().reqDe(p);
+    const avisada = !!req && await avisarPlanilla(true);
+    const mueve = !!aviso.plan && avisada && await pedirMover(p, req, aviso.estado, aviso.plan);
+    if (mueve) scheduleSave();
+    alCambiarEstado(avisada, mueve);
     return true;
   }
   /* Los botones del recorrido: la barra, el seguimiento y el pie del paso 5. Lo que cambia algo en
@@ -4998,6 +5075,7 @@
       case 'marcar-enviada': hecho = await marcarEstado('Enviada'); break;
       case 'marcar-adjudicada': hecho = await marcarEstado('Adjudicada'); break;
       case 'marcar-perdida': hecho = await marcarEstado('Perdida'); break;
+      case 'marcar-postventa': hecho = await marcarEstado('Post-venta'); break;
       case 'marcar-cerrada': hecho = await marcarEstado('Cerrada'); break;
       case 'reabrir': hecho = await marcarEstado('Adjudicada'); break;
       case 'abrir-af': window.open(enlaceAF(p), '_blank', 'noopener'); break;
@@ -5087,14 +5165,24 @@
     p.vinculos = Object.assign({}, p.vinculos, { ventaAF: { ultimoEnvio: { id: m.id, fecha: m.origen.enviado, monto: m.venta.montoSinIva, folio: mv.desde.folio || '' } } });
     return m;
   }
-  /* Deja el aviso a la Planilla de Ingreso. fila: la del requerimiento, para el If-Match. */
+  /* Deja el aviso a la Planilla de Ingreso. fila: la del requerimiento, para el If-Match. El estado se escribe solo
+     (editar-requerimiento, 2026-11-02); el valor sigue siendo una sugerencia que pasa una persona. */
   async function dejarAviso(p, req, cambios, fila) {
-    const reemplaza = {};
-    Object.keys(cambios).forEach((k) => { reemplaza[k] = fila ? (fila[k] === undefined ? null : fila[k]) : null; });
-    const m = QH().mensajeSugerencia(p, req, cambios, reemplaza, usuarioActual(p));
-    await QH().enviar(m);
-    p.vinculos = Object.assign({}, p.vinculos, { planilla: { ultimaSugerencia: { id: m.id, fecha: m.origen.enviado, cambios } } });
-    return m;
+    let ultimo = null;
+    const visto = (k) => (fila ? (fila[k] === undefined ? null : fila[k]) : null);
+    if (cambios.estado && !(fila && igualCampo('estado', fila.estado, cambios.estado))) {
+      const titulo = fila && fila.titulo ? fila.titulo : '';
+      ultimo = QH().mensajeEstado(req, titulo, cambios.estado, fila && typeof fila.estado === 'string' ? fila.estado : null, usuarioActual(p));
+      await QH().enviar(ultimo);
+    }
+    const valores = {}, reemplaza = {};
+    Object.keys(cambios).filter((k) => k !== 'estado' && !(fila && igualCampo(k, fila[k], cambios[k]))).forEach((k) => { valores[k] = cambios[k]; reemplaza[k] = visto(k); });
+    if (Object.keys(valores).length) {
+      ultimo = QH().mensajeSugerencia(p, req, valores, reemplaza, usuarioActual(p));
+      await QH().enviar(ultimo);
+    }
+    if (ultimo) p.vinculos = Object.assign({}, p.vinculos, { planilla: { ultimaSugerencia: { id: ultimo.id, fecha: ultimo.origen.enviado, cambios } } });
+    return ultimo;
   }
 
   /* Seguimiento: la línea de tiempo con las seis etapas. Lo de las demás herramientas (herrDe) llega
@@ -5187,7 +5275,7 @@
     }
     // Mientras se lee la carpeta, la línea de tiempo ya está y cada etapa dice qué es
     if (herrDe.uid !== p.uid) { herrDe = { uid: p.uid, html: { formulacion: resumenFormulacion + acciones(bFormulacion) }, aviso: '', pulso: '<p class="af-nota herr-pulso">Revisando la carpeta del equipo…</p>' }; pintarRecorrido(recorridoDe(p)); }
-    const [docs, af, folios, reqs, estado, lics] = await Promise.all(['documentos-comerciales', 'analisis-financiero', 'folios', 'requerimientos', 'estado', 'licitaciones']
+    const [docs, af, folios, reqs, estado, lics, cruce] = await Promise.all(['documentos-comerciales', 'analisis-financiero', 'folios', 'requerimientos', 'estado', 'licitaciones', 'proyectos']
       .map((n) => (n === 'requerimientos' ? QH().requerimientos() : QH().publicacion(n))));
     if (state.project !== p || !$('#recorrido')) return;
     const cots = QH().cotizacionesDe(p, docs);
@@ -5262,10 +5350,10 @@
       const yaEsta = !!cambios && planillaMuestra(filaReq, cambios);
       const avisado = !!cambios && !!ult && mismosCambios(ult.cambios, cambios);
       const valor = cambios ? cambios.valorOfertado || cambios.valorAdjudicado : 0;
-      tPla += (!cambios ? linea('Cuando la oferta se envíe o tenga respuesta (Adjudicada, Perdida o Descartada), se avisa el estado a la Planilla de Ingreso.')
+      tPla += (!cambios ? linea('Cuando la oferta se envíe o tenga respuesta (Adjudicada, Perdida o Descartada), el estado llega solo a la Planilla de Ingreso.')
         : yaEsta ? linea('<span class="chip ok">Al día</span> La Planilla de Ingreso ya muestra el estado de esta oferta.')
           : (avisado ? '' : linea(`Se avisaría a la planilla: <b>${esc(cambios.estado)}</b>${valor ? ` con ${dinero(valor, 'CLP')} (${esc(vi.texto)})` : ''}.`))
-            + (ult ? linea(`${chipEstado('pendiente')} Aviso${(ult.cambios || {}).estado ? ` «${esc(ult.cambios.estado)}»` : ''} enviado el ${esc(fechaHora(ult.fecha))}: espera que quien lleva la planilla lo pase.`) : ''));
+            + (ult ? linea(`${chipEstado('pendiente')} Aviso${(ult.cambios || {}).estado ? ` «${esc(ult.cambios.estado)}»` : ''} enviado el ${esc(fechaHora(ult.fecha))}: el estado se escribe solo en unos minutos y el valor lo pasa quien lleva la planilla.`) : ''));
       if (cambios && !yaEsta && !avisado) bPla = `<button type="button" class="btn" data-act="herr-planilla">${ICON.enviar}Avisar a la Planilla de Ingreso</button>`;
       const mp = bloqueMercadoPublico(p, r, ((lics && lics.licitaciones) || []).find((x) => String(x.req) === req), lics);
       tPla += mp.html;
@@ -5294,26 +5382,32 @@
     const vCarpeta = GANADAS.includes(p.estado) && ofertaActiva() ? QO().vinculo(p) : null;
     if (vCarpeta) {
       const copia = QO().copiaEnGestion(vCarpeta);
-      const abrirO = `<button type="button" class="btn" data-act="oferta-abrir">${ICON.folder}Abrir ${copia ? 'el original' : 'la carpeta'}</button>`;
-      const copiar = `<button type="button" class="btn" data-act="oferta-trasladar">${ICON.folder}Copiar a Gestión de Proyectos…</button>`;
-      html.ejecucion += `<div class="herr-cuerpo herr-carpeta">${copia
-        ? linea(`${copia.copiada ? '<span class="chip ok">Al día</span> ' : ''}La carpeta <b>«${esc(vCarpeta.nombre)}»</b> tiene su copia en Gestión de Proyectos (${copia.copiada ? `copiada el ${esc(fechaHora(copia.copiada))}` : `pedida a QUEMPIN.exe el ${esc(fechaHora(copia.pedida))}`}); el original quedó en Formulación › ${esc(QO().grupoDeRuta(vCarpeta.ruta))}.`)
-          + acciones(`<button type="button" class="btn" data-act="oferta-abrir-gestion">${ICON.folder}Abrir la de Gestión de Proyectos</button>${abrirO}${copia.copiada ? '' : copiar}`)
-        : QO().trasladoPedido(vCarpeta)
-          ? linea(`${chipEstado('pendiente')} Copia de <b>«${esc(vCarpeta.nombre)}»</b> a Gestión de Proyectos pedida el ${esc(fechaHora(vCarpeta.traslado.pedido))}: se confirma en QUEMPIN.exe.`) + acciones(abrirO + '<button type="button" class="btn btn-ghost" data-act="oferta-traslado-cancelar">Dejarlo así</button>')
-          : linea(`Adjudicada la oferta, su carpeta <b>«${esc(vCarpeta.nombre)}»</b> se copia a Gestión de Proyectos, donde sigue la ejecución, y el original pasa a 0 OFERTAS ADJUDICADAS.`) + acciones(copiar + abrirO)}</div>`;
+      // proyectos.json dice si ya está en Gestión, también cuando la pasaron por otro lado
+      const enG = !!req && (((cruce && cruce.proyectos) || []).find((x) => String(x.req) === req) || { carpetas: {} }).carpetas.ejecucion;
+      const yaEsta = !!(enG && enG.length);
+      const abrirO = `<button type="button" class="btn" data-act="oferta-abrir">${ICON.folder}Abrir ${yaEsta || copia ? 'el original' : 'la carpeta'}</button>`;
+      html.ejecucion += `<div class="herr-cuerpo herr-carpeta">${yaEsta
+        ? linea(`<span class="chip ok">Al día</span> La carpeta <b>«${esc(vCarpeta.nombre)}»</b> tiene su copia en Gestión de Proyectos; el original está en Formulación › ${esc(QO().grupoDeRuta(vCarpeta.ruta))}.`)
+          + acciones(`<button type="button" class="btn" data-act="oferta-abrir-gestion">${ICON.folder}Abrir la de Gestión de Proyectos</button>${abrirO}`)
+        : copia
+          ? linea(`${chipEstado('pendiente')} Su carpeta <b>«${esc(vCarpeta.nombre)}»</b> pasa a Gestión de Proyectos: se pidió el ${esc(fechaHora(copia.copiada || copia.pedida))} y lo hace el computador del procesador en unos 10 minutos.`) + acciones(abrirO)
+          : linea(`Adjudicada la oferta, su carpeta <b>«${esc(vCarpeta.nombre)}»</b> se copia a Gestión de Proyectos, donde sigue la ejecución, y el original pasa a 0 OFERTAS ADJUDICADAS.`)
+            + acciones(`<button type="button" class="btn" data-act="oferta-mover">${ICON.folder}Pasar a Gestión de Proyectos…</button>${abrirO}`)}</div>`;
     }
 
     // 6. Cierre
     const qAF = vAF ? ((af && af.proyectos) || []).find((x) => x.tag === vAF.tag) : null;
     if (qAF && ok(Number(qAF.avance))) html.cierre = linea(`Avance en el Análisis Financiero: <b>${pct(Number(qAF.avance))}</b>${Number(qAF.avance) >= 1 ? ': lo gastado frente a lo presupuestado ya cuenta en el sesgo real del simulador (paso 5).' : '. Se registra en su tablero, pestaña «Ingresar datos».'}`);
-    // Cerrada: el estado lo describe en todas las herramientas (2026-10-26). Se puede volver a ejecución.
+    // Cerrada y Post-venta: el estado lo describe en todas las herramientas. Se puede volver a ejecución.
     if (p.estado === 'Cerrada') {
       html.cierre = (html.cierre || '') + linea('Estado del proyecto: <span class="estado" data-e="Cerrada">Cerrada</span>. Ya no aparece en la Planificación semanal del Portal; en el Recorrido de proyectos queda en «Cierre».')
-        + acciones('<button type="button" class="btn btn-ghost" data-act="sigue" data-accion="reabrir">Volver a «Adjudicada» (sigue en ejecución)</button>');
+        + acciones('<button type="button" class="btn btn-ghost" data-act="sigue" data-accion="marcar-postventa">Pasar a Post-venta</button><button type="button" class="btn btn-ghost" data-act="sigue" data-accion="reabrir">Volver a «Adjudicada» (sigue en ejecución)</button>');
+    } else if (p.estado === 'Post-venta') {
+      html.cierre = (html.cierre || '') + linea('Estado del proyecto: <span class="estado" data-e="Post-venta">Post-venta</span>. Ya se entregó y se sigue atendiendo; en el Recorrido de proyectos queda en «Cierre». Cuando termine del todo, ciérralo.')
+        + acciones('<button type="button" class="btn" data-act="sigue" data-accion="marcar-cerrada">Cerrar el proyecto</button><button type="button" class="btn btn-ghost" data-act="sigue" data-accion="reabrir">Volver a «Adjudicada» (sigue en ejecución)</button>');
     } else if (p.estado === 'Adjudicada') {
-      html.cierre = (html.cierre || '') + linea('Cuando la ejecución termine, márcalo como Cerrada: sale de la Planificación semanal y queda descrito como terminado en el Portal.')
-        + acciones('<button type="button" class="btn" data-act="sigue" data-accion="marcar-cerrada">Cerrar el proyecto</button>');
+      html.cierre = (html.cierre || '') + linea('Cuando la ejecución termine, márcalo como Cerrada, o Post-venta si se sigue atendiendo: sale de la Planificación semanal y queda descrito en todo el Portal.')
+        + acciones('<button type="button" class="btn" data-act="sigue" data-accion="marcar-cerrada">Cerrar el proyecto</button><button type="button" class="btn" data-act="sigue" data-accion="marcar-postventa">Pasar a Post-venta</button>');
     }
 
     const l = QH().lecturaEstado(estado);
@@ -5419,15 +5513,15 @@
     if (!p || !req || !(await asegurarCarpeta())) return false;
     const [docs, reqs] = await Promise.all([QH().publicacion('documentos-comerciales', true), QH().requerimientos(true)]);
     const vi = valorConIva(p, QH().cotizacionesDe(p, docs));
-    const cambios = QH().cambiosParaPlanilla(p, vi.valor);
-    if (!cambios) { toast('Se avisa cuando la oferta está Enviada, Adjudicada, Perdida o Descartada.', true); return false; }
+    // Borrador o En revisión: una oferta que volvió a formularse; en la planilla, «Evaluación»
+    const cambios = QH().cambiosParaPlanilla(p, vi.valor) || { estado: 'Evaluación' };
     const r = ((reqs && reqs.requerimientos) || []).find((x) => String(x.numero) === req);
     try { await dejarAviso(p, req, cambios, r); } catch (e) { toast('No se pudo dejar el aviso: ' + ((e && e.message) || e), true); return false; }
     scheduleSave();
     QH().olvidar();
     pintarHerramientas();
     pintarSigue();
-    if (silencio !== true) toast(`Aviso «${cambios.estado}» enviado a la Planilla de Ingreso: quien la lleva lo pasa a mano.`);
+    if (silencio !== true) toast(`Estado «${cambios.estado}» enviado a la Planilla de Ingreso: se escribe solo en unos minutos.`);
     return true;
   }
 
@@ -6135,7 +6229,6 @@
       case 'guardando': return 'Guardando el Excel en la carpeta de la oferta…';
       case 'pendiente': return 'El Excel de la carpeta de la oferta se actualiza en unos segundos.';
       case 'error': return `No se pudo guardar el Excel: ${i.error}`;
-      case 'trasladando': return 'La carpeta se está copiando a Gestión de Proyectos: el Excel se actualiza al terminar.';
       default: return 'El Excel de la carpeta de la oferta se actualiza cada vez que se cambia el proyecto.';
     }
   }
@@ -6226,7 +6319,7 @@
   const renombresEnCurso = new Set();
   async function seguirCarpetaRenombrada(abierto) {
     const v0 = QO().vinculo(abierto);
-    if (!v0 || QO().trasladoPedido(v0)) return false;
+    if (!v0) return false;
     const k = abierto.uid + '|' + v0.ruta.join('/');
     if (renombresEnCurso.has(k) || Date.now() - (renombresSinCarpeta.get(k) || 0) < 60000) return false;
     renombresEnCurso.add(k);
@@ -6275,16 +6368,6 @@
           (una ? `<button type="button" class="btn btn-primario btn-sm" data-act="oferta-usar" data-ruta="${esc(una.id)}">${ICON.folder}Usar esa carpeta</button><button type="button" class="btn btn-sm" data-act="oferta-elegir">Elegir otra</button>`
             : `<button type="button" class="btn btn-primario btn-sm" data-act="oferta-elegir">${ICON.folder}Elegir carpeta</button>`) + omitir);
         }
-      } else if (v && QO().trasladoPedido(v)) {
-        // Copia a Gestión de Proyectos pedida a QUEMPIN.exe: ¿terminó?
-        const e = eb.permiso === 'granted' ? await estadoTraslado(v) : { estado: null };
-        if (state.project !== p) return;
-        if (e.estado === 'hecho' || e.estado === 'pedida') { cerrarTraslado(v.nombre, e.ruta, e.estado === 'hecho'); return; }
-        const dejar = '<button type="button" class="btn btn-ghost btn-sm" data-act="oferta-traslado-cancelar">Dejarlo así</button>';
-        html = e.estado === 'no-se-hizo'
-          ? notaOferta(`<strong>La carpeta «${esc(v.nombre)}» no pasó a Gestión de Proyectos.</strong> Sigue donde estaba: ¿se canceló en QUEMPIN.exe, o falta abrir una vez la versión 1.3.10 en este computador?`,
-            `<button type="button" class="btn btn-primario btn-sm" data-act="oferta-trasladar">${ICON.folder}Intentar de nuevo</button>${dejar}`)
-          : notaOferta(`<strong>Copiando «${esc(v.nombre)}» a Gestión de Proyectos.</strong> Confirma en la ventana de QUEMPIN.exe; mientras tanto el Excel de la formulación espera.`, dejar);
       } else if (v) {
         const i = QO().info(p);
         if (i.estado === 'error') {
@@ -6305,10 +6388,9 @@
     const v = p && QO().vinculo(p);
     if (!v) { await elegirOfertaPara(uid); return; }
     const i = QO().info(p);
-    const trasladando = QO().trasladoPedido(v);
     const copia = QO().copiaEnGestion(v);
     const eb = await QI().estadoBiblioteca();
-    const falta = trasladando ? '' : !eb.recordada ? 'Para guardarlo desde este navegador, conecta la biblioteca completa («Guardar ahora» la pide).'
+    const falta = !eb.recordada ? 'Para guardarlo desde este navegador, conecta la biblioteca completa («Guardar ahora» la pide).'
       : eb.permiso !== 'granted' ? 'Falta el permiso de esta sesión para la biblioteca: se guarda al darlo («Guardar ahora» lo pide).' : '';
     const r = await ask({
       title: 'Excel en la carpeta de la oferta',
@@ -6319,17 +6401,14 @@
           <dt>Archivo</dt><dd>${esc(i.archivo)}</dd>
           <dt>Estado</dt><dd>${esc(falta || textoEstadoOferta(i))}</dd>
         </dl>
-        <p class="oferta-acc"><button class="btn btn-sm" value="abrir">${ICON.folder}Abrir en el Explorador</button>${copia ? `<button class="btn btn-sm" value="abrir-gestion">${ICON.folder}Abrir la de Gestión de Proyectos</button>` : ''}${trasladando
-          ? '<button class="btn btn-sm" value="no-trasladar">Dejarlo así</button>'
-          : copia && copia.copiada ? '' : '<button class="btn btn-sm" value="trasladar">Copiar a Gestión de Proyectos…</button>'}</p>
+        <p class="oferta-acc"><button class="btn btn-sm" value="abrir">${ICON.folder}Abrir en el Explorador</button>${copia ? `<button class="btn btn-sm" value="abrir-gestion">${ICON.folder}Abrir la de Gestión de Proyectos</button>` : ''}${copia || !GANADAS.includes(p.estado) ? '' : '<button class="btn btn-sm" value="mover">Pasar a Gestión de Proyectos…</button>'}</p>
         <p class="small muted">El Excel es para consultar o imprimir: lo que se cambie en él se reemplaza en la siguiente actualización. El proyecto completo, el que se vuelve a abrir aquí, queda en el repositorio del equipo (.Herramientas formulación › Intercambio › publicado › formulador).</p>`,
-      buttons: [{ label: 'Dejar de guardarlo aquí', value: 'quitar', left: true }, { label: 'Cambiar carpeta', value: 'cambiar' }, trasladando ? { label: 'Cerrar' } : { label: 'Guardar ahora', value: 'guardar', primary: true }]
+      buttons: [{ label: 'Dejar de guardarlo aquí', value: 'quitar', left: true }, { label: 'Cambiar carpeta', value: 'cambiar' }, { label: 'Guardar ahora', value: 'guardar', primary: true }]
     });
     if (r === 'guardar') { if (await asegurarBiblioteca()) await guardarExcelOferta(uid); }
     else if (r === 'abrir') abrirCarpetaOferta(uid);
     else if (r === 'abrir-gestion') abrirCarpetaOferta(uid, true);
-    else if (r === 'trasladar') await ofrecerTraslado(uid, true);
-    else if (r === 'no-trasladar') cancelarTraslado(uid);
+    else if (r === 'mover') await moverCarpetaSegunEstado(uid);
     else if (r === 'cambiar') await elegirOfertaPara(uid);
     else if (r === 'quitar') {
       const abierto = state.project && state.project.uid === uid;
@@ -6344,15 +6423,10 @@
     }
   }
 
-  // ---- La carpeta en el Explorador y su copia en Gestión de Proyectos (pedido del usuario, 2026-10-19) ----
-  /* El navegador no abre carpetas del computador ni copia o mueve archivos: lo hace QUEMPIN.exe 1.3.10 con
-     las direcciones quempin://carpeta y quempin://trasladar (js/oferta.js; Sistema QUEMPIN app/carpetas.py).
-     Windows solo las abre desde un clic de la persona, así que se piden en el mismo clic. Al adjudicarse, la
-     carpeta se copia a Gestión de Proyectos y el original pasa a «0 OFERTAS ADJUDICADAS» (lo eligió el
-     usuario, como lo hacía el equipo a mano). Desde QUEMPIN.exe 1.3.15 (2026-10-28) la carpeta de Gestión trae
-     «Formulación», con la copia; el procesador le agrega «Facturas del proyecto», el acceso directo web a su
-     carpeta del Centro de Costos (2026-10-29). El
-     vínculo sigue en el original, con su Excel al día. */
+  // ---- La carpeta en el Explorador (pedido del usuario, 2026-10-19) ---------------------------------------
+  /* El navegador no abre carpetas del computador: lo hace QUEMPIN.exe 1.3.10 con la dirección quempin://carpeta
+     (js/oferta.js; Sistema QUEMPIN app/carpetas.py). Windows solo la abre desde un clic de la persona, así que se
+     pide en el mismo clic. Moverla es otra cosa: ver marcarEstado y moverCarpetaSegunEstado. */
   const proyectoDe = (uid) => ((state.project && state.project.uid === uid) ? state.project : S.get(uid));
   const SIN_EXE = 'Si no se abre, abre una vez QUEMPIN.exe 1.3.10 o más nuevo (en «Cotizaciones y OC - Documentos») y vuelve a intentarlo.';
   function abrirEnlace(url) {
@@ -6376,100 +6450,6 @@
     if (!v) return;
     abrirEnlace(QO().enlaceCarpeta(v, !!enGestion));
     toast(`Abriendo «${v.nombre}»${enGestion ? ' de Gestión de Proyectos' : ''} en el Explorador de archivos. ${SIN_EXE}`, false, 7000);
-  }
-  /* Cambia el vínculo con la carpeta en todos los presupuestos de esa carpeta (sus versiones). */
-  function cambiarVinculoCarpeta(nombre, fn) {
-    const k = nfcLower(nombre);
-    S.all().forEach((x) => {
-      const abierto = !!state.project && state.project.uid === x.uid;
-      const y = abierto ? state.project : x;
-      const v = QO().vinculo(y);
-      if (!v || nfcLower(v.nombre) !== k) return;
-      y.vinculos = Object.assign({}, y.vinculos, { carpetaOferta: fn(v) });
-      if (abierto) saveNow(); else S.upsert(y);
-    });
-    if (state.project) { updateHeader(); pintarEditorOferta(); if (state.tab === 'seguimiento') pintarHerramientas(); }
-    else if ($('#list-body')) refreshList();
-  }
-  const trasladoOmitido = new Set();   // «Ahora no» al adjudicar (solo esta sesión)
-  /* ¿Copiar la carpeta de la oferta a Gestión de Proyectos? Se pregunta al quedar Adjudicada; directo = lo
-     pidió la persona (menú, carpeta del encabezado, Seguimiento), y entonces se pregunta aunque antes dijo
-     «Ahora no». */
-  async function ofrecerTraslado(uid, directo) {
-    if (!ofertaActiva()) return;
-    const p = proyectoDe(uid);
-    const v = p && QO().vinculo(p);
-    if (!v) return;
-    if (!directo && (QO().copiaEnGestion(v) || trasladoOmitido.has(uid) || QO().trasladoPedido(v) || $('#modal').open)) return;
-    // El Excel en su última versión se escribe mientras se decide; y se anota dónde está la carpeta ahora
-    if (saveTimer && state.project && state.project.uid === uid) saveNow();
-    const eb = await QI().estadoBiblioteca().catch(() => ({}));
-    const listo = QO().escribible(v) && eb.permiso === 'granted'
-      ? QO().guardar(uid).catch((e) => console.warn('Excel antes de la copia:', e)) : Promise.resolve();
-    const desde = eb.permiso === 'granted' ? await QO().rutaActual(v).catch(() => null) : null;
-    const r = await ask({
-      title: 'Copiar la carpeta a Gestión de Proyectos',
-      body: `<p>${p.estado === 'Adjudicada' ? 'La oferta quedó <b>Adjudicada</b>. ' : ''}¿Pasar su carpeta <b>«${esc(v.nombre)}»</b> a <b>Gestión de Proyectos</b>, donde sigue el trabajo de ejecución?</p>
-        <ul class="np-lista">
-          <li>En «Gestión de Proyectos - Documentos» se crea la carpeta del proyecto con <b>«Formulación»</b>, la copia completa de esta carpeta. En unas horas aparece a su lado <b>«Facturas del proyecto»</b>, el acceso directo a su carpeta de facturas del Centro de Costos. Al lado se pueden crear las demás carpetas que necesite el proyecto.</li>
-          <li>Si allá ya hay una carpeta con ese nombre, se le agrega lo que falta sin tocar lo que tiene.</li>
-          <li>El original pasa a «Formulación de proyectos › 0 OFERTAS ADJUDICADAS», con el Excel de la formulación, que sigue al día ahí.</li>
-          <li>Lo hace QUEMPIN.exe (1.3.16 o más nuevo) en este computador: pregunta otra vez, muestra el avance y al terminar abre la carpeta de Gestión.</li>
-        </ul>`,
-      buttons: [{ label: 'Ahora no' }, { label: 'Copiar la carpeta', value: 'si', primary: true }]
-    });
-    if (r !== 'si') {
-      trasladoOmitido.add(uid);
-      if (!directo) toast('La carpeta sigue donde estaba. Puedes copiarla a Gestión de Proyectos después, desde la carpeta del encabezado o desde Seguimiento.', false, 6000);
-      return;
-    }
-    // En el mismo clic: QUEMPIN.exe, y mientras trabaja el Excel espera (escribir durante la copia la impediría)
-    abrirEnlace(QO().enlaceTraslado(v));
-    cambiarVinculoCarpeta(v.nombre, (x) => QO().pedirTraslado(x, yo(), desde && desde.length ? desde : x.ruta));
-    toast(`Copiando «${v.nombre}» a Gestión de Proyectos: confirma en la ventana de QUEMPIN.exe. ${SIN_EXE}`, false, 9000);
-    await listo;
-    vigilarTraslado(v.nombre);
-  }
-  /* ¿Terminó QUEMPIN.exe? 'hecho' cuando el original aparece en Adjudicadas (estaba en otra parte); si ya
-     estaba ahí no hay cómo verlo y, pasado un minuto, queda 'pedida'; 'no-se-hizo' a los 3 minutos sin
-     cambios; 'esperando' mientras tanto; null sin biblioteca con permiso. */
-  async function estadoTraslado(v) {
-    const ruta = await QO().rutaActual(v).catch(() => null);
-    if (!ruta) return { estado: null };
-    const desde = (v.traslado && v.traslado.desde) || v.ruta;
-    const t = Date.now() - Date.parse(v.traslado.pedido);
-    const igual = (a, b) => a.length === b.length && a.every((n, i) => nfcLower(n) === nfcLower(b[i]));
-    if (ruta.length && QO().enAdjudicadas(ruta) && !igual(ruta, desde)) return { estado: 'hecho', ruta };
-    if (QO().enAdjudicadas(desde) && t > 60000) return { estado: 'pedida', ruta: ruta.length ? ruta : desde };
-    return { estado: t > 180000 ? 'no-se-hizo' : 'esperando', ruta };
-  }
-  /* Después de pedirlo se revisa cada 3 segundos durante 3 minutos; después lo revisa el aviso del editor. */
-  const vigilados = new Set();
-  function vigilarTraslado(nombre) {
-    const k = nfcLower(nombre);
-    if (vigilados.has(k)) return;
-    vigilados.add(k);
-    let n = 0;
-    const revisar = async () => {
-      n += 1;
-      const x = S.all().find((y) => { const v = QO().vinculo(y); return !!v && nfcLower(v.nombre) === k && QO().trasladoPedido(v); });
-      const e = x ? await estadoTraslado(QO().vinculo(x)) : { estado: null };
-      if (x && (e.estado === 'hecho' || e.estado === 'pedida')) { vigilados.delete(k); cerrarTraslado(nombre, e.ruta, e.estado === 'hecho'); return; }
-      if (!x || n >= 62) { vigilados.delete(k); if (state.project) pintarEditorOferta(); return; }
-      setTimeout(revisar, 3000);
-    };
-    setTimeout(revisar, 3000);
-  }
-  function cerrarTraslado(nombre, ruta, confirmada) {
-    cambiarVinculoCarpeta(nombre, (v) => (QO().trasladoPedido(v) ? QO().conCopiaEnGestion(v, ruta, confirmada) : v));
-    if (confirmada) toast(`Listo: «${nombre}» quedó en Gestión de Proyectos, con «Formulación», y el original en 0 OFERTAS ADJUDICADAS.`, false, 7000);
-  }
-  function cancelarTraslado(uid) {
-    const p = proyectoDe(uid);
-    const v = p && QO().vinculo(p);
-    if (!v) return;
-    cambiarVinculoCarpeta(v.nombre, (x) => QO().sinTraslado(x));
-    toast('Listo: el Excel vuelve a actualizarse en la carpeta de la oferta.');
   }
 
   // ---------------------------------------------------------------------------

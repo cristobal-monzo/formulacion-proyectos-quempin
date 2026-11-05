@@ -23,10 +23,11 @@
  *    oculta _datos trae el mismo identificador); si no, se usa «… (2).xlsx».
  *  - Carpetas: solo se crea una carpeta de oferta nueva («N°. Nombre», en la raíz de la biblioteca,
  *    junto a las demás ofertas en curso) cuando una persona lo pide al crear un proyecto o elegir su
- *    carpeta (pedido del usuario, 2026-10-06). Nunca se reemplaza ni se toca una que ya exista.
- *  - Nunca se elimina, mueve ni renombra nada. Al adjudicarse, copiar la carpeta a «Gestión de Proyectos» y
- *    pasar el original a «0 OFERTAS ADJUDICADAS» lo hace QUEMPIN.exe en el computador, que pregunta antes
- *    (ver «Abrir la carpeta y pasarla a Gestión»).
+ *    carpeta (pedido del usuario, 2026-10-06), con las subcarpetas de siempre (ESTRUCTURA). Nunca se
+ *    reemplaza ni se toca una que ya exista.
+ *  - Nunca se elimina, mueve ni renombra nada desde aquí. Cuando el estado del proyecto cambia, su carpeta
+ *    se mueve adonde corresponde: el navegador avisa antes (planCarpeta, pasosCarpeta) y la mueve el
+ *    computador del procesador (Sistema Intercambio/carpetas_oferta.py, mensaje mover-carpeta).
  */
 (function (root) {
   'use strict';
@@ -192,7 +193,12 @@
      Devuelve { nombre, numero, titulo, cambiado } o lanza un Error con el mensaje para la persona y,
      si la carpeta ya existe, err.existente = esa carpeta (para ofrecer usarla). */
   const RESERVADOS = /^(con|prn|aux|nul|com\d|lpt\d)$/i;
-  const MAX_NOMBRE = 100;   // ruta completa corta: Excel no abre archivos con rutas de más de 218 caracteres
+  // Ruta completa corta: Excel no abre archivos con rutas de más de 218 caracteres, y la carpeta puede terminar en
+  // «0 OFERTAS PRESENTADAS › 0 Ofertas Cerradas 2026». Lo mismo que Sistema Intercambio/carpetas_oferta.py (LARGO_NOMBRE).
+  const MAX_NOMBRE = 70;
+  /* Las subcarpetas de siempre de una oferta, medidas el 2026-11-02 en la biblioteca (Sistema Intercambio/carpetas_oferta.py,
+     ESTRUCTURA, y el Portal, PQ_ESTRUCTURA: test_portal.py las compara). */
+  const ESTRUCTURA = ['ANTECEDENTES', 'DOCUMENTOS EN TRABAJO', 'ENTREGABLES', 'VISITA TÉCNICA'];
   /* El nombre de la carpeta de una oferta, «N°. Nombre» (o solo el nombre, sin N°), que es también el código
      del proyecto (pedido del usuario, 2026-10-19). '' si no hay nombre. Sin efectos: se prueba en node. */
   function nombreOferta(numero, titulo) {
@@ -237,7 +243,10 @@
     for await (const [m] of bib.entries()) {
       if (nfc(m).toLowerCase() === k) throw new Error(`Ya existe «${m}» en la biblioteca.`);
     }
-    try { await bib.getDirectoryHandle(c.nombre, { create: true }); } catch (err) {
+    try {
+      const nueva = await bib.getDirectoryHandle(c.nombre, { create: true });
+      for (const sub of ESTRUCTURA) await nueva.getDirectoryHandle(sub, { create: true });
+    } catch (err) {
       const n = err && err.name;
       if (n === 'NotAllowedError' || n === 'SecurityError') throw new Error('El navegador no tiene permiso para crear carpetas en la biblioteca.');
       throw new Error(`No se pudo crear la carpeta: ${(err && err.message) || err}`);
@@ -246,39 +255,66 @@
     return { id: c.nombre, nombre: c.nombre, numero: c.numero, titulo: c.titulo, grupo: 'En curso', ruta: [c.nombre], nueva: true };
   }
 
-  // ---- Abrir la carpeta y pasarla a Gestión (pedido del usuario, 2026-10-19) ---------------------------
-  /* El navegador no abre carpetas del computador ni copia o mueve archivos: lo hace QUEMPIN.exe 1.3.10 con
-     quempin://carpeta/<formulacion|gestion>/<ruta> y quempin://trasladar/formulacion/<ruta> (Sistema QUEMPIN
-     app/carpetas.py). Si la carpeta se movió, el programa la busca por su nombre en las dos bibliotecas.
-     Al adjudicarse, la carpeta se copia a «Gestión de Proyectos» (donde sigue la ejecución) y el original
-     pasa a «0 OFERTAS ADJUDICADAS», como lo hacía el equipo a mano. El vínculo sigue en el original, así que
-     el Excel de la formulación sigue al día ahí; v.gestion recuerda la copia. Mientras el programa trabaja
-     (v.traslado) el Excel no se escribe: escribir durante la copia o el cambio de lugar lo impediría. */
-  const ADJUDICADAS = /^0 OFERTAS ADJUDICADAS$/i;
-  const trasladoPedido = (v) => !!(v && v.traslado && v.traslado.pedido);
-  const escribible = (v) => !!v && !trasladoPedido(v);
+  // ---- Abrir la carpeta y adónde va según el estado ------------------------------------------------------
+  /* El navegador no abre carpetas del computador: lo hace QUEMPIN.exe 1.3.10 con
+     quempin://carpeta/<formulacion|gestion>/<ruta> (Sistema QUEMPIN app/carpetas.py). Si la carpeta se movió, el
+     programa la busca por su nombre en las dos bibliotecas.
+     Moverla tampoco puede: lo hace el computador del procesador (Sistema Intercambio/carpetas_oferta.py), pedido con un
+     mensaje mover-carpeta después de avisar qué va a pasar (2026-11-02; hasta entonces, QUEMPIN.exe en el computador de
+     quien lo pedía). Al adjudicarse, la carpeta se copia a «Gestión de Proyectos» (donde sigue la ejecución) y el original
+     pasa a «0 OFERTAS ADJUDICADAS», como lo hacía el equipo a mano. El vínculo sigue en el original, así que el Excel de
+     la formulación sigue al día ahí; v.gestion recuerda la copia. */
+  /* Dónde queda la carpeta según su Estado en la Planilla: la misma tabla de Sistema Intercambio/carpetas_oferta.py
+     (DESTINOS) y del Portal (PQ_CARPETA), que test_portal.py compara. «*» es el año en que se mueve; ya en cualquier año de
+     ese grupo, no se mueve. */
+  const DESTINOS = {
+    "Evaluación": { "formulacion": [] },
+    "Ofertado": { "formulacion": ["0 OFERTAS PRESENTADAS"] },
+    "Adjudicado": { "formulacion": ["0 OFERTAS ADJUDICADAS"], "gestion": [], "crear": true },
+    "Post-venta": { "formulacion": ["0 OFERTAS ADJUDICADAS"], "gestion": [] },
+    "Cerrado": { "formulacion": ["0 OFERTAS ADJUDICADAS"], "gestion": ["0 Proyectos Entregados *"] },
+    "No adjudicado": { "formulacion": ["0 OFERTAS PRESENTADAS", "0 Ofertas Cerradas *"] },
+    "Descartado": { "formulacion": ["0 OFERTAS PRESENTADAS", "0 Ofertas Cerradas *"] }
+  };
+  function mismoGrupo(actual, objetivo) {
+    const clave = (s) => nfc(s).trim().toLowerCase();
+    return actual.length === objetivo.length && objetivo.every((o, i) => (o.endsWith('*') ? clave(actual[i]).startsWith(clave(o.slice(0, -1))) : clave(actual[i]) === clave(o)));
+  }
+  /* Lo que hay que hacer para que la carpeta quede donde dice el estado: { formulacion: { desde, hasta } | null,
+     gestion: { accion: 'crear'|'mover', desde, hasta } | null, nombre }. Sin efectos: se prueba en node, contra el
+     mismo cálculo del procesador. rutaF, rutaG: las rutas en cada biblioteca, o null. */
+  function planCarpeta(estado, rutaF, rutaG, anio) {
+    const hay = rutaF || rutaG || [''];
+    const sal = { formulacion: null, gestion: null, nombre: hay[hay.length - 1] };
+    const d = DESTINOS[estado];
+    if (!d) return sal;
+    const conAnio = (g) => g.map((x) => x.replace('*', String(anio)));
+    if (rutaF && !mismoGrupo(rutaF.slice(0, -1), d.formulacion)) sal.formulacion = { desde: rutaF.slice(0, -1), hasta: conAnio(d.formulacion) };
+    if (!d.gestion) return sal;
+    if (rutaG) {
+      if (!mismoGrupo(rutaG.slice(0, -1), d.gestion)) sal.gestion = { accion: 'mover', desde: rutaG.slice(0, -1), hasta: conAnio(d.gestion) };
+    } else if (rutaF && d.crear) sal.gestion = { accion: 'crear', desde: null, hasta: conAnio(d.gestion) };
+    return sal;
+  }
+  /* Lo que le pasará a la carpeta, en palabras, para el aviso. rutaG: si tiene carpeta en Gestión. */
+  function pasosCarpeta(plan, rutaG) {
+    const F = 'Formulación de proyectos', G = 'Gestión de Proyectos';
+    const donde = (bib, grupo) => [bib].concat(grupo).join(' › ');
+    const pasos = [];
+    const crea = plan.gestion && plan.gestion.accion === 'crear';
+    if (crea) pasos.push(`Se crea su carpeta en ${G}, con la copia completa de la oferta en la subcarpeta «Formulación».`);
+    if (plan.formulacion) pasos.push(`${crea ? 'El original pasa' : 'Pasa'} de ${donde(F, plan.formulacion.desde)} a ${donde(F, plan.formulacion.hasta)}.`);
+    if (plan.gestion && !crea) pasos.push(`Su carpeta de ${G} pasa de ${donde(G, plan.gestion.desde)} a ${donde(G, plan.gestion.hasta)}.`);
+    if (!plan.gestion && rutaG) pasos.push(`Su carpeta de ${G} queda donde está.`);
+    return pasos;
+  }
   const copiaEnGestion = (v) => (v && v.gestion && typeof v.gestion === 'object' ? v.gestion : null);
-  const enAdjudicadas = (ruta) => Array.isArray(ruta) && ruta.length === 2 && ADJUDICADAS.test(nfc(ruta[0]));
   const rutaEnlace = (ruta) => ruta.map((n) => encodeURIComponent(n)).join('/');
   /* enGestion: la copia de Gestión (la carpeta de la ejecución), con el mismo nombre en la raíz */
   const enlaceCarpeta = (v, enGestion) => (enGestion ? `quempin://carpeta/gestion/${rutaEnlace([v.nombre])}` : `quempin://carpeta/formulacion/${rutaEnlace(v.ruta)}`);
-  const enlaceTraslado = (v) => `quempin://trasladar/formulacion/${rutaEnlace(v.ruta)}`;
-  /* desde: dónde estaba la carpeta al pedirlo; si después aparece en Adjudicadas, el programa terminó */
-  function pedirTraslado(v, quien, desde, ahora) {
-    return Object.assign({}, v, { traslado: { pedido: (ahora || new Date()).toISOString(), por: quien || '', desde: (desde || v.ruta).slice() } });
-  }
-  function sinTraslado(v) {
-    const x = Object.assign({}, v);
-    delete x.traslado;
-    return x;
-  }
-  /* El vínculo cuando el programa terminó: el original donde quedó (Adjudicadas) y la copia en Gestión.
-     confirmada = se vio el original en Adjudicadas; si ya estaba ahí, solo se sabe que se pidió. */
-  function conCopiaEnGestion(v, ruta, confirmada, ahora) {
-    const x = sinTraslado(v);
-    if (Array.isArray(ruta) && ruta.length) x.ruta = ruta.slice();
-    x.gestion = { [confirmada ? 'copiada' : 'pedida']: (ahora || new Date()).toISOString() };
-    return x;
+  /* El vínculo con la copia en Gestión anotada, para abrirla desde aquí (el programa la busca por su nombre) */
+  function conCopiaEnGestion(v, ahora) {
+    return Object.assign({}, v, { gestion: { pedida: (ahora || new Date()).toISOString() } });
   }
   /* Dónde está ahora la carpeta del vínculo en «Formulación de proyectos»: su ruta, [] si no está, o null si
      no hay biblioteca con permiso. */
@@ -400,7 +436,6 @@
     const ultima = (r) => nfc(r[r.length - 1]);
     const mismo = !!(w && Array.isArray(w.ruta) && w.ruta.length && ultima(w.ruta) === ultima(v.ruta));
     const base = { vinculo: v, ruta: mismo ? w.ruta : v.ruta, archivo: mismo ? w.archivo : `${nombreBase(p)}.xlsx`, hora: mismo ? w.hora : '' };
-    if (trasladoPedido(v)) return Object.assign(base, { estado: 'trasladando' });
     if (enCurso.has(p.uid)) return Object.assign(base, { estado: 'guardando' });
     if ((e.pendientes || {})[p.uid] !== undefined) {
       const err = errores.get(p.uid);
@@ -438,7 +473,7 @@
     const marcados = leerEstado().pendientes || {};
     for (const uid of uids) {
       const p = S().get(uid);
-      if (!p || p.eliminado || !escribible(vinculo(p))) { desmarcar(uid); errores.delete(uid); avisar([uid]); continue; }
+      if (!p || p.eliminado || !vinculo(p)) { desmarcar(uid); errores.delete(uid); avisar([uid]); continue; }
       // Lo marcado era una versión hecha aquí que ya no es la del proyecto: llegó una más nueva de otro
       // equipo (o la de aquí quedó como copia en un conflicto). Ese equipo escribe su Excel. Antes la marca
       // no se borraba nunca y el Excel se reescribía igual en cada vuelta de la carpeta, cada 20 s (2026-10-19).
@@ -477,7 +512,6 @@
   async function guardar(uid) {
     const p = S().get(uid);
     if (!p || !vinculo(p)) throw new Error('El proyecto no tiene carpeta de oferta.');
-    if (trasladoPedido(vinculo(p))) throw new Error('la carpeta se está copiando a Gestión de Proyectos: se guarda al terminar.');
     marcar(uid, p.modificado);
     await guardarPendientes({ forzar: true });
     const err = errores.get(uid);
@@ -496,7 +530,7 @@
         let alguno = false;
         ev.ids.forEach((uid) => {
           const p = S().get(uid);
-          if (p && !p.eliminado && escribible(vinculo(p))) { marcar(uid, p.modificado); alguno = true; } else desmarcar(uid);
+          if (p && !p.eliminado && vinculo(p)) { marcar(uid, p.modificado); alguno = true; } else desmarcar(uid);
         });
         if (!alguno) return;
         const ahora = Date.now();
@@ -515,8 +549,8 @@
 
   const api = {
     grupoDe, numeroDe, grupoDeRuta, rutaValida, vinculo, nuevoVinculo, nombreBase, candidatos, listar, ubicar, sinNumero, renombrada,
-    nombreOferta, nombreCarpetaNueva, crearCarpeta,
-    trasladoPedido, escribible, copiaEnGestion, enAdjudicadas, enlaceCarpeta, enlaceTraslado, pedirTraslado, sinTraslado, conCopiaEnGestion, rutaActual,
+    nombreOferta, nombreCarpetaNueva, crearCarpeta, ESTRUCTURA, DESTINOS, planCarpeta, pasosCarpeta,
+    copiaEnGestion, enlaceCarpeta, conCopiaEnGestion, rutaActual,
     activa, carpetas, sugerencias, info, guardar, guardarPendientes, iniciar,
     _tiempos: (o) => Object.assign(T, o || {}), _estado: leerEstado, _escribirExcel: escribirExcel
   };
