@@ -300,23 +300,32 @@
     tip.style.left = Math.max(8, left) + 'px';
     tip.style.top = top + 'px';
   }
+  // data-tip-de (2026-11-05): el «i» de un campo muestra lo que dice en ese momento su nota escondida (la que el código
+  // puede cambiar y que los lectores de pantalla leen con aria-describedby)
+  const tipDe = (el) => (el.dataset.tipDe ? esc((($('#' + el.dataset.tipDe) || {}).textContent || '').trim()) : el.dataset.tip);
   document.addEventListener('mousemove', (e) => {
-    const el = e.target.closest && e.target.closest('[data-tip]');
+    const el = e.target.closest && e.target.closest('[data-tip], [data-tip-de]');
     if (!el) { tip.classList.remove('show'); return; }
-    tip.innerHTML = el.dataset.tip;
+    tip.innerHTML = tipDe(el);
     tip.classList.add('show');
     placeTip(e.clientX, e.clientY);
   });
   document.addEventListener('focusin', (e) => {
-    const el = e.target.closest && e.target.closest('[data-tip]');
+    const el = e.target.closest && e.target.closest('[data-tip], [data-tip-de]');
     if (!el) { tip.classList.remove('show'); return; }
     const r = el.getBoundingClientRect();
-    tip.innerHTML = el.dataset.tip;
+    tip.innerHTML = tipDe(el);
     tip.classList.add('show');
     placeTip(r.left + r.width / 2, r.top);
   });
   document.addEventListener('focusout', () => tip.classList.remove('show'));
+  // El «i» dentro de una etiqueta no la activa: tocarlo muestra la explicación, no abre el campo
+  document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('label .info-icon')) e.preventDefault(); });
   const info = (text) => `<span class="info-icon" tabindex="0" role="img" aria-label="${esc(text)}" data-tip="${esc(text)}">i</span>`;
+  /* La explicación de un campo, en un «i» junto a su etiqueta (pedido del usuario, 2026-11-05: interfaz limpia).
+     Su nota sigue en la página, escondida (.hint.en-icono): la leen los lectores de pantalla y el código la puede cambiar;
+     si pasa a ser un error (.err) o un dato (sin .en-icono), se ve. */
+  const infoDe = (id) => `<span class="info-icon" tabindex="0" role="img" aria-label="Más información" data-tip-de="${id}">i</span>`;
 
   // ---------------------------------------------------------------------------
   //  Menús y selectores desplegables propios
@@ -1154,13 +1163,13 @@
       ${p ? `<a class="viz-modnav-tab is-active" id="modnav-proj" href="#/p/${p.uid}/${state.tab}" aria-current="page"><span></span></a>` : ''}
       <a class="viz-modnav-tab ${where === 'guia' ? 'is-active' : ''}" href="#/guia" ${where === 'guia' ? 'aria-current="page"' : ''}>Guía de uso</a>`;
     const sub = $('#hdr-sub');
-    if (where === 'guia') sub.textContent = 'Cómo formular un proyecto y leer su evaluación';
-    else if (where === 'lista') sub.textContent = SUBTITULO;
+    if (where === 'guia' || where === 'lista') sub.textContent = SUBTITULO;
     if (p) updateHeader();
   }
 
   function goProject(p, tab) { location.hash = `#/p/${p.uid}/${tab || 'ficha'}`; }
-  const SUBTITULO = 'Formulación y seguimiento de cada oferta, de la planilla a la ejecución';
+  // Sin subtítulo bajo el nombre de la herramienta (2026-11-05: interfaz limpia)
+  const SUBTITULO = '';
 
   // ---------------------------------------------------------------------------
   //  LISTADO DE PROYECTOS
@@ -1204,8 +1213,8 @@
     app.innerHTML = `<div class="viz-container page">
       <div class="page-head">
         <div>
-          <h2>Proyectos</h2>
-          <p>${all.length ? 'Ábrelo para seguir donde quedó: bajo su estado dice qué sigue.' : 'Aquí se crean los proyectos de QUEMPIN y se siguen de la formulación a la ejecución.'}</p>
+          <h2>Proyectos${all.length ? ' ' + info('Ábrelo para seguir donde quedó: bajo su estado dice qué sigue.') : ''}</h2>
+          ${all.length ? '' : '<p>Aquí se crean los proyectos de QUEMPIN y se siguen de la formulación a la ejecución.</p>'}
           <p class="compartida-linea" id="compartida-linea" hidden></p>
         </div>
         ${all.length ? `<div class="actions">
@@ -1634,8 +1643,7 @@
     const k = 'ayuda-' + tab;
     return `<div class="paso-head">
         <div class="paso-head-txt">
-          <h3 class="paso-titulo"><span class="paso-num">${rotuloPaso}</span>${esc(titulo)}</h3>
-          <p class="paso-proposito">${esc(PROPOSITO[tab])}</p>
+          <h3 class="paso-titulo"><span class="paso-num visualmente-oculto">${rotuloPaso}: </span>${esc(titulo)} ${info(PROPOSITO[tab])}</h3>
         </div>
         ${ayuda ? `<details class="ayuda no-print" data-open-key="${k}" ${state.abiertos.has(k) ? 'open' : ''}>
           <summary>${ICON.help}<span>${rotulo || '¿Cómo se calcula?'}</span></summary>
@@ -1722,7 +1730,9 @@
     const input = `<input class="input" id="f-${path}" ${attrs} data-f="${path}" value="${esc(v === null || v === undefined ? '' : v)}" ${o.placeholder ? `placeholder="${esc(o.placeholder)}"` : ''}>`;
     const wrapped = o.suffix ? `<div class="input-affix">${input}<span class="affix">${o.suffix}</span></div>`
       : o.prefix ? `<div class="input-affix pre">${input}<span class="affix">${o.prefix}</span></div>` : input;
-    return `<div class="campo ${o.cls || ''}"><label for="f-${path}">${label}${o.opcional ? ' <span class="opc">(opcional)</span>' : ''}</label>${wrapped}${o.hint ? `<span class="hint" ${o.hintId ? `id="${o.hintId}"` : ''}>${o.hint}</span>` : ''}</div>`;
+    // o.hintIcono: la nota va en un «i» junto a la etiqueta (necesita o.hintId)
+    const icono = o.hint && o.hintIcono && o.hintId;
+    return `<div class="campo ${o.cls || ''}"><label for="f-${path}">${label}${o.opcional ? ' <span class="opc">(opcional)</span>' : ''}${icono ? ' ' + infoDe(o.hintId) : ''}</label>${wrapped}${o.hint ? `<span class="hint${icono ? ' en-icono' : ''}" ${o.hintId ? `id="${o.hintId}"` : ''}>${o.hint}</span>` : ''}</div>`;
   };
   /* Responsable del proyecto (2026-10-16): una de las iniciales del equipo (js/usuario.js). Un texto
      de antes que no está en la lista se conserva como una opción más. */
@@ -1732,10 +1742,10 @@
     const elegida = equipo.find((r) => r === actual.toUpperCase()) || actual;
     const opciones = [''].concat(equipo, elegida && !equipo.includes(elegida) ? [elegida] : []);
     const u = yo();
-    return `<div class="campo"><label for="f-responsable">Responsable</label>
+    return `<div class="campo"><label for="f-responsable">Responsable ${infoDe('resp-hint')}</label>
       <select class="input" id="f-responsable" data-f="responsable" aria-describedby="resp-hint">${opciones.map((v) =>
         `<option value="${esc(v)}" ${v === elegida ? 'selected' : ''}>${v ? esc(v) + (v === u ? ' (tú)' : '') : 'Sin responsable'}</option>`).join('')}</select>
-      <span class="hint" id="resp-hint">Parte con el Evaluador de la Planilla o con tu usuario.</span></div>`;
+      <span class="hint en-icono" id="resp-hint">Parte con el Evaluador de la Planilla o con tu usuario.</span></div>`;
   }
   const rowInput = (list, it, k, label, cls, isNum, extra) =>
     `<input class="ci ${cls || ''} ${isNum ? 'num' : ''}" ${isNum ? 'type="number" step="any" inputmode="decimal" data-t="num"' : 'type="text"'} data-list="${list}" data-uid="${it.uid}" data-k="${k}" value="${esc(it[k] === null || it[k] === undefined ? '' : it[k])}" aria-label="${esc(label)}" ${extra || ''}>`;
@@ -1760,23 +1770,23 @@
     const actual = S.categoriaDe(p);
     const c = S.infoCategoria(p);
     const hint = c ? c.desc + (p.categoria !== actual ? ' Según su ID.' : '') : 'Cómo se postula: dice si lleva ID de licitación y presupuesto del mandante.';
-    return `<div class="campo"><label for="f-categoria">Categoría</label>
+    return `<div class="campo"><label for="f-categoria">Categoría ${infoDe('categoria-hint')}</label>
       <select class="input" id="f-categoria" data-f="categoria" aria-describedby="categoria-hint">
         <option value="" ${actual ? '' : 'selected'}>Sin definir</option>${S.CATEGORIAS.map((x) => `<option value="${esc(x.nombre)}" ${x.nombre === actual ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select>
-      <span class="hint" id="categoria-hint">${esc(hint)}</span></div>`;
+      <span class="hint en-icono" id="categoria-hint">${esc(hint)}</span></div>`;
   }
   /* Tipo de proyecto (2026-11-05): mantenimiento, montaje, I+D+i… para el análisis de proyectos por tipo */
   function campoTipoProyecto(p) {
     const actual = S.tipoProyectoDe(p);
-    return `<div class="campo"><label for="f-tipoProyecto">Tipo de proyecto</label>
+    return `<div class="campo"><label for="f-tipoProyecto">Tipo de proyecto ${infoDe('tipo-hint')}</label>
       <select class="input" id="f-tipoProyecto" data-f="tipoProyecto" aria-describedby="tipo-hint">
         <option value="" ${actual ? '' : 'selected'}>Sin definir</option>${S.TIPOS_PROYECTO.map((x) => `<option ${x === actual ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
-      <span class="hint" id="tipo-hint">Qué clase de trabajo es: agrupa el análisis de proyectos por tipo.</span></div>`;
+      <span class="hint en-icono" id="tipo-hint">Qué clase de trabajo es: agrupa el análisis de proyectos por tipo.</span></div>`;
   }
   /* Entregables para postular (2026-10-27): lo que piden las bases, opcional, plegado en una línea con su avance */
   function resumenEntregables(p) {
     const l = p.entregables || [];
-    if (!l.length) return 'Sin entregables · anota los anexos que piden las bases y márcalos a medida que estén listos';
+    if (!l.length) return 'Sin entregables';
     const listos = l.filter((e) => e.listo).length;
     const porTipo = S.TIPOS_ENTREGABLE.map((t) => [t, l.filter((e) => e.tipo === t).length]).filter(([, n]) => n).map(([t, n]) => plural(n, t.toLowerCase()));
     return `${listos === l.length ? 'Todos listos' : `${listos} de ${l.length} listos`} · ${porTipo.join(' · ')}`;
@@ -1829,8 +1839,7 @@
         </div>`;
     const ppto = num(par.presupuestoMaximo);
     const panelPresupuesto = S.conPresupuesto(p) ? `<section class="panel">
-          <h4 class="seccion-titulo">Presupuesto del mandante <span class="tn">(opcional)</span></h4>
-          <p class="panel-sub">Si lo conoces, la evaluación indica si la oferta cabe en él.</p>
+          <h4 class="seccion-titulo">Presupuesto del mandante <span class="tn">(opcional)</span> ${info('Si lo conoces, la evaluación indica si la oferta cabe en él.')}</h4>
           <div class="fila-campos">
             ${fInput('parametros.presupuestoMaximo', 'Presupuesto máximo', { type: 'num', prefix: simbolo(), placeholder: 'Sin informar' })}
             <div class="campo"><span class="label" id="lbl-iva-ppto">Se informa</span>
@@ -1872,10 +1881,10 @@
             ${fInput('ubicacion', 'Ubicación')}
             ${campoResponsable(p)}
             ${fInput('fecha', 'Fecha de formulación', { type: 'date' })}
-            <div class="campo"><label for="f-parametros.moneda">Moneda</label>
+            <div class="campo"><label for="f-parametros.moneda">Moneda ${infoDe('moneda-hint')}</label>
               <select class="input" id="f-parametros.moneda" data-f="parametros.moneda" aria-describedby="moneda-hint">${Object.keys(MONEDAS).map((m) => `<option value="${m}" ${monedaDe(p) === m ? 'selected' : ''}>${esc(MONEDAS[m].nombre)}</option>`).join('')}</select>
-              <span class="hint" id="moneda-hint">Todos los montos van en ella. Cambiarla no los convierte.</span></div>
-            ${fInput('codigo', 'Código', { hint: ' ', hintId: 'codigo-hint' })}
+              <span class="hint en-icono" id="moneda-hint">Todos los montos van en ella. Cambiarla no los convierte.</span></div>
+            ${fInput('codigo', 'Código', { hint: ' ', hintId: 'codigo-hint', hintIcono: true })}
             ${fInput('version', 'Versión', { type: 'num' })}
             <div class="campo ancho"><label for="f-descripcion">Descripción / alcance <span class="opc">(opcional)</span></label>
               <textarea class="textarea" id="f-descripcion" data-f="descripcion" rows="3">${esc(p.descripcion)}</textarea></div>
@@ -1885,7 +1894,7 @@
       <div class="col">
         ${panelPresupuesto}
         <div class="grupo-plegable">
-          <p class="grupo-plegable-t">Parámetros de este proyecto <span class="tn">· ya vienen con los valores habituales</span></p>
+          <p class="grupo-plegable-t">Parámetros de este proyecto ${info('Ya vienen con los valores habituales de QUEMPIN: cambia aquí solo lo de este proyecto.')}</p>
           ${plegable('f-precio', 'Estructura de precio y tarifas', resumenPrecio(par), cuerpoPrecio)}
           ${plegable('f-metas', 'Metas de evaluación', resumenMetas(par), cuerpoMetas)}
           ${plegable('f-catalogo', 'Catálogo de otros costos', resumenCatalogo(p), cuerpoCatalogo)}
@@ -1923,6 +1932,7 @@
             : propuesto && p.codigo === propuesto ? 'N° y nombre, como la carpeta de la oferta; puedes editarlo.'
               : `Al elegir la carpeta o completar desde la planilla queda «${propuesto || 'N°. Nombre'}»; puedes editarlo.`;
     el.style.color = dup ? 'var(--status-bad)' : '';
+    el.classList.toggle('err', !!dup);
   }
 
   // ---- Paso 2: partidas -----------------------------------------------------------
@@ -2222,7 +2232,7 @@
               <div class="util-gg" role="group" aria-label="Gastos generales e imprevistos que se aplican">
                 ${[['aplicaGG', 'gastosGenerales', 'Aplicar gastos generales', S.aplicaGG(p.parametros)], ['aplicaImp', 'imprevistos', 'Aplicar imprevistos', S.aplicaImp(p.parametros)]].map(([k, campo, txt, on]) =>
                   `<label class="check-l"><input type="checkbox" data-f="parametros.${k}" data-t="bool" ${on ? 'checked' : ''}> ${txt} <span class="muted">(${nf(num(p.parametros[campo]))} % del costo directo)</span></label>`).join('')}
-                <span class="hint">Desmarcada, el % queda guardado en Datos del proyecto pero no se suma al costo.</span>
+                ${info('Desmarcada, el % queda guardado en Datos del proyecto pero no se suma al costo.')}
               </div>
               <table class="tbl util-tbl tbl-apilable">
                 <thead><tr><th>Partida</th><th>Utilidad<span class="th-sub">% de recargo, ${simbolo()} fijo o valor final</span></th><th class="num">Utilidad en&nbsp;${simbolo()}</th><th class="num">Margen</th></tr></thead>
@@ -2262,7 +2272,7 @@
       </section>
 
       <section class="section" id="sensibilidad">
-        <div class="section-head"><h4 class="seccion-titulo">Riesgo: ¿cuánto sobrecosto resiste la oferta?</h4><p>Simula alzas de costo manteniendo el precio ofertado.</p></div>
+        <div class="section-head"><h4 class="seccion-titulo">Riesgo: ¿cuánto sobrecosto resiste la oferta? ${info('Simula alzas de costo manteniendo el precio ofertado.')}</h4></div>
         <div id="res-kpis-riesgo" class="kpi-grid"></div>
         <div class="calc-layout parejo" style="margin-top:12px">
           <div class="panel">
@@ -2418,7 +2428,7 @@
     put('meta-margen', [CHIP_TXT.margen[st.margen] || 'Sin datos', `objetivo ${pctShort(mObj)}`, `mínimo ${pctShort(mMin)}`].map((x) => `<span>${esc(x)}</span>`).join(' · '));
     put('res-eval', sinPpto ? `<p class="hint-linea">${esc(sinPpto)}: no hay un presupuesto del mandante con que comparar la oferta.</p>`
       : k.competitividad === null
-      ? `<p class="hint-linea">Sin presupuesto del mandante: ${linkDatos('agrégalo en Datos del proyecto')} para saber si la oferta cabe.</p>`
+      ? `<p class="hint-linea">Sin presupuesto del mandante · ${linkDatos('Agregarlo')} ${info('Con el presupuesto del mandante, la evaluación dice si la oferta cabe.')}</p>`
       : `<div class="eval-item s-${st.competitividad}"><div class="eval-top"><span class="eval-n">Frente al presupuesto del mandante</span>${chip(st.competitividad, 'competitividad')}</div>
           <div class="eval-v">${pct(k.competitividad)}<span class="eval-sub">de ${dinero(k.presupuesto)}${par.presupuestoIncluyeIva ? ' (con IVA)' : ''}</span></div>${medComp()}</div>`);
 
@@ -2494,14 +2504,14 @@
     };
     const compRead = sinPpto ? `${esc(sinPpto)}: no hay un presupuesto con que competir.`
       : k.competitividad === null
-      ? `Ingresa el presupuesto máximo del mandante en ${linkDatos('Datos del proyecto')} para evaluar la oferta.`
-      : `La oferta ${par.presupuestoIncluyeIva ? 'con IVA' : 'neta'} (${dinero(k.precioComparable)}) equivale al ${pct(k.competitividad)} del presupuesto de ${dinero(k.presupuesto)}.`;
+      ? `Sin presupuesto · ${linkDatos('Agregarlo')}`
+      : `Oferta ${par.presupuestoIncluyeIva ? 'con IVA' : 'neta'} ${dinero(k.precioComparable)} de ${dinero(k.presupuesto)}`;
     put('res-kpis', [
       kpiCard('margen', pct(k.margen), '', 'margen',
-        ok(k.margen) ? `De cada $100 vendidos quedan $${fNum.format(Math.round(k.margen * 1000) / 10)} de utilidad: un recargo de ${pct(k.markup)} sobre el costo.` : 'Sin ventas aún.',
+        ok(k.margen) ? `Recargo de ${pct(k.markup)} sobre el costo` : 'Sin ventas aún.',
         ok(k.margen) ? medMargen() : ''),
       kpiCard('rentDH', dinero(k.rentDH), 'por día-hombre', 'rentDH',
-        ok(k.rentDH) ? `${nf(k.dh)} días-hombre en total; venta por día-hombre ${dinero(k.ventaDH)}.${meta > 0 ? ` Meta: ${dinero(meta)}.` : ` Define una meta en ${linkDatos('Datos del proyecto')} para activar el semáforo.`}` : 'No hay días-hombre registrados.',
+        ok(k.rentDH) ? `${nf(k.dh)} días-hombre · venta ${dinero(k.ventaDH)} por día-hombre${meta > 0 ? ` · meta ${dinero(meta)}` : ` · ${linkDatos('Definir meta')}`}` : 'No hay días-hombre registrados.',
         ok(k.rentDH) && meta > 0 ? medidor({ v: k.rentDH, max: Math.max(meta * 1.5, k.rentDH * 1.1), fill: st.rentDH, fmt: (x) => dinero(x), label: 'Utilidad por día-hombre frente a la meta',
           ticks: [{ at: meta * 0.8, dash: true, tip: `80 % de la meta: ${dinero(meta * 0.8)}` }, { at: meta, show: true, tip: `Meta ${dinero(meta)}` }] }) : ''),
       kpiCard('competitividad', k.competitividad === null ? '—' : pct(k.competitividad), k.competitividad === null ? '' : 'del presupuesto', 'competitividad', compRead,
@@ -2509,9 +2519,9 @@
     ].join(''));
     put('res-kpis-riesgo', [
       kpiCard('holguraMO', pct(k.holguraMO), '', 'holguraMO',
-        ok(k.holguraMO) ? `Si la mano de obra cuesta más de ${pct(k.holguraMO)} sobre lo presupuestado, el proyecto pierde dinero.` : 'No hay costo de mano de obra.'),
+        ok(k.holguraMO) ? 'Alza de la mano de obra que resiste sin perder dinero' : 'No hay costo de mano de obra.'),
       kpiCard('incidenciaMO', pct(k.incidenciaMO), 'del precio', 'incidenciaMO',
-        ok(k.incidenciaMO) ? `La mano de obra es ${pct(k.incidenciaMO)} del precio y ${pct(t.cd ? t.mo / t.cd : null)} del costo directo: un atraso pesa en la utilidad.` : '—',
+        ok(k.incidenciaMO) ? `${pct(t.cd ? t.mo / t.cd : null)} del costo directo` : '—',
         ok(k.incidenciaMO) ? `<div class="stack barra-kpi" role="img" aria-label="Peso de la mano de obra en el precio">${k.incidenciaMO > 0 ? `<div class="seg cat-mo" style="flex:${k.incidenciaMO} 1 0"></div>` : ''}<div class="seg resto" style="flex:${Math.max(0, 1 - k.incidenciaMO)} 1 0"></div></div>` : '')
     ].join(''));
 
@@ -4553,11 +4563,11 @@
   function campoRequerimiento(p) {
     const v = (p.vinculos && p.vinculos.requerimiento) || null;
     const planillaWeb = PLANILLA_WEB;
-    return `<div class="campo ancho"><label for="f-req">N° de requerimiento <span class="opc">(Planilla de Ingreso)</span></label>
+    return `<div class="campo ancho"><label for="f-req">N° de requerimiento <span class="opc">(Planilla de Ingreso)</span> ${info(`El N° con que se registró el requerimiento: une este proyecto con su cotización, el Análisis Financiero y el Flujo de Caja. La lista muestra los ${REQ_RECIENTES} últimos ingresados; para uno anterior, escribe su N° o parte del título.`)}</label>
         <div class="req-fila"><div class="combo"><input class="input" id="f-req" inputmode="numeric" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" value="${esc(v && v.numero ? v.numero : '')}" placeholder="Ej.: 280"><button type="button" class="combo-btn" data-picker="combo" tabindex="-1" aria-label="Ver los requerimientos">${ICON.caret}</button></div>
           <button type="button" class="btn btn-sm" data-act="req-completar" data-tip="<b>Completar desde la planilla</b>Trae el título, la ubicación, el ID de licitación y el presupuesto del requerimiento a los campos que estén vacíos, y deja como código «N°. Nombre», igual que el nombre de la carpeta de la oferta.">Completar desde la planilla</button>
           ${planillaWeb ? `<a class="link-btn req-abrir" href="${esc(planillaWeb)}" target="_blank" rel="noopener" data-tip="<b>Abrir la planilla de ingreso</b>Se abre en Excel para la web, en otra pestaña, para buscar o verificar el N°.">${ICON.open}Abrir la planilla</a>` : ''}</div>
-        <span class="hint" id="req-hint">El N° con que se registró el requerimiento: une este proyecto con su cotización, el Análisis Financiero y el Flujo de Caja. La lista muestra los ${REQ_RECIENTES} últimos ingresados; para uno anterior, escribe su N° o parte del título.</span></div>`;
+        <span class="hint en-icono" id="req-hint">El N° con que se registró el requerimiento: une este proyecto con su cotización, el Análisis Financiero y el Flujo de Caja. La lista muestra los ${REQ_RECIENTES} últimos ingresados; para uno anterior, escribe su N° o parte del título.</span></div>`;
   }
   async function pintarRequerimiento() {
     const hint = $('#req-hint');
@@ -4568,6 +4578,7 @@
     reqLista = ((datos && datos.requerimientos) || []).slice().sort((a, b) => b.numero - a.numero);
     const req = QH().reqDe(p);
     const r = req && reqLista.find((x) => String(x.numero) === req);
+    if (hint && (r || (req && reqLista.length))) hint.classList.remove('en-icono');   // un dato o un aviso: se ve
     if (hint && r) {
       hint.textContent = `${r.titulo || 'Sin título'} · ${r.estado || 'sin estado'}${ok(r.presupuesto) ? ` · presupuesto ${dinero(r.presupuesto, 'CLP')} con IVA` : ''}${r.cierre ? ` · cierre ${fechaCorta(String(r.cierre).slice(0, 10))}` : ''}`;
     } else if (hint && req && reqLista.length) {
@@ -5136,7 +5147,8 @@
     const e = rec.etapas[rec.actual];
     const botones = botonesSigue(s);
     const h = herrDe.uid === p.uid ? herrDe : { html: {}, aviso: '', pulso: '' };
-    const cabeza = (x) => `<h4 class="rcl-t">${esc(x.titulo)}</h4><span class="rcl-donde">${esc(x.donde)}</span><span class="rcl-det">${esc(x.detalle)}<span class="visualmente-oculto">: ${ETIQ_ETAPA[x.estado]}</span></span>`;
+    // conInfo: la etapa actual lleva qué es la etapa en su «i» (2026-11-05: antes, un párrafo)
+    const cabeza = (x, conInfo) => `<h4 class="rcl-t">${esc(x.titulo)}</h4>${conInfo ? info(x.hace) : ''}<span class="rcl-donde">${esc(x.donde)}</span><span class="rcl-det">${esc(x.detalle)}<span class="visualmente-oculto">: ${ETIQ_ETAPA[x.estado]}</span></span>`;
     const herr = (x) => (h.html[x.id] ? `<div class="rcl-herr">${h.html[x.id]}</div>` : '');
     const etapa = (x) => {
       const marca = `<span class="rcl-marca" aria-hidden="true">${x.estado === 'hecha' ? '✓' : x.n}</span>`;
@@ -5144,9 +5156,8 @@
         // data-sigue: el botón principal ya está arriba; su copia en el detalle de la herramienta se oculta (CSS)
         return `<li class="rcl rc-${x.estado} rcl-actual" id="etapa-${x.id}" aria-current="step" data-sigue="${esc(s.accion || '')}">${marca}
           <div class="rcl-cuerpo">
-            <p class="rcl-ahora">Etapa actual · ${x.n} de ${rec.etapas.length}</p>
-            <div class="rcl-head">${cabeza(x)}</div>
-            <p class="rcl-hace">${esc(x.hace)}</p>
+            <p class="rcl-ahora visualmente-oculto">Etapa actual · ${x.n} de ${rec.etapas.length}</p>
+            <div class="rcl-head">${cabeza(x, true)}</div>
             <div class="rc-sigue ${s.espera ? 'espera' : s.fin ? 'fin' : ''}" role="status">
               <p class="rc-sigue-t">${rotuloSigue(s)}</p>
               <p class="rc-sigue-x">${esc(s.texto)}</p>
@@ -5195,7 +5206,8 @@
     // Sistema QUEMPIN se abre desde aquí, con o sin la carpeta del equipo (pedido del usuario, 2026-10-20)
     const bSistema = `<button type="button" class="btn" data-act="abrir-sistema">${ICON.monitor}Abrir Sistema QUEMPIN</button>`;
     const reqSinCarpeta = req ? linea(`<span class="code-badge">N° ${esc(req)}</span> en la Planilla de Ingreso.`) : '';
-    const sinReq = linea('Escribe el N° de requerimiento en los datos del proyecto: une este proyecto con su cotización, el Análisis Financiero y el Flujo de Caja.') + acciones('<button type="button" class="btn" data-act="sigue" data-accion="ir-req">Escribir el N°</button>');
+    // Sin N°, «Siguiente» ya lo pide con su botón (2026-11-05: sin repetirlo aquí)
+    const sinReq = '';
 
     const pintarSin = (aviso) => {
       herrDe = { uid: p.uid, html: { requerimiento: req ? reqSinCarpeta : sinReq, formulacion: resumenFormulacion + acciones(bFormulacion), cotizacion: acciones(bSistema), ejecucion: bloqueAF() }, aviso, pulso: '' };
@@ -5208,7 +5220,7 @@
       return;
     }
     if (!(await carpetaLista())) {
-      pintarSin(`<div class="nota no-print"><span><strong>Conecta la carpeta del equipo</strong> (o da el permiso de esta sesión) para ver lo que hicieron las demás herramientas con este proyecto: la cotización, la planilla y el Análisis Financiero.</span><span class="actions"><button type="button" class="btn btn-sm" data-act="herr-actualizar">${ICON.folder}Conectar o dar permiso</button></span></div>`);
+      pintarSin(`<div class="nota no-print"><span><strong>Conecta la carpeta del equipo</strong> para ver lo de las demás herramientas ${info('La cotización, la planilla y el Análisis Financiero de este proyecto. Si ya está conectada, el navegador pide el permiso una vez por sesión.')}</span><span class="actions"><button type="button" class="btn btn-sm" data-act="herr-actualizar">${ICON.folder}Conectar o dar permiso</button></span></div>`);
       return;
     }
     // Mientras se lee la carpeta, la línea de tiempo ya está y cada etapa dice qué es
@@ -5588,8 +5600,8 @@
     const caja = $('#compartida'), linea = $('#compartida-linea');
     const pie = $('#footer-datos');
     if (pie) pie.textContent = compartiendo()
-      ? 'Los proyectos se guardan en este navegador y en la carpeta del equipo, en la biblioteca «Formulación de proyectos» de OneDrive.'
-      : 'Los proyectos se guardan en este navegador: descárgalos para el equipo o respáldalos con «Exportar Excel».';
+      ? 'Los proyectos se guardan en la carpeta del equipo'
+      : 'Los proyectos se guardan solo en este navegador';
     const prob = problemaCompartida();
     if (prob !== problemaPintado) { problemaPintado = prob; if (!state.project && $('#list-body')) refreshList(); }
     if (!caja || !linea) return;
@@ -5601,7 +5613,7 @@
     } else if (!e.conectada) {
       html = notaCompartida(e.movida
         ? `<strong>La carpeta del equipo cambió de lugar.</strong> Vuelve a conectarla eligiendo la biblioteca <strong>Formulación de proyectos - Documentos</strong> de tu OneDrive.${cuantos}`
-        : `<strong>Los proyectos se guardan en la carpeta del equipo.</strong> Conecta la biblioteca <strong>Formulación de proyectos - Documentos</strong> de tu OneDrive: ahí quedan los tuyos y aparecen los de tus colegas.${cuantos}`,
+        : `<strong>Conecta la biblioteca Formulación de proyectos - Documentos</strong> para guardar tus proyectos y ver los de tus colegas.${cuantos}`,
         `<button type="button" class="btn btn-sm" data-act="compartir">${ICON.folder}Conectar carpeta</button>${pend ? BTN_DESCARGAR() : ''}`);
     } else if (e.permiso !== 'granted') {
       html = notaCompartida(`<strong>Proyectos sin guardar en la carpeta del equipo.</strong> El navegador pide permiso una vez por sesión para usar la carpeta «${esc(e.nombre)}».${cuantos}`,

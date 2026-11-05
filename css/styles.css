@@ -371,6 +371,12 @@ td .chip-plazo { display: inline-flex; margin-top: 4px; }
 }
 .info-icon::before { content: ''; position: absolute; inset: 4.5px; border: 1px solid currentColor; border-radius: 50%; }
 .info-icon:hover, .info-icon:focus-visible { color: var(--brand-orange-ink); outline: none; }
+/* Interfaz limpia (2026-11-05): la explicación va en el «i»; la nota de un campo queda escondida mientras solo explica
+   (.en-icono) y se ve si pasa a ser un error (.err) */
+.hint.en-icono:not(.err) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.campo > label .info-icon, .seccion-titulo .info-icon, .grupo-plegable-t .info-icon, .page-head h2 .info-icon, .paso-titulo .info-icon { margin: -6px -2px -6px 0; }
+.rcl-head .info-icon { margin: -4px -2px; }
+#hdr-sub:empty { display: none; }
 
 /* Chips de semáforo: estado por forma (icono) y color */
 .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; text-transform: none; letter-spacing: 0; }
