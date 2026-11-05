@@ -2831,10 +2831,8 @@
 
   /* «Pegar desde Excel» (js/pegar.js, 2026-10-14): filas de una planilla de formulación antigua, de
      cualquier Excel o de la cotización del tablero del Cotizador Histórico, con vista previa. Todas van a
-     la partida que se elija; la cantidad es por una unidad de la partida, como en la tabla.
-     llegada (2026-10-29): { texto, origen } con las filas ya pegadas, cuando el Portal trae la cotización
-     del Cotizador Histórico a este proyecto («Llevar a un proyecto…» de su carrito). */
-  async function pegarFilas(list, llegada) {
+     la partida que se elija; la cantidad es por una unidad de la partida, como en la tabla. */
+  async function pegarFilas(list) {
     const p = state.project;
     const cfg = DETALLE[list];
     if (!p || !cfg || !window.QPegar) return;
@@ -2845,8 +2843,7 @@
     const prom = ask({
       title: `Pegar ${cfg.titulo.toLowerCase()} desde Excel`,
       wide: true,
-      body: `${llegada ? `<p class="pg-origen"><b>${esc(llegada.origen)}</b> Elige la partida y agrégalas; antes puedes corregir las filas aquí.</p>`
-        : '<p>Copia las filas en Excel (una planilla de formulación, una lista de materiales o la cotización del Cotizador Histórico) y pégalas aquí. Se reconocen descripción, unidad, cantidad y costo unitario, con o sin encabezados.</p>'}
+      body: `<p>Copia las filas en Excel (una planilla de formulación o una lista de materiales) y pégalas aquí. Se reconocen descripción, unidad, cantidad y costo unitario, con o sin encabezados.</p>
         <div class="campo"><label for="pg-texto">Filas copiadas</label>
           <textarea class="textarea pg-texto" id="pg-texto" rows="6" spellcheck="false" placeholder="Pega aquí (Ctrl+V)"></textarea></div>
         <div class="fila-campos pg-opciones">
@@ -2878,9 +2875,8 @@
     };
     ta.addEventListener('input', pintarPrevia);
     chkIva.addEventListener('change', () => { ivaTocado = true; pintarPrevia(); });
-    if (llegada) ta.value = llegada.texto;
     pintarPrevia();
-    if (llegada && $('#pg-partida')) $('#pg-partida').focus(); else ta.focus();
+    ta.focus();
     const v = await prom;
     if (v !== 'ok' || !leido.filas.length) return;
     const sel = $('#pg-partida');
@@ -2897,15 +2893,58 @@
     scheduleSave();
     toast(`${plural(nuevas.length, 'fila agregada', 'filas agregadas')} a ${cfg.titulo.toLowerCase()}${partida ? ` (${codP(partida)})` : ', sin partida: elígela en cada fila'}.`);
   }
-  /* La cotización del carrito del Cotizador Histórico que el Portal trae a este proyecto (2026-10-29): llega
-     cuando el proyecto ya está abierto en esa tabla y sin otro diálogo encima, y abre su «Pegar desde Excel»
-     con las filas. Solo del mismo sitio (el Portal); el texto pasa por el mismo lector que lo pegado a mano. */
+  /* La cotización del carrito del Cotizador Histórico que el Portal trae a este proyecto («Exportar a un
+     proyecto…», 2026-10-30): cada fila con la categoría que se le dio allá, y todas en un solo diálogo aunque
+     vayan a tablas distintas. Nada se agrega sin este paso. */
+  async function traerCostos(filas, origen) {
+    const p = state.project;
+    if (!p || !filas.length) return;
+    const f = state.filtro[state.tab];
+    const porOmision = f && f !== '__none__' ? f : (cotizables(p)[0] || p.partidas[0] || {}).uid || '';
+    const tablas = ['materiales', 'equipos', 'otros'];
+    const prom = ask({
+      title: `Agregar ${plural(filas.length, 'costo')} al proyecto`,
+      wide: true,
+      body: `<p class="pg-origen"><b>${esc(origen)}</b> Elige la partida y agrégalas; antes puedes cambiar la categoría de cada una.</p>
+        <div class="campo"><label for="ct-partida">Partida</label>
+          <select class="select" id="ct-partida">${p.partidas.map((pt) => `<option value="${pt.uid}" ${pt.uid === porOmision ? 'selected' : ''}>${codP(pt.uid)} · ${esc(pt.descripcion || 'Sin descripción')}</option>`).join('')}<option value="" ${porOmision ? '' : 'selected'}>Sin partida (elegirla después)</option></select></div>
+        <p class="hint">La cantidad es por una unidad de la partida, como en la tabla: la herramienta la multiplica por la cantidad de la partida.</p>
+        <div class="tabla-contenedor"><table class="tbl pg-tabla tbl-apilable"><thead><tr><th>Descripción</th><th>Unidad</th><th class="num">Cantidad</th><th class="num">Costo unitario neto</th><th>Categoría</th></tr></thead>
+        <tbody>${filas.map((x) => `<tr><td>${esc(x.descripcion)}</td><td class="tercio" data-label="Unidad">${esc(x.unidad)}</td><td class="num tercio" data-label="Cantidad">${nf(x.cantidad)}</td><td class="num tercio" data-label="Costo neto">${dinero(x.costoUnitario)}</td>
+          <td data-label="Categoría"><select class="select ct-cat" aria-label="Categoría de ${esc(x.descripcion)}">${tablas.map((k) => `<option value="${k}" ${k === x.lista ? 'selected' : ''}>${DETALLE[k].titulo}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div>`,
+      buttons: [{ label: 'Cancelar' }, { label: `Agregar ${plural(filas.length, 'fila')}`, value: 'ok', primary: true }]
+    });
+    const v = await prom;
+    // La carpeta compartida pudo renovar el proyecto mientras el diálogo estaba abierto
+    const q = state.project;
+    if (v !== 'ok' || !q || q.uid !== p.uid) return;
+    const partida = $('#ct-partida').value;
+    const cats = $$('#modal .ct-cat');
+    const nuevas = filas.map((x, i) => {
+      const list = cats[i].value;
+      const it = Object.assign(DETALLE[list].factory(partida), { descripcion: x.descripcion, unidad: x.unidad, cantidad: x.cantidad, costoUnitario: redondear(x.costoUnitario, monedaDe(q)) });
+      q[list].push(it);
+      return { list, it };
+    });
+    recalc();
+    scheduleSave();
+    const conFilas = tablas.filter((k) => nuevas.some((n) => n.list === k));
+    if (state.tab === conFilas[0]) {
+      renderTab();
+      nuevas.filter((n) => n.list === conFilas[0]).forEach((n) => flashRow(n.it.uid));
+    } else location.hash = `#/p/${q.uid}/${conFilas[0]}`;
+    const donde = conFilas.length > 1
+      ? `: ${conFilas.map((k) => `${nuevas.filter((n) => n.list === k).length} en ${DETALLE[k].titulo.toLowerCase()}`).join(', ')}`
+      : ` a ${DETALLE[conFilas[0]].titulo.toLowerCase()}`;
+    toast(`${plural(nuevas.length, 'fila agregada', 'filas agregadas')}${donde}${partida ? ` (${codP(partida)})` : ', sin partida: elígela en cada fila'}.`);
+  }
+  /* Llega cuando el proyecto ya está abierto y sin otro diálogo encima. Solo del mismo sitio (el Portal). */
   window.addEventListener('message', (e) => {
     const m = e.data;
-    if (e.origin !== location.origin || !m || typeof m !== 'object' || m.tipo !== 'quempin-pegar-costos') return;
+    if (e.origin !== location.origin || !m || typeof m !== 'object' || m.tipo !== 'quempin-costos-cotizacion') return;
     const p = state.project;
-    if (!p || p.uid !== m.proyecto || !['materiales', 'equipos', 'otros'].includes(m.lista) || typeof m.texto !== 'string' || $('#modal').open) return;
-    pegarFilas(m.lista, { texto: m.texto.slice(0, 200000), origen: String(m.origen || 'Costos traídos desde el Portal.').slice(0, 200) });
+    if (!p || p.uid !== m.proyecto || $('#modal').open || !window.QPegar) return;
+    traerCostos(window.QPegar.filasTraidas(m.filas), String(m.origen || 'Costos traídos desde el Portal.').slice(0, 200));
   });
 
   /* Entregables de una lista pegada (2026-10-27): la de anexos copiada de las bases, un entregable por línea, o

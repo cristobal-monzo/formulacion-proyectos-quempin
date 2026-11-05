@@ -141,5 +141,25 @@
     return { filas: out, omitidas, encabezado: !!col, columnas: col, conIva: col ? col.conIva : null };
   }
 
-  root.QPegar = { interpretar, numero, unidad };
+  /* Las filas que el Portal trae de la cotización del Cotizador Histórico (2026-10-30), cada una con su
+     tabla: vienen de otra página, así que todo se acota aquí. */
+  const TABLAS = ['materiales', 'equipos', 'otros'];
+  function filasTraidas(lista) {
+    if (!Array.isArray(lista)) return [];
+    const out = [];
+    lista.slice(0, 500).forEach((f) => {
+      const descripcion = f && typeof f.descripcion === 'string' ? f.descripcion.trim().slice(0, 200) : '';
+      if (!descripcion) return;
+      out.push({
+        descripcion,
+        unidad: unidad(typeof f.unidad === 'string' ? f.unidad.slice(0, 20) : '') || 'Un.',
+        cantidad: typeof f.cantidad === 'number' && Number.isFinite(f.cantidad) && f.cantidad > 0 ? f.cantidad : 1,
+        costoUnitario: typeof f.costoUnitario === 'number' && Number.isFinite(f.costoUnitario) && f.costoUnitario >= 0 ? f.costoUnitario : 0,
+        lista: TABLAS.includes(f.lista) ? f.lista : 'materiales'
+      });
+    });
+    return out;
+  }
+
+  root.QPegar = { interpretar, numero, unidad, filasTraidas };
 })(typeof window !== 'undefined' ? window : globalThis);
