@@ -166,8 +166,8 @@
     const params = [
       ['moneda', 'Moneda', root.QCalc.MONEDAS[root.QCalc.monedaDe(p)].nombre, null, 'Todos los montos del proyecto están en esta moneda (se elige en el Formulador).'],
       ['iva', 'IVA', num(par.iva) / 100, FMT.pct, 'Tasa de IVA vigente.'],
-      ['gg', 'Gastos generales (% del costo directo)', num(par.gastosGenerales) / 100, FMT.pct, 'Estructura de la empresa asignada al proyecto. 0 % = igual al Excel original.'],
-      ['imp', 'Imprevistos (% del costo directo)', num(par.imprevistos) / 100, FMT.pct, 'Reserva para riesgos. 0 % = igual al Excel original.'],
+      ['gg', 'Gastos generales (% del costo directo)', root.QStore.pctGG(par) / 100, FMT.pct, root.QStore.aplicaGG(par) ? 'Estructura de la empresa asignada al proyecto. 0 % = igual al Excel original.' : `No se aplican en este proyecto (el % guardado es ${num(par.gastosGenerales)} %).`],
+      ['imp', 'Imprevistos (% del costo directo)', root.QStore.pctImp(par) / 100, FMT.pct, root.QStore.aplicaImp(par) ? 'Reserva para riesgos. 0 % = igual al Excel original.' : `No se aplican en este proyecto (el % guardado es ${num(par.imprevistos)} %).`],
       ['t1', 'Tarifa día-hombre Nivel 1', num(par.tarifaN1), FMT_M, 'Costo empresa por día de una persona de nivel 1.'],
       ['t2', 'Tarifa día-hombre Nivel 2', num(par.tarifaN2), FMT_M, 'Costo empresa por día de una persona de nivel 2.'],
       ['t3', 'Tarifa día-hombre Nivel 3', num(par.tarifaN3), FMT_M, 'Costo empresa por día de una persona de nivel 3.'],
@@ -605,6 +605,7 @@
     const idRows = [
       ['Código', p.codigo], ['Versión', p.version], ['Título', p.titulo], ['Cliente / mandante', p.cliente],
       ['Categoría', cat ? cat.nombre : 'Sin definir'],
+      ['Tipo de proyecto', root.QStore.tipoProyectoDe(p) || 'Sin definir'],
       ...(root.QStore.conId(p) ? [[(cat && cat.id) || 'ID de licitación', p.idLicitacion]] : []),
       ['Ubicación', p.ubicacion], ['Responsable', p.responsable], ['Fecha de formulación', p.fecha],
       ['Estado', p.estado], ['Descripción', p.descripcion],
@@ -753,7 +754,7 @@
     const ws = wb.addWorksheet('Cartera', { views: [{ state: 'frozen', ySplit: 3, showGridLines: false }] });
     styleTitle(ws, 'CARTERA DE PROYECTOS FORMULADOS', `Exportado el ${new Date().toLocaleString('es-CL')} · ${projects.length} proyecto(s)`, 22);
     const cols = [
-      ['Código', 16], ['Versión', 8], ['Título', 40], ['Cliente', 24], ['Ubicación', 16], ['Responsable', 20], ['Fecha', 12], ['Estado', 13], ['Categoría', 18],
+      ['Código', 16], ['Versión', 8], ['Título', 40], ['Cliente', 24], ['Ubicación', 16], ['Responsable', 20], ['Fecha', 12], ['Estado', 13], ['Categoría', 18], ['Tipo de proyecto', 18],
       ['Costo directo', 15], ['Costo total', 15], ['Utilidad', 15], ['Precio neto', 15], ['Precio bruto', 15],
       ['Margen', 9], ['Markup', 9], ['Días-Hombre', 10], ['Utilidad / DH', 13], ['Incidencia MO', 11], ['Competitividad', 12], ['Alertas', 8], ['Modificado', 18]
     ];
@@ -763,13 +764,13 @@
       const r = root.QCalc.computeProject(p);
       const t = r.totals, k = r.kpis;
       const row = ws.getRow(4 + i);
-      row.values = [p.codigo, p.version, p.titulo, p.cliente, p.ubicacion, p.responsable, p.fecha, p.estado, root.QStore.categoriaDe(p),
+      row.values = [p.codigo, p.version, p.titulo, p.cliente, p.ubicacion, p.responsable, p.fecha, p.estado, root.QStore.categoriaDe(p), root.QStore.tipoProyectoDe(p),
         t.cd, t.costoTotal, t.utilidad, t.precioNeto, t.precioBruto,
         k.margen || 0, k.markup || 0, k.dh, k.rentDH || 0, k.incidenciaMO || 0, k.competitividad === null ? '' : k.competitividad,
         r.warnings.filter((w) => w.level !== 'info').length, p.modificado ? new Date(p.modificado).toLocaleString('es-CL') : ''];
-      [10, 11, 12, 13, 14, 18].forEach((c) => { row.getCell(c).numFmt = fmtMoneda(p); });
-      [15, 16, 19, 20].forEach((c) => { row.getCell(c).numFmt = FMT.pct; });
-      row.getCell(17).numFmt = FMT.num;
+      [11, 12, 13, 14, 15, 19].forEach((c) => { row.getCell(c).numFmt = fmtMoneda(p); });
+      [16, 17, 20, 21].forEach((c) => { row.getCell(c).numFmt = FMT.pct; });
+      row.getCell(18).numFmt = FMT.num;
     });
     ws.autoFilter = { from: 'A3', to: `${colL(cols.length)}3` };
     baseFont(ws);

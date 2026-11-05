@@ -46,6 +46,17 @@
   const conId = (p) => { const c = infoCategoria(p); return !c || !!c.id; };
   const conPresupuesto = (p) => { const c = infoCategoria(p); return !c || c.presupuesto; };
 
+  /* Tipo de proyecto (2026-11-05): qué clase de trabajo es, para agrupar el análisis de proyectos por tipo.
+     Va aparte de la categoría, que dice cómo se postula. '' = sin definir. */
+  const TIPOS_PROYECTO = ['Mantenimiento', 'Montaje', 'I+D+i', 'Ingeniería y diseño', 'Asesoría', 'Suministro', 'Otro'];
+  const tipoProyectoDe = (p) => (p && TIPOS_PROYECTO.includes(p.tipoProyecto) ? p.tipoProyecto : '');
+  /* Gastos generales e imprevistos que se aplican (2026-11-05): cada uno tiene su casilla en «Utilidad y precio».
+     Desmarcada, el % queda guardado pero cuenta 0. Sin la marca (proyectos anteriores) se aplica. */
+  const aplicaGG = (par) => !par || par.aplicaGG !== false;
+  const aplicaImp = (par) => !par || par.aplicaImp !== false;
+  const pctGG = (par) => (aplicaGG(par) ? Number(par && par.gastosGenerales) || 0 : 0);
+  const pctImp = (par) => (aplicaImp(par) ? Number(par && par.imprevistos) || 0 : 0);
+
   /* Entregables para postular (2026-10-27): lo que piden las bases (anexos administrativos, técnicos, la oferta
      económica), con quién lo prepara y si ya está listo. La lista es opcional: sin ella el proyecto no lleva
      el campo. */
@@ -330,6 +341,7 @@
     // La categoría y los entregables (2026-10-27) quedan solo en los proyectos que los tienen: un campo vacío
     // agregado aquí haría que la copia de este navegador y la de la carpeta del equipo dejaran de ser iguales
     if (typeof out.categoria !== 'string') delete out.categoria;
+    if (typeof out.tipoProyecto !== 'string') delete out.tipoProyecto;
     if (Array.isArray(out.entregables)) {
       out.entregables = out.entregables.filter((e) => e && typeof e === 'object').map((e) => Object.assign(newEntregable(e.tipo), e,
         { uid: e.uid || uid(), tipo: TIPOS_ENTREGABLE.includes(e.tipo) ? e.tipo : TIPOS_ENTREGABLE[0], listo: e.listo === true }));
@@ -423,6 +435,7 @@
   const api = {
     SCHEMA, ESTADOS, UNIDADES, DEFAULT_PARAMETROS, DEFAULT_CATALOGO,
     CATEGORIAS, categoriaDe, infoCategoria, conId, conPresupuesto, TIPOS_ENTREGABLE,
+    TIPOS_PROYECTO, tipoProyectoDe, aplicaGG, aplicaImp, pctGG, pctImp,
     uid, hoy, clone, getConfig, setConfig,
     all, trash, get, upsert, remove, restore, purge, nextCodigo, normalize, cloneProject,
     newProject, newPartida, newPartidaBase, newMaterial, newEquipo, newManoObra, newOtro, newEntregable, exampleProject,

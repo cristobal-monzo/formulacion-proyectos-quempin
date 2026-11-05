@@ -812,6 +812,9 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
 .util-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .util-edit .ci { width: 110px; min-width: 70px; }
 .util-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--gridline); background: var(--surface-1); border-radius: 10px 10px 0 0; }
+.util-gg { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; padding: 10px 14px; border-bottom: 1px solid var(--gridline); background: var(--surface-1); }
+.util-gg .check-l { margin: 0; }
+.util-gg .hint { flex-basis: 100%; margin: 0; }
 .util-quick .lbl { font-size: 12px; font-weight: 700; color: var(--text-secondary); }
 .util-quick .input-affix { width: 96px; }
 .util-quick .input { min-height: 32px; padding: 4px 26px 4px 8px; font-size: 13px; }

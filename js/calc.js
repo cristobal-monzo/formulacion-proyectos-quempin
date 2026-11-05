@@ -63,8 +63,9 @@
   function computeProject(p) {
     const par = p.parametros || {};
     const tarifas = [num(par.tarifaN1), num(par.tarifaN2), num(par.tarifaN3)];
-    const ggPct = num(par.gastosGenerales) / 100;
-    const impPct = num(par.imprevistos) / 100;
+    // Cada uno cuenta solo con su casilla marcada en «Utilidad y precio» (sin la marca, se aplica)
+    const ggPct = par.aplicaGG === false ? 0 : num(par.gastosGenerales) / 100;
+    const impPct = par.aplicaImp === false ? 0 : num(par.imprevistos) / 100;
     const ivaPct = num(par.iva) / 100;
 
     const warnings = [];

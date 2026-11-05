@@ -139,7 +139,7 @@
     utilUndo: null,
     // resp: '' (todos), '@yo' (Mis proyectos: el responsable es el usuario; se recuerda en este
     // navegador), '@sin' (sin responsable) o unas iniciales
-    list: { q: '', estado: '', resp: misProyectosGuardado() ? '@yo' : '', mes: '', sort: { k: 'mod', dir: -1 } },
+    list: { q: '', estado: '', resp: misProyectosGuardado() ? '@yo' : '', mes: '', tipo: '', sort: { k: 'mod', dir: -1 } },
     conflicto: false,
     buscando: null // uid del proyecto que un enlace pidió y todavía no llega de la carpeta compartida
   };
@@ -1221,8 +1221,13 @@
         <div class="kpis" id="list-kpis"></div>
         <div class="viz-filterbar">
           <div class="viz-filtergrid">
-            <div class="viz-field span-6"><label for="list-search">Buscar</label>
-              <input type="search" id="list-search" class="${L.q ? 'is-set' : ''}" placeholder="Código, título, cliente, categoría, ubicación o responsable" value="${esc(L.q)}" autocomplete="off"></div>
+            <div class="viz-field span-4"><label for="list-search">Buscar</label>
+              <input type="search" id="list-search" class="${L.q ? 'is-set' : ''}" placeholder="Código, título, cliente, categoría, tipo, ubicación o responsable" value="${esc(L.q)}" autocomplete="off"></div>
+            <div class="viz-field span-2"><label for="list-tipo">Tipo</label>
+              <select id="list-tipo" class="${L.tipo ? 'is-set' : ''}">
+                <option value="">Todos los tipos</option>
+                ${S.TIPOS_PROYECTO.concat('—').map((x) => `<option value="${esc(x)}" ${L.tipo === x ? 'selected' : ''}>${x === '—' ? 'Sin definir' : esc(x)}</option>`).join('')}
+              </select></div>
             <div class="viz-field span-3"><label for="list-mes">Ingresados en</label>
               <select id="list-mes" class="${L.mes ? 'is-set' : ''}">
                 <option value="">Todos los meses</option>
@@ -1269,7 +1274,8 @@
       .filter((p) => !L.estado || p.estado === L.estado)
       .filter((p) => pasaResponsable(p, L.resp))
       .filter((p) => !L.mes || mesIngreso(p) === L.mes)
-      .filter((p) => !q || norm([p.codigo, p.titulo, p.cliente, p.idLicitacion, S.categoriaDe(p), p.responsable, p.ubicacion, QH() ? QH().reqDe(p) : '', (vinculoAF(p) || {}).tag].join(' ')).includes(q));
+      .filter((p) => !L.tipo || (S.tipoProyectoDe(p) || '—') === L.tipo)
+      .filter((p) => !q || norm([p.codigo, p.titulo, p.cliente, p.idLicitacion, S.categoriaDe(p), S.tipoProyectoDe(p), p.responsable, p.ubicacion, QH() ? QH().reqDe(p) : '', (vinculoAF(p) || {}).tag].join(' ')).includes(q));
   }
   /* Proyectos de un N° de requerimiento o de un TAG del Análisis Financiero, del más nuevo al más viejo
      (versión más alta y, a igual versión, el último modificado). */
@@ -1356,6 +1362,7 @@
     if (L.estado) chips.push(['estado', 'Estado', L.estado]);
     if (L.resp) chips.push(['resp', 'Responsable', nombreFiltroResp(L.resp)]);
     if (L.mes) chips.push(['mes', 'Ingresados en', nombreMes(L.mes)]);
+    if (L.tipo) chips.push(['tipo', 'Tipo', L.tipo === '—' ? 'Sin definir' : L.tipo]);
     el.innerHTML = `<span class="viz-resultcount"><strong>${n}</strong> de ${plural(total, 'proyecto')}${chips.length ? '' : ' · sin filtros'}</span>
       <span class="viz-chips">${chips.map(([k, l, v]) => `<button type="button" class="viz-chip" data-act="quitar-filtro" data-k="${k}" aria-label="Quitar filtro ${esc(l)}"><span class="k">${esc(l)}:</span><span class="v">${esc(v)}</span><span class="x" aria-hidden="true">×</span></button>`).join('')}</span>
       ${chips.length ? '<button type="button" class="viz-clearbtn" data-act="limpiar-filtros">Limpiar filtros</button>' : ''}`;
@@ -1408,7 +1415,7 @@
       const chipAlertas = nAlert ? `<span class="chip ${nErr ? 'bad' : 'warn'}" title="${plural(nAlert, 'alerta')}">${nErr ? '✖' : '▲'} ${nAlert}</span>` : '';
       return `<tr class="clickable" data-open="${p.uid}" data-destino="${destinoDe(p, r)}" tabindex="0" aria-label="Abrir ${esc(p.codigo)} ${esc(p.titulo || 'Sin título')}${s ? `. ${esc(s.corto)}` : ''}">
         <td class="nowrap code"><span class="code-badge" title="${esc(p.codigo || '')}">${esc(p.codigo || '—')}</span><span class="ver">v${esc(p.version)}</span>${chipAlertas ? `<div class="en-linea l2">${chipAlertas}</div>` : ''}</td>
-        <td class="col-titulo"><div class="proj-title">${esc(p.titulo || 'Sin título')}</div><div class="proj-sub">${esc([S.categoriaDe(p), p.cliente, p.ubicacion].filter(Boolean).join(' · ') || '—')}</div>
+        <td class="col-titulo"><div class="proj-title">${esc(p.titulo || 'Sin título')}</div><div class="proj-sub">${esc([S.tipoProyectoDe(p), S.categoriaDe(p), p.cliente, p.ubicacion].filter(Boolean).join(' · ') || '—')}</div>
           <div class="proj-sub en-linea l1">${esc(p.responsable ? `Responsable: ${p.responsable}` : 'Sin responsable')}<span class="en-linea l2"> · ${esc(fechaCorta(p.fecha))}</span></div>${carpetaCorta(p)}${aqui.has(p.uid) ? '<span class="chip warn solo-aqui" title="No está en la carpeta del equipo">Solo en este navegador</span>' : ''}</td>
         <td class="col-resp" data-label="Responsable">${esc(p.responsable || '—')}</td>
         <td class="nowrap col-fecha" data-label="Fecha">${esc(fechaCorta(p.fecha))}</td>
@@ -1743,7 +1750,7 @@
       <div class="pl-cuerpo">${cuerpo}</div></details>`;
 
   // ---- Paso 1: datos del proyecto ------------------------------------------------
-  const resumenPrecio = (par) => `IVA ${nf(num(par.iva))} % · gastos generales ${nf(num(par.gastosGenerales))} % · imprevistos ${nf(num(par.imprevistos))} % · día-hombre ${dinero(num(par.tarifaN1))} / ${dinero(num(par.tarifaN2))} / ${dinero(num(par.tarifaN3))}`;
+  const resumenPrecio = (par) => `IVA ${nf(num(par.iva))} % · gastos generales ${S.aplicaGG(par) ? nf(num(par.gastosGenerales)) + ' %' : 'no se aplican'} · imprevistos ${S.aplicaImp(par) ? nf(num(par.imprevistos)) + ' %' : 'no se aplican'} · día-hombre ${dinero(num(par.tarifaN1))} / ${dinero(num(par.tarifaN2))} / ${dinero(num(par.tarifaN3))}`;
   const resumenMetas = (par) => `Margen objetivo ${nf(num(par.margenObjetivo))} % · mínimo ${nf(num(par.margenMinimo))} % · ${num(par.metaUtilidadDH) > 0 ? `meta ${dinero(num(par.metaUtilidadDH))} por día-hombre` : 'sin meta por día-hombre'}`;
   const resumenCatalogo = (p) => `${plural((p.catalogoOtros || []).length, 'referencia')} para agregar rápido en Costos · Otros`;
 
@@ -1757,6 +1764,14 @@
       <select class="input" id="f-categoria" data-f="categoria" aria-describedby="categoria-hint">
         <option value="" ${actual ? '' : 'selected'}>Sin definir</option>${S.CATEGORIAS.map((x) => `<option value="${esc(x.nombre)}" ${x.nombre === actual ? 'selected' : ''}>${esc(x.nombre)}</option>`).join('')}</select>
       <span class="hint" id="categoria-hint">${esc(hint)}</span></div>`;
+  }
+  /* Tipo de proyecto (2026-11-05): mantenimiento, montaje, I+D+i… para el análisis de proyectos por tipo */
+  function campoTipoProyecto(p) {
+    const actual = S.tipoProyectoDe(p);
+    return `<div class="campo"><label for="f-tipoProyecto">Tipo de proyecto</label>
+      <select class="input" id="f-tipoProyecto" data-f="tipoProyecto" aria-describedby="tipo-hint">
+        <option value="" ${actual ? '' : 'selected'}>Sin definir</option>${S.TIPOS_PROYECTO.map((x) => `<option ${x === actual ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>
+      <span class="hint" id="tipo-hint">Qué clase de trabajo es: agrupa el análisis de proyectos por tipo.</span></div>`;
   }
   /* Entregables para postular (2026-10-27): lo que piden las bases, opcional, plegado en una línea con su avance */
   function resumenEntregables(p) {
@@ -1852,6 +1867,7 @@
             ${fInput('titulo', 'Título del proyecto', { cls: 'ancho', placeholder: 'Ej.: Instalación de medidores de gas natural' })}
             ${fInput('cliente', 'Cliente / mandante')}
             ${campoCategoria(p)}
+            ${campoTipoProyecto(p)}
             ${S.conId(p) ? fInput('idLicitacion', (cat && cat.id) || 'ID de licitación', { opcional: true, placeholder: `Ej.: ${(cat && cat.ej) || '1234-56-LE26'}` }) : ''}
             ${fInput('ubicacion', 'Ubicación')}
             ${campoResponsable(p)}
@@ -2203,6 +2219,11 @@
                   <button type="button" class="btn btn-sm" id="util-undo" data-act="util-deshacer" aria-disabled="true">${ICON.restore}Deshacer</button>
                 </span>
               </div>
+              <div class="util-gg" role="group" aria-label="Gastos generales e imprevistos que se aplican">
+                ${[['aplicaGG', 'gastosGenerales', 'Aplicar gastos generales', S.aplicaGG(p.parametros)], ['aplicaImp', 'imprevistos', 'Aplicar imprevistos', S.aplicaImp(p.parametros)]].map(([k, campo, txt, on]) =>
+                  `<label class="check-l"><input type="checkbox" data-f="parametros.${k}" data-t="bool" ${on ? 'checked' : ''}> ${txt} <span class="muted">(${nf(num(p.parametros[campo]))} % del costo directo)</span></label>`).join('')}
+                <span class="hint">Desmarcada, el % queda guardado en Datos del proyecto pero no se suma al costo.</span>
+              </div>
               <table class="tbl util-tbl tbl-apilable">
                 <thead><tr><th>Partida</th><th>Utilidad<span class="th-sub">% de recargo, ${simbolo()} fijo o valor final</span></th><th class="num">Utilidad en&nbsp;${simbolo()}</th><th class="num">Margen</th></tr></thead>
                 <tbody>${utilRows || '<tr class="empty-row"><td colspan="4">Aún no hay partidas. <button type="button" class="link-btn" data-act="tab" data-tab="partidas">Crear la primera partida</button></td></tr>'}</tbody>
@@ -2346,7 +2367,7 @@
     const r = state.result;
     const t = r.totals, k = r.kpis, st = r.status;
     const par = state.project.parametros;
-    const hasGG = t.gg > 0 || t.imp > 0 || num(par.gastosGenerales) > 0 || num(par.imprevistos) > 0;
+    const hasGG = t.gg > 0 || t.imp > 0 || S.pctGG(par) > 0 || S.pctImp(par) > 0;
     const mObj = num(par.margenObjetivo) / 100, mMin = num(par.margenMinimo) / 100;
     const meta = num(par.metaUtilidadDH);
     const pctShort = (x) => pct(x).replace(',0 ', ' ');
@@ -2379,7 +2400,7 @@
     const op = (c) => `<span class="eq-op" aria-hidden="true">${c}</span>`;
     put('res-top', [
       eqCard('', 'Costo directo', dinero(t.cd), 'Materiales, equipos, mano de obra y otros', KP.byKey.cd.queMide),
-      hasGG ? op('+') + eqCard('', 'Gastos generales e imprevistos', dinero(t.gg + t.imp), `${nf(num(par.gastosGenerales))} % + ${nf(num(par.imprevistos))} % del costo directo`, KP.byKey.costoTotal.queMide) : '',
+      hasGG ? op('+') + eqCard('', 'Gastos generales e imprevistos', dinero(t.gg + t.imp), `${nf(S.pctGG(par))} % + ${nf(S.pctImp(par))} % del costo directo`, KP.byKey.costoTotal.queMide) : '',
       op('+'), eqCard('util', 'Utilidad', dinero(t.utilidad), `Recargo de ${pct(k.markup)} sobre el costo${hasGG ? ' total' : ''}`, KP.byKey.utilidad.queMide),
       op('='), eqCard('hero', 'Precio de venta neto', dinero(t.precioNeto), 'Sin IVA: el monto a ofertar', KP.byKey.precioNeto.queMide)
     ].join(''));
@@ -2685,6 +2706,7 @@
       else if (el.id === 'list-estado') L.estado = el.value;
       else if (el.id === 'list-resp') { L.resp = el.value; guardarMisProyectos(el.value === '@yo'); }
       else if (el.id === 'list-mes') L.mes = el.value;
+      else if (el.id === 'list-tipo') L.tipo = el.value;
       else return;
       el.classList.toggle('is-set', !!el.value);
       refreshList();
@@ -3283,7 +3305,7 @@
         }
         case 'quitar-filtro': {
           const L = state.list;
-          const map = { q: ['q', '#list-search'], estado: ['estado', '#list-estado'], resp: ['resp', '#list-resp'], mes: ['mes', '#list-mes'] };
+          const map = { q: ['q', '#list-search'], estado: ['estado', '#list-estado'], resp: ['resp', '#list-resp'], mes: ['mes', '#list-mes'], tipo: ['tipo', '#list-tipo'] };
           const [k, sel] = map[d.k];
           L[k] = '';
           if (k === 'resp') guardarMisProyectos(false);
@@ -3294,9 +3316,9 @@
         }
         case 'limpiar-filtros': {
           if (state.avisoLista) { state.avisoLista = null; location.hash = '#/'; }
-          state.list.q = ''; state.list.estado = ''; state.list.resp = ''; state.list.mes = '';
+          state.list.q = ''; state.list.estado = ''; state.list.resp = ''; state.list.mes = ''; state.list.tipo = '';
           guardarMisProyectos(false);
-          ['#list-search', '#list-estado', '#list-resp', '#list-mes'].forEach((s) => { const el = $(s); if (el) { el.value = ''; el.classList.remove('is-set'); } });
+          ['#list-search', '#list-estado', '#list-resp', '#list-mes', '#list-tipo'].forEach((s) => { const el = $(s); if (el) { el.value = ''; el.classList.remove('is-set'); } });
           refreshList();
           break;
         }
@@ -3412,7 +3434,7 @@
           const m = num(par.margenObjetivo) / 100;
           if (!(m > 0 && m < 1)) { toast('Define un margen objetivo entre 0 y 100 % en Datos del proyecto → Metas de evaluación.', true); break; }
           // margen = r / (1 + gg + imp + r)  →  r = m (1 + gg + imp) / (1 − m)
-          const g = (num(par.gastosGenerales) + num(par.imprevistos)) / 100;
+          const g = (S.pctGG(par) + S.pctImp(par)) / 100;
           const rec = Math.round((m * (1 + g) / (1 - m)) * 10000) / 100;
           guardarUndo(`Llevar al margen objetivo (${nf(num(par.margenObjetivo))} %)`);
           cotizables(p).forEach((pt) => { pt.utilidadTipo = 'pct'; pt.utilidadValor = rec; });
