@@ -1028,6 +1028,11 @@
   /* Código de una partida del proyecto abierto: PB la partida base, P1, P2… las demás */
   const codP = (uid) => (state.partIdx.get(uid) || {}).code || '';
   const cotizables = (p) => p.partidas.filter((pt) => !pt.base);
+  /* Los gastos generales e imprevistos que se aplican, en palabras ('' si ninguno). Van en el precio de cada partida
+     (ggimp de js/calc.js) y no en su utilidad: sin escribirlos, costo + utilidad no daba el precio (observación del
+     equipo, 2026-11-02). */
+  const nombreGGImp = (par) => [S.pctGG(par) > 0 && 'gastos generales', S.pctImp(par) > 0 && 'imprevistos'].filter(Boolean).join(' e ');
+  const lineaGGImp = (uid, par) => (nombreGGImp(par) ? `+ <span data-c="P:${uid}:ggimp" data-fmt="clp"></span> de ${nombreGGImp(par)}` : '');
   function resolve(key) {
     const r = state.result;
     const [t, a, b, c] = key.split(':');
@@ -1948,6 +1953,7 @@
     const p = state.project;
     const nCot = cotizables(p).length;
     const hayBase = nCot < p.partidas.length;
+    const ggimp = nombreGGImp(p.parametros);
     const rows = p.partidas.map((it) => {
       const code = codP(it.uid);
       if (it.base) {
@@ -1971,7 +1977,7 @@
         <td data-label="Descripción">${rowInput('partidas', it, 'descripcion', `Descripción de ${code}`, 'desc', false, 'placeholder="Ej.: Instalación de medidor de 2&quot;"')}</td>
         <td data-label="Cantidad">${rowInput('partidas', it, 'cantidad', `Cantidad de ${code}`, 'w-sm', true)}</td>
         <td data-label="Unidad">${rowUnit('partidas', it, `unidad de ${code}`)}</td>
-        <td class="num calc" data-label="Costo directo"><span data-c="P:${it.uid}:cd" data-fmt="clp"></span>${hayBase ? `<div class="small muted">incluye <span data-c="P:${it.uid}:cuotaBase" data-fmt="clp"></span> de PB</div>` : ''}</td>
+        <td class="num calc" data-label="Costo directo"><span data-c="P:${it.uid}:cd" data-fmt="clp"></span>${hayBase ? `<div class="small muted">incluye <span data-c="P:${it.uid}:cuotaBase" data-fmt="clp"></span> de PB</div>` : ''}${ggimp ? `<div class="small muted">${lineaGGImp(it.uid, p.parametros)}</div>` : ''}</td>
         <td class="num calc" data-label="Utilidad"><span data-c="P:${it.uid}:utilidad" data-fmt="clp"></span><div class="small muted">${esc(uLabel)}</div></td>
         <td class="num calc strong" data-label="Precio neto" data-c="P:${it.uid}:precio" data-fmt="clp"></td>
         <td class="num calc" data-label="Precio unitario" data-c="P:${it.uid}:pu" data-fmt="clp"></td>
@@ -1979,7 +1985,7 @@
       </tr>`;
     }).join('');
     const ayuda = `<p>La <b>cantidad</b> es cuántas unidades tiene la partida (3 medidores, 120 m de cañería…). En el paso 3 cada costo se ingresa para <b>una</b> unidad y se multiplica por esta cantidad.</p>
-      <p>Las columnas sombreadas se calculan solas. <b>Precio neto</b> = costo directo + utilidad (la utilidad se define en el paso 4). <b>Precio unitario</b> = precio neto ÷ cantidad.</p>
+      <p>Las columnas sombreadas se calculan solas. <b>Precio neto</b> = costo directo + gastos generales e imprevistos (si se aplican) + utilidad (la utilidad se define en el paso 4). <b>Precio unitario</b> = precio neto ÷ cantidad.</p>
       <p>La <b>partida base</b> (PB) junta los costos comunes a todo el trabajo, como la instalación de faenas o los traslados. No va sola en la cotización: su costo directo se divide en partes iguales entre las demás partidas y se suma al de cada una antes de su utilidad. Sus costos se asocian a PB en el paso 3, como en cualquier partida.</p>`;
     return `${pasoHead('partidas', ayuda)}
       <div class="tbl-toolbar">
@@ -2190,6 +2196,7 @@
     // La partida base no lleva utilidad propia: su costo ya está en el costo directo de cada partida
     const pb = p.partidas.find((it) => it.base);
     const nCot = cotizables(p).length;
+    const ggimp = nombreGGImp(p.parametros);
     const utilRows = cotizables(p).map((it) => {
       const code = codP(it.uid);
       const tipo = it.utilidadTipo === 'monto' || it.utilidadTipo === 'final' ? it.utilidadTipo : 'pct';
@@ -2197,7 +2204,7 @@
       const lblValor = { pct: `Utilidad de ${code} en % de recargo`, monto: `Utilidad de ${code} en ${mon}`, final: `Valor final de ${code} en ${mon} (precio neto de la partida)` }[tipo];
       return `<tr data-row="${it.uid}">
         <td><div class="pnom"><span class="pcode">${code}</span><div style="min-width:0"><div class="t">${esc(it.descripcion || 'Partida sin descripción')}</div>
-          <div class="s">${esc(nf(num(it.cantidad)))} ${esc(it.unidad || '')} · costo directo <span data-c="P:${it.uid}:cd" data-fmt="clp"></span>${pb ? ` (incluye <span data-c="P:${it.uid}:cuotaBase" data-fmt="clp"></span> de PB)` : ''}</div></div></div></td>
+          <div class="s">${esc(nf(num(it.cantidad)))} ${esc(it.unidad || '')} · costo directo <span data-c="P:${it.uid}:cd" data-fmt="clp"></span>${pb ? ` (incluye <span data-c="P:${it.uid}:cuotaBase" data-fmt="clp"></span> de PB)` : ''}${ggimp ? ` ${lineaGGImp(it.uid, p.parametros)}` : ''}</div></div></div></td>
         <td data-label="Utilidad"><div class="util-edit">
           ${seg(`ut-${it.uid}`, [
             { v: 'pct', l: '%', checked: tipo === 'pct', tip: '<b>% de recargo</b>Sobre el costo de la partida.' },
@@ -2579,25 +2586,33 @@
       </div>`;
     }).join('') : '<p class="small muted" style="margin:0">Agrega partidas con costos para comparar su precio.</p>');
 
-    // Detalle por partida (con análisis de precio unitario)
+    // Detalle por partida (con análisis de precio unitario). Con gastos generales o imprevistos, su columna: sin ella,
+    // costo directo + utilidad no daba el precio neto. La utilidad por día-hombre de cada partida (observación del
+    // equipo, 2026-11-04), con el semáforo de la meta del proyecto; «—» en una partida sin mano de obra.
+    const nomGG = nombreGGImp(par);
+    const nCols = 14 + (nomGG ? 1 : 0);
+    const semDH = (v) => (!ok(v) ? 'na' : !(meta > 0) ? 'info' : v >= meta ? 'ok' : v >= meta * 0.8 ? 'warn' : 'bad');
+    const celdaDH = (v) => `<td class="num">${ok(v) ? `<span class="dot ${semDH(v)}" aria-hidden="true"></span>${dinero(v)}` : '—'}</td>`;
     const rowsP = r.partidas.map((pt) => {
       const open = state.apuOpen.has(pt.uid) || state.imprimir;
-      const apu = open ? `<tr class="apu-row"><td colspan="13"><div class="apu-panel">${apuTable(pt)}</div></td></tr>` : '';
+      const apu = open ? `<tr class="apu-row"><td colspan="${nCols}"><div class="apu-panel">${apuTable(pt)}</div></td></tr>` : '';
       return `<tr>
         <td><button type="button" class="apu-toggle" data-act="apu" data-uid="${pt.uid}" aria-expanded="${open}" aria-label="Ver el análisis de precio unitario de ${pt.code}">${ICON.chevR}</button></td>
         <td class="code">${pt.code}</td><td>${esc(pt.descripcion || '—')}</td><td class="num">${nf(pt.cantidad)} ${esc(pt.unidad)}</td>
         <td class="num">${dinero(pt.mat)}</td><td class="num">${dinero(pt.eq)}</td><td class="num">${dinero(pt.mo)}</td><td class="num">${dinero(pt.otros)}</td>
-        <td class="num"><b>${dinero(pt.cd)}</b></td><td class="num">${dinero(pt.utilidad)}</td><td class="num"><b>${dinero(pt.precio)}</b></td>
+        <td class="num"><b>${dinero(pt.cd)}</b></td>${nomGG ? `<td class="num">${dinero(pt.ggimp)}</td>` : ''}<td class="num">${dinero(pt.utilidad)}</td>${celdaDH(pt.dh > 0 ? pt.utilidad / pt.dh : null)}<td class="num"><b>${dinero(pt.precio)}</b></td>
         <td class="num">${dinero(pt.pu)}</td><td class="num">${pct(pt.pctPrecio)}</td>
       </tr>${apu}`;
     }).join('');
-    const th = (c, l) => `<th class="num"><span class="swatch ${c}" style="width:9px;height:9px;margin-right:5px;vertical-align:0"></span>${l}</th>`;
-    put('res-partidas', `<div class="tabla-contenedor"><table class="tbl" style="min-width:1060px">
+    // El cuadro de color va pegado a la primera palabra: el encabezado se parte en las demás
+    const th = (c, l) => { const [w, ...rest] = l.split(' '); return `<th class="num"><span class="nw"><span class="swatch ${c}" style="width:9px;height:9px;margin-right:5px;vertical-align:0"></span>${w}</span>${rest.length ? ' ' + rest.join(' ') : ''}</th>`; };
+    const thGG = !nomGG ? '' : th('cat-gg', nomGG === 'gastos generales e imprevistos' ? 'Gastos generales<span class="th-sub">e imprevistos</span>' : nomGG.charAt(0).toUpperCase() + nomGG.slice(1));
+    put('res-partidas', `<div class="tabla-contenedor"><table class="tbl tbl-desglose" style="min-width:1060px">
       <thead><tr><th><span class="visualmente-oculto">Desplegar</span></th><th>ID</th><th>Partida</th><th class="num">Cantidad</th>${th('cat-mat', 'Materiales')}${th('cat-eq', 'Equipos')}${th('cat-mo', 'Mano de obra')}${th('cat-otros', 'Otros')}
-        <th class="num">Costo directo</th>${th('cat-util', 'Utilidad')}<th class="num">Precio neto</th><th class="num">Precio unitario</th><th class="num">% del precio</th></tr></thead>
-      <tbody>${rowsP || '<tr class="empty-row"><td colspan="13">Sin partidas.</td></tr>'}</tbody>
+        <th class="num">Costo directo</th>${thGG}${th('cat-util', 'Utilidad')}<th class="num">Utilidad<span class="th-sub">por día-hombre</span></th><th class="num">Precio neto</th><th class="num">Precio unitario</th><th class="num">% del precio</th></tr></thead>
+      <tbody>${rowsP || `<tr class="empty-row"><td colspan="${nCols}">Sin partidas.</td></tr>`}</tbody>
       <tfoot><tr><td></td><td></td><td colspan="2">Total</td><td class="num">${dinero(t.mat)}</td><td class="num">${dinero(t.eq)}</td><td class="num">${dinero(t.mo)}</td><td class="num">${dinero(t.otros)}</td>
-        <td class="num">${dinero(t.cd)}</td><td class="num">${dinero(t.utilidad)}</td><td class="num">${dinero(t.precioNeto)}</td><td></td><td class="num">${t.precioNeto ? '100,0 %' : '—'}</td></tr></tfoot>
+        <td class="num">${dinero(t.cd)}</td>${nomGG ? `<td class="num">${dinero(t.gg + t.imp)}</td>` : ''}<td class="num">${dinero(t.utilidad)}</td>${celdaDH(k.rentDH)}<td class="num">${dinero(t.precioNeto)}</td><td></td><td class="num">${t.precioNeto ? '100,0 %' : '—'}</td></tr></tfoot>
     </table></div>${r.base && r.base.partes ? `<p class="hint-linea">Los costos de cada partida incluyen su parte de la partida base PB «${esc(r.base.descripcion || 'Partida base')}»: ${dinero(r.base.cd)} ÷ ${r.base.partes} = ${dinero(r.base.cuota)} por partida.</p>` : ''}`);
 
   }
@@ -2747,6 +2762,8 @@
       if (el.dataset.f === 'parametros.moneda') { recalc(); renderEditor(); scheduleSave(); return; }
       // La categoría muestra u oculta el ID de licitación y el presupuesto del mandante
       if (el.dataset.f === 'categoria') { recalc(); renderTab(focusKeyOf(el)); scheduleSave(); return; }
+      // Las casillas de gastos generales e imprevistos cambian lo que dice cada partida bajo su costo
+      if (/^parametros\.aplica(GG|Imp)$/.test(el.dataset.f)) { recalc(); renderTab(focusKeyOf(el)); scheduleSave(); return; }
     } else if (el.dataset.list && el.dataset.uid && el.dataset.k) {
       const it = findItem(el.dataset.list, el.dataset.uid);
       if (!it) return;

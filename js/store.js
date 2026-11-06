@@ -316,13 +316,16 @@
     return Object.assign(p, overrides || {});
   }
 
-  const newPartida = () => ({ uid: uid(), descripcion: '', unidad: 'Un.', cantidad: 1, utilidadTipo: 'pct', utilidadValor: 0 });
+  /* La unidad por defecto es siempre «Un.» (pedido del usuario, 2026-11-06): un equipo partía en «día» y la partida
+     base en «gl», y quedaban así aunque se compraran por unidad. */
+  const UNIDAD_DEFECTO = 'Un.';
+  const newPartida = () => ({ uid: uid(), descripcion: '', unidad: UNIDAD_DEFECTO, cantidad: 1, utilidadTipo: 'pct', utilidadValor: 0 });
   /* Partida base: costos comunes que se dividen en partes iguales entre las demás (js/calc.js) */
-  const newPartidaBase = () => Object.assign(newPartida(), { descripcion: 'Partida base', unidad: 'gl', base: true });
-  const newMaterial = (partida) => ({ uid: uid(), descripcion: '', partida: partida || '', unidad: 'Un.', cantidad: 1, costoUnitario: 0 });
-  const newEquipo = (partida) => ({ uid: uid(), descripcion: '', partida: partida || '', unidad: 'día', cantidad: 1, costoUnitario: 0 });
+  const newPartidaBase = () => Object.assign(newPartida(), { descripcion: 'Partida base', base: true });
+  const newMaterial = (partida) => ({ uid: uid(), descripcion: '', partida: partida || '', unidad: UNIDAD_DEFECTO, cantidad: 1, costoUnitario: 0 });
+  const newEquipo = (partida) => ({ uid: uid(), descripcion: '', partida: partida || '', unidad: UNIDAD_DEFECTO, cantidad: 1, costoUnitario: 0 });
   const newManoObra = (partida) => ({ uid: uid(), descripcion: '', partida: partida || '', n1p: 0, n1d: 0, n2p: 0, n2d: 0, n3p: 0, n3d: 0 });
-  const newOtro = (partida) => ({ uid: uid(), descripcion: '', partida: partida || '', unidad: 'Un.', cantidad: 1, costoUnitario: 0 });
+  const newOtro = (partida) => ({ uid: uid(), descripcion: '', partida: partida || '', unidad: UNIDAD_DEFECTO, cantidad: 1, costoUnitario: 0 });
   const newEntregable = (tipo) => ({ uid: uid(), nombre: '', tipo: TIPOS_ENTREGABLE.includes(tipo) ? tipo : TIPOS_ENTREGABLE[0], listo: false, responsable: '' });
 
   /* Completa campos faltantes (proyectos importados o de versiones anteriores). */
@@ -435,7 +438,7 @@
   const api = {
     SCHEMA, ESTADOS, UNIDADES, DEFAULT_PARAMETROS, DEFAULT_CATALOGO,
     CATEGORIAS, categoriaDe, infoCategoria, conId, conPresupuesto, TIPOS_ENTREGABLE,
-    TIPOS_PROYECTO, tipoProyectoDe, aplicaGG, aplicaImp, pctGG, pctImp,
+    TIPOS_PROYECTO, tipoProyectoDe, aplicaGG, aplicaImp, pctGG, pctImp, UNIDAD_DEFECTO,
     uid, hoy, clone, getConfig, setConfig,
     all, trash, get, upsert, remove, restore, purge, nextCodigo, normalize, cloneProject,
     newProject, newPartida, newPartidaBase, newMaterial, newEquipo, newManoObra, newOtro, newEntregable, exampleProject,

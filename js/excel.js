@@ -879,7 +879,8 @@
       for (let rr = 9; rr <= Math.max(ref.rowCount, 9); rr++) {
         const d = str(v(ref, `A${rr}`));
         const c = numOrNull(v(ref, `B${rr}`));
-        if (d && c !== null) cat.push({ descripcion: d, unidad: /km/i.test(d) ? 'km' : (/noche/i.test(d) ? 'noche' : 'día'), costoUnitario: c });
+        // La unidad sale de la descripción («por km», «por noche», «diario»); si no dice, «Un.», como todo costo nuevo
+        if (d && c !== null) cat.push({ descripcion: d, unidad: /km/i.test(d) ? 'km' : /noche/i.test(d) ? 'noche' : /diari|\bd[ií]as?\b/i.test(d) ? 'día' : 'Un.', costoUnitario: c });
       }
       if (cat.length) p.catalogoOtros = cat;
     }
@@ -928,7 +929,7 @@
       const eCant = numOrNull(v(cs, `O${rr}`)), eCost = numOrNull(v(cs, `P${rr}`));
       if (eDesc || (eCant && eCost)) {
         const it = S.newEquipo();
-        Object.assign(it, { descripcion: eDesc, partida: partidaDe(v(cs, `N${rr}`), `Equipo fila ${rr}`), unidad: '', cantidad: eCant || 0, costoUnitario: eCost || 0 });
+        Object.assign(it, { descripcion: eDesc, partida: partidaDe(v(cs, `N${rr}`), `Equipo fila ${rr}`), unidad: 'Un.', cantidad: eCant || 0, costoUnitario: eCost || 0 });
         p.equipos.push(it);
       }
       // Mano de obra R:AB
