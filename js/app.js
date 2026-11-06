@@ -303,9 +303,12 @@
   // data-tip-de (2026-11-05): el «i» de un campo muestra lo que dice en ese momento su nota escondida (la que el código
   // puede cambiar y que los lectores de pantalla leen con aria-describedby)
   const tipDe = (el) => (el.dataset.tipDe ? esc((($('#' + el.dataset.tipDe) || {}).textContent || '').trim()) : el.dataset.tip);
+  // Dentro de una ventana emergente (una <dialog> modal, en la capa superior) el globo va adentro de ella, o quedaría detrás
+  const tipEn = (el) => { const host = el.closest('dialog[open]') || document.body; if (tip.parentNode !== host) host.appendChild(tip); };
   document.addEventListener('mousemove', (e) => {
     const el = e.target.closest && e.target.closest('[data-tip], [data-tip-de]');
     if (!el) { tip.classList.remove('show'); return; }
+    tipEn(el);
     tip.innerHTML = tipDe(el);
     tip.classList.add('show');
     placeTip(e.clientX, e.clientY);
@@ -314,6 +317,7 @@
     const el = e.target.closest && e.target.closest('[data-tip], [data-tip-de]');
     if (!el) { tip.classList.remove('show'); return; }
     const r = el.getBoundingClientRect();
+    tipEn(el);
     tip.innerHTML = tipDe(el);
     tip.classList.add('show');
     placeTip(r.left + r.width / 2, r.top);
@@ -326,6 +330,9 @@
      Su nota sigue en la página, escondida (.hint.en-icono): la leen los lectores de pantalla y el código la puede cambiar;
      si pasa a ser un error (.err) o un dato (sin .en-icono), se ve. */
   const infoDe = (id) => `<span class="info-icon" tabindex="0" role="img" aria-label="Más información" data-tip-de="${id}">i</span>`;
+  // Un «i» cuya explicación queda también en la página, escondida: para la que se lee en orden (lectores de pantalla)
+  let infoN = 0;
+  const infoTexto = (text) => { const id = 'info-txt-' + (++infoN); return `${infoDe(id)}<span class="visualmente-oculto" id="${id}">${esc(text)}</span>`; };
 
   // ---------------------------------------------------------------------------
   //  Menús y selectores desplegables propios
@@ -2878,15 +2885,14 @@
       title: `Pegar ${cfg.titulo.toLowerCase()} desde Excel`,
       wide: true,
       body: `${llegada ? `<p class="pg-origen"><b>${esc(llegada.origen)}</b> Elige la partida y agrégalas; antes puedes corregir las filas aquí.</p>`
-        : '<p>Copia las filas en Excel (una planilla de formulación, una lista de materiales o la cotización del Cotizador Histórico) y pégalas aquí. Se reconocen descripción, unidad, cantidad y costo unitario, con o sin encabezados.</p>'}
-        <div class="campo"><label for="pg-texto">Filas copiadas</label>
+        : ''}
+        <div class="campo"><label for="pg-texto">Filas copiadas ${info('Cópialas en Excel (una planilla de formulación, una lista de materiales o la cotización del Cotizador Histórico) y pégalas aquí. Se reconocen descripción, unidad, cantidad y costo unitario, con o sin encabezados.')}</label>
           <textarea class="textarea pg-texto" id="pg-texto" rows="6" spellcheck="false" placeholder="Pega aquí (Ctrl+V)"></textarea></div>
         <div class="fila-campos pg-opciones">
-          <div class="campo"><label for="pg-partida">Partida</label>
+          <div class="campo"><label for="pg-partida">Partida ${info('La cantidad es por una unidad de la partida, como en la tabla: la herramienta la multiplica por la cantidad de la partida.')}</label>
             <select class="select" id="pg-partida">${p.partidas.map((pt) => `<option value="${pt.uid}" ${pt.uid === porOmision ? 'selected' : ''}>${codP(pt.uid)} · ${esc(pt.descripcion || 'Sin descripción')}</option>`).join('')}<option value="" ${porOmision ? '' : 'selected'}>Sin partida (elegirla después)</option></select></div>
           <label class="check-l pg-iva"><input type="checkbox" id="pg-iva"> Los costos incluyen IVA: dejarlos netos (÷ ${nf(1 + iva / 100)})</label>
         </div>
-        <p class="hint">La cantidad es por una unidad de la partida, como en la tabla: la herramienta la multiplica por la cantidad de la partida.</p>
         <div class="pg-previa" id="pg-previa" aria-live="polite"></div>`,
       buttons: [{ label: 'Cancelar' }, { label: 'Agregar las filas', value: 'ok', primary: true }]
     });
@@ -3625,11 +3631,11 @@
     const promesaCfg = ask({
       title: 'Configuración',
       wide: true,
-      body: `<p>Valores con que parten los proyectos nuevos de este navegador. Los proyectos existentes conservan los suyos.</p>
+      body: `<p class="muted">Para los proyectos nuevos de este navegador ${info('Son los valores con que parten los proyectos nuevos. Los proyectos existentes conservan los suyos.')}</p>
         <div class="fila-campos">
           <div class="campo"><label for="cfg-prefijo">Prefijo del código</label><input class="input" id="cfg-prefijo" value="${esc(cfg.prefijo)}" ${dis}><span class="hint">Ej.: ${esc(cfg.prefijo)}-${new Date().getFullYear()}-001</span></div>
-          <div class="campo"><label for="cfg-usuario">Tu usuario</label><select class="input" id="cfg-usuario" aria-describedby="cfg-usuario-hint">${opcionesUsuario(yo(), 'Sin usuario')}</select>
-            <span class="hint" id="cfg-usuario-hint">Responsable de tus proyectos nuevos y autor en el Control de Documentos. Solo en este navegador; es el mismo del Portal QUEMPIN.</span></div>
+          <div class="campo"><label for="cfg-usuario">Tu usuario ${infoDe('cfg-usuario-hint')}</label><select class="input" id="cfg-usuario" aria-describedby="cfg-usuario-hint">${opcionesUsuario(yo(), 'Sin usuario')}</select>
+            <span class="hint en-icono" id="cfg-usuario-hint">Responsable de tus proyectos nuevos y autor en el Control de Documentos. Solo en este navegador; es el mismo del Portal QUEMPIN.</span></div>
         </div>
         <h3 class="sub-t">Precio y tarifas</h3>
         <div class="fila-campos cfg-grid">
@@ -4454,11 +4460,11 @@
     }
     const est = await X.estado();
     // En modo local la carpeta es obligatoria: no se ofrece «Olvidar» (solo cambiarla).
-    el.innerHTML = `<p class="af-linea">${est.conectada ? `Carpeta conectada en este navegador: <b>${esc(est.nombre)}</b>.` : est.movida ? 'La carpeta que estaba conectada cambió de lugar.' : 'Sin conectar.'}
-        ${'Todos los proyectos se guardan ahí para el equipo («.Herramientas formulación › Intercambio › publicado › formulador»), y desde ahí se envían costos al Análisis Financiero. Elige la biblioteca <b>Formulación de proyectos - Documentos</b> sincronizada en tu OneDrive.'}</p>
-      ${est.conectada ? `<p class="af-linea">${est.biblioteca
-        ? 'El Excel de cada proyecto se guarda además en la carpeta de su oferta, que se elige una vez por presupuesto.'
-        : 'Para guardar también el Excel de cada proyecto en la carpeta de su oferta, conecta la biblioteca <b>Formulación de proyectos - Documentos</b> completa (ahora está conectada solo una carpeta de adentro).'}</p>` : ''}
+    // Interfaz limpia (2026-11-06): qué carpeta es, a la vista; para qué sirve, en el «i». Que falte la biblioteca completa sí se ve.
+    const queEs = 'Todos los proyectos se guardan ahí para el equipo («.Herramientas formulación › Intercambio › publicado › formulador»), y desde ahí se envían costos al Análisis Financiero. Elige la biblioteca «Formulación de proyectos - Documentos» sincronizada en tu OneDrive.'
+      + (est.conectada && est.biblioteca ? ' El Excel de cada proyecto se guarda además en la carpeta de su oferta, que se elige una vez por presupuesto.' : '');
+    el.innerHTML = `<p class="af-linea">${est.conectada ? `Carpeta conectada: <b>${esc(est.nombre)}</b>` : est.movida ? 'La carpeta que estaba conectada cambió de lugar.' : 'Sin conectar.'} ${infoTexto(queEs)}</p>
+      ${est.conectada && !est.biblioteca ? '<p class="af-linea">Para guardar también el Excel de cada proyecto en la carpeta de su oferta, conecta la biblioteca <b>Formulación de proyectos - Documentos</b> completa (ahora está conectada solo una carpeta de adentro).</p>' : ''}
       <div class="actions"><button type="button" class="btn btn-sm" data-act="af-carpeta">${ICON.folder}${est.conectada ? 'Cambiar carpeta' : 'Conectar carpeta'}</button>
 </div>
       <p class="af-nota" id="cfg-pulso"></p>`;
@@ -5198,7 +5204,8 @@
     const faltanEnt = ents.filter((x) => !x.listo).map((x) => x.nombre || 'sin nombre');
     const nombresEnt = faltanEnt.length > 3 ? `${faltanEnt.slice(0, 2).join(', ')} y ${faltanEnt.length - 2} más`
       : faltanEnt.length > 1 ? `${faltanEnt.slice(0, -1).join(', ')} y ${faltanEnt[faltanEnt.length - 1]}` : (faltanEnt[0] || '');
-    const resumenFormulacion = linea(`${falta ? `<span class="chip warn">Paso ${falta.n} pendiente</span> ${esc(falta.label)}: ${esc(falta.falta || 'por completar')}` : `<span class="chip ok">5 de 5 pasos</span> Precio neto <b>${dinero(r.totals.precioNeto)}</b> · margen ${pct(r.kpis.margen)}`}`)
+    // .rcl-falta: en la etapa actual con «Siguiente: ir al paso», no se repite (CSS)
+    const resumenFormulacion = (falta ? (h) => `<p class="af-linea rcl-falta">${h}</p>` : linea)(`${falta ? `<span class="chip warn">Paso ${falta.n} pendiente</span> ${esc(falta.label)}: ${esc(falta.falta || 'por completar')}` : `<span class="chip ok">5 de 5 pasos</span> Precio neto <b>${dinero(r.totals.precioNeto)}</b> · margen ${pct(r.kpis.margen)}`}`)
       + (ents.length ? linea(`<span class="chip ${faltanEnt.length ? 'warn' : 'ok'}">${ents.length - faltanEnt.length} de ${ents.length}</span> entregables para postular listos${faltanEnt.length ? `: falta${faltanEnt.length === 1 ? '' : 'n'} ${esc(nombresEnt)}` : ''}. <button type="button" class="link-btn" data-act="ver-entregables">Ver la lista</button>`) : '')
       + (vo ? linea(`${ICON.folder}<span class="rcl-carpeta">Carpeta de la oferta: <b>${esc(vo.nombre)}</b> · el Excel de la formulación se mantiene al día ahí.</span>`) : '');
     const bFormulacion = falta ? `<button type="button" class="btn" data-act="sigue" data-accion="ir-paso">Ir al paso ${falta.n}${ICON.arrow}</button>` : '<button type="button" class="btn" data-act="tab" data-tab="evaluacion">Ver la evaluación</button>';
@@ -5257,7 +5264,7 @@
         ? (er.reasignado ? `(el ${esc(reg.folioPropuesto || reg.folio)} ya estaba usado: quedó como ${esc(folio)}).` : 'registrada en el Control de Documentos.')
         : er && er.estado === 'rechazado' ? esc((er.detalle || []).join(' ')) : 'en el Control de Documentos: se registra cuando Sistema QUEMPIN revise la carpeta.'}`);
     } else if (!vo) {
-      tReg = linea(`La evaluación de costos toma su N° del Control de Documentos al elegir la carpeta de la oferta${elSiguiente}.`);
+      tReg = linea(`Evaluación de costos ${infoTexto(`Toma su N° del Control de Documentos al elegir la carpeta de la oferta${sig ? ` (el siguiente es el ${sig})` : ''}.`)}`);
       if (ofertaActiva()) bReg = `<button type="button" class="btn" data-act="oferta-elegir">${ICON.folder}Elegir la carpeta de la oferta</button>`;
     } else {
       tReg = linea(`La versión ${esc(p.version)} todavía no tiene N° del Control de Documentos${elSiguiente}.`);
@@ -5922,9 +5929,9 @@
     const prom = ask({
       title: o.encabezado || 'Nuevo proyecto',
       wide: true,
-      body: `<p>${o.texto || 'El N° de requerimiento y el nombre forman el código del proyecto, «N°. Nombre», igual al nombre de la carpeta de su oferta.'}</p>
+      body: `${o.texto ? `<p>${o.texto}</p>` : ''}
         <div class="fila-campos np-campos">
-          <div class="campo"><label for="np-num">N° de requerimiento <span class="opc">(Planilla de Ingreso)</span></label>
+          <div class="campo"><label for="np-num">N° de requerimiento <span class="opc">(Planilla de Ingreso)</span> ${info('El N° de requerimiento y el nombre forman el código del proyecto, «N°. Nombre», igual al nombre de la carpeta de su oferta.')}</label>
             <div class="combo"><input class="input" id="np-num" inputmode="numeric" maxlength="6" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" placeholder="Ej.: 312" value="${esc(o.numero || '')}"><button type="button" class="combo-btn" data-picker="combo" tabindex="-1" aria-label="Ver los requerimientos de la planilla">${ICON.caret}</button></div></div>
           <div class="campo"><label for="np-tit">Nombre del proyecto</label>
             <input class="input" id="np-tit" maxlength="100" autocomplete="off" placeholder="Ej.: Calefacción gimnasio municipal" value="${esc(o.nombre || '')}"></div>
@@ -6308,8 +6315,8 @@
           if (state.project !== p) return;
           const una = sug.length === 1 ? sug[0] : null;
           html = notaOferta(una
-            ? `<strong>¿La carpeta de esta oferta es «${esc(una.nombre)}»?</strong> Ahí queda una copia en Excel del presupuesto, al día con cada cambio.`
-            : '<strong>Guarda el Excel en la carpeta de la oferta.</strong> El proyecto ya queda en el repositorio del equipo; elige la carpeta de su oferta y ahí quedará una copia en Excel, al día con cada cambio.',
+            ? `<strong>¿La carpeta de esta oferta es «${esc(una.nombre)}»?</strong> ${info('Ahí queda una copia en Excel del presupuesto, al día con cada cambio.')}`
+            : `<strong>Guarda el Excel en la carpeta de la oferta.</strong> ${info('El proyecto ya queda en el repositorio del equipo; elige la carpeta de su oferta y ahí quedará una copia en Excel, al día con cada cambio.')}`,
           (una ? `<button type="button" class="btn btn-primario btn-sm" data-act="oferta-usar" data-ruta="${esc(una.id)}">${ICON.folder}Usar esa carpeta</button><button type="button" class="btn btn-sm" data-act="oferta-elegir">Elegir otra</button>`
             : `<button type="button" class="btn btn-primario btn-sm" data-act="oferta-elegir">${ICON.folder}Elegir carpeta</button>`) + omitir);
         }
