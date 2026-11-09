@@ -5243,7 +5243,9 @@
   }
   /* ¿La fila de la planilla ya muestra el aviso? ¿Dos avisos dicen lo mismo? (estado y valor) */
   const igualCampo = (k, a, b) => (k === 'estado' ? norm(a) === norm(b) : Math.abs(num(a) - num(b)) < 1);
-  const planillaMuestra = (fila, cambios) => !!fila && Object.keys(cambios).every((k) => igualCampo(k, fila[k], cambios[k]));
+  // La fila ya «Cerrado» (2026-11-09) muestra lo que pide «Adjudicado»: QHerramientas.estadoCumple
+  const planillaMuestra = (fila, cambios) => !!fila && Object.keys(cambios).every((k) => (k === 'estado' && QH()
+    ? QH().estadoCumple(fila[k], cambios[k]) : igualCampo(k, fila[k], cambios[k])));
   const mismosCambios = (a, b) => !!a && !!b && Object.keys(a).length === Object.keys(b).length && Object.keys(b).every((k) => igualCampo(k, a[k], b[k]));
 
   /* Deja la venta del proyecto en el buzón del Análisis Financiero. q: el proyecto allá (de su lista),

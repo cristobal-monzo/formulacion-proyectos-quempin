@@ -62,7 +62,9 @@
     const enPlanilla = EN_PLANILLA[estado] || null;
     const avisada = !!enPlanilla && ((sug && sug.cambios && igual(sug.cambios.estado, enPlanilla))
       || (exp && exp.cambios && igual(exp.cambios.estado, enPlanilla))
-      || (ctx.filaPlanilla && igual(ctx.filaPlanilla.estado, enPlanilla)));
+      || (ctx.filaPlanilla && (igual(ctx.filaPlanilla.estado, enPlanilla)
+        // «Cerrado» (2026-11-09): un «Adjudicado» ya entregado (la misma regla que QHerramientas.estadoCumple)
+        || (enPlanilla === 'Adjudicado' && igual(ctx.filaPlanilla.estado, 'Cerrado')))));
     const af = ctx.proyectoAF || null;
     return {
       p, estado, req: ctx.req || null,

@@ -309,7 +309,13 @@
   const comparable = (v) => String(v === null || v === undefined ? '' : v).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   // «-» es la referencia de las filas sin ID: para la planilla es una casilla vacía
   const vacioEnPlanilla = (k, v) => (MONTOS.includes(k) ? !(Number(v) > 0) : !comparable(v) || (k === 'referencia' && comparable(v) === '-'));
-  const igualEnPlanilla = (k, a, b) => (MONTOS.includes(k) ? Math.abs((Number(a) || 0) - (Number(b) || 0)) < 1 : comparable(a) === comparable(b));
+  /* «Cerrado» en la Planilla (2026-11-09, Sistema Intercambio/cierre_entregados.py: la carpeta del proyecto pasó a
+     «0 Proyectos Entregados») es un «Adjudicado» que ya se entregó: cumple lo que pide una oferta Adjudicada o Cerrada,
+     y no se ofrece volverlo a «Adjudicado» (eso lo reabriría). */
+  const estadoCumple = (actual, deseado) => comparable(actual) === comparable(deseado)
+    || (comparable(deseado) === 'adjudicado' && comparable(actual) === 'cerrado');
+  const igualEnPlanilla = (k, a, b) => (MONTOS.includes(k) ? Math.abs((Number(a) || 0) - (Number(b) || 0)) < 1
+    : k === 'estado' ? estadoCumple(a, b) : comparable(a) === comparable(b));
   /* Las casillas en que la planilla no dice lo que dice el proyecto: [{ campo, etiqueta, actual, nuevo, marcado }].
      datos: { valor (con IVA: el ofertado o el adjudicado, según el estado), presupuesto (con IVA), referencia (el ID,
      si su categoría lo lleva) }. Lo que el proyecto no tiene no se ofrece: nunca vacía una casilla. Parten marcados
@@ -410,7 +416,7 @@
     publicacion, requerimientos, olvidar, paquete, validar, enviar,
     reqDe, tagDe, proyecto,
     mensajeBorrador, mensajeVenta, mensajeRegistro, mensajeSugerencia, cambiosParaPlanilla,
-    mensajeNuevoRequerimiento, siguienteNumero, camposParaExportar, mensajeEditarRequerimiento, igualEnPlanilla,
+    mensajeNuevoRequerimiento, siguienteNumero, camposParaExportar, mensajeEditarRequerimiento, igualEnPlanilla, estadoCumple,
     sensibilidadDesdeSesgo, preciosReferencia, buscarPrecios,
     cotizacionesDe, estadoEnSistema, siguienteFolio, lecturaEstado
   };
