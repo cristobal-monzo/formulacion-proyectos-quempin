@@ -3242,6 +3242,7 @@
         case 'abrir-sistema': abrirSistemaQuempin(); break;
         case 'enviar-af': await enviarAF(id); break;
         case 'af-estado': await actualizarEstadoAF(p, true); toast('Estado del envío actualizado'); break;
+        case 'af-nombre': await renombrarAF(p); break;
         case 'req-completar': await completarDesdePlanilla(); break;
         case 'precio-ref': await abrirPrecios(d.list, d.uid); break;
         case 'sens-sesgo': simularSesgo(); break;
@@ -4202,7 +4203,8 @@
     } else {
       const e = ESTADO_ENVIO[u.estado] || ESTADO_ENVIO['en-buzon'];
       const detalle = u.estado === 'aplicado' && u.aplicado ? `Aplicado el ${fechaHora(u.aplicado)}.` : (u.detalle || e.d);
-      texto = `<p class="af-linea"><span class="code-badge">${esc(v.tag)}</span> ${v.nombre && v.nombre !== v.tag ? esc(v.nombre) : ''}</p>
+      const visible = v.apodo || (v.nombre && v.nombre !== v.tag ? v.nombre : '');
+      texto = `<p class="af-linea"><span class="code-badge">${esc(v.tag)}</span> ${esc(visible)} <button type="button" class="icon-btn af-renombrar" data-act="af-nombre" title="Cambiar el nombre" aria-label="Cambiar el nombre que se ve en los tableros">✎</button></p>
         <p class="af-linea"><span class="chip ${e.cls}">${e.t}</span> Versión ${esc(u.version)} enviada el ${esc(fechaHora(u.fecha))}. ${esc(detalle)}</p>
         ${costosCambiaron(p, state.result) ? '<p class="af-linea af-aviso">Los costos cambiaron desde ese envío: vuelve a enviarlos para actualizar el Análisis Financiero.</p>' : ''}`;
     }
@@ -4241,6 +4243,43 @@
       if (state.project === p) scheduleSave(); else S.upsert(p);
     }
     if (state.project === p) pintarPanelAF();
+  }
+
+  /* El nombre que se ve en los tableros y el Portal (2026-11-09, pedido del usuario): solo el «Apodo» del
+     Análisis Financiero, con un «datos-proyecto» al buzón. El nombre del proyecto y la Planilla no cambian. */
+  async function renombrarAF(p) {
+    const v = vinculoAF(p);
+    const X = QI();
+    if (!v || !X || !X.disponible()) { toast('Para cambiar el nombre, conecta la carpeta de intercambio.', true); return; }
+    const est = await X.estado();
+    if (!est.conectada || (est.permiso !== 'granted' && !(await X.permitir()))) { toast('Sin permiso para usar la carpeta de intercambio.', true); return; }
+    const cat = await X.leerCatalogoAF();
+    const q = ((cat && cat.proyectos) || []).find((x) => String(x.tag) === v.tag);
+    if (!q) { toast(`El proyecto ${v.tag} no está en el Análisis Financiero.`, true); return; }
+    // Si hay otro cambio de nombre esperando en el buzón, ese es el que se vio
+    const previos = (await X.leerBuzon({ tipos: ['datos-proyecto'], destino: 'analisis-financiero' }))
+      .filter((m) => m && m.proyecto && m.proyecto.tag === v.tag && m.valores && 'Apodo' in m.valores)
+      .sort((a, b) => String(a.origen && a.origen.enviado).localeCompare(String(b.origen && b.origen.enviado)));
+    const visto = previos.length ? previos[previos.length - 1].valores.Apodo : (q.apodo || null);
+    const actual = visto || q.nombre || v.tag;
+    const r = await ask({
+      title: 'Nombre del proyecto',
+      body: `<p class="small muted">Nombre en el Análisis Financiero: «${esc(q.nombre || v.tag)}». Si lo dejas vacío, se ve ese.</p>
+        <div class="campo"><label for="af-apodo">Nombre que se ve</label><input id="af-apodo" class="input" type="text" maxlength="60" autocomplete="off" value="${esc(actual)}"></div>`,
+      buttons: [{ label: 'Cancelar' }, { label: 'Guardar', value: 'ok', primary: true }]
+    });
+    if (r !== 'ok') return;
+    const nuevo = String(($('#af-apodo') || {}).value || '').replace(/\s+/g, ' ').trim();
+    if (nuevo === actual) return;
+    const m = X.mensajeApodo(v.tag, nuevo, visto, usuarioActual(p), q.nombre || '');
+    try {
+      await X.enviar(m);
+      v.apodo = nuevo || '';
+      if (state.project === p) { scheduleSave(); pintarPanelAF(); } else S.upsert(p);
+      toast(`Nombre pedido: «${nuevo || q.nombre}». Llega a los tableros y al Portal con la próxima vuelta del procesador.`, false, 6000);
+    } catch (e) {
+      toast(`No se pudo dejar el pedido: ${(e && e.message) || e}`, true);
+    }
   }
 
   /* Proyecto del Análisis Financiero más parecido (título y cliente), si hay uno claro */

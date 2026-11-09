@@ -331,9 +331,26 @@
     return m;
   }
 
+  /* Mensaje «datos-proyecto» que cambia solo el nombre que se ve en los tableros (el «Apodo» del Análisis
+     Financiero; 2026-11-09, pedido del usuario). visto: el apodo que se vio (null si no tenía). Vacío = el nombre. */
+  function mensajeApodo(tag, apodo, visto, usuario, nombre) {
+    const limpio = String(apodo || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    return {
+      esquema: ESQUEMA,
+      id: nuevoId(),
+      tipo: 'datos-proyecto',
+      destino: 'analisis-financiero',
+      origen: { herramienta: HERRAMIENTA, usuario: usuario || '', enviado: isoLocal(new Date()) },
+      proyecto: { tag },
+      valores: { Apodo: limpio || null },
+      reemplaza: { Apodo: visto || null },
+      informativo: { nombre: nombre || '', motivo: 'Cambiar el nombre, desde el Formulador' }
+    };
+  }
+
   root.QIntercambio = {
     ESQUEMA, CATEGORIAS_AF, BIBLIOTECA, CARPETA_HERRAMIENTAS, disponible, estado, conectar, permitir, desconectar, onCambio,
     carpeta: carpetaConPermiso, biblioteca: bibliotecaConPermiso, estadoBiblioteca,
-    leerCatalogoAF, leerPublicacion, leerRaiz, enviar, enBuzon, leerBuzon, resultadoDe, descargar, mensajePresupuesto, costosAF, nombreArchivo, nuevoId, isoLocal
+    leerCatalogoAF, leerPublicacion, leerRaiz, enviar, enBuzon, leerBuzon, resultadoDe, descargar, mensajePresupuesto, mensajeApodo, costosAF, nombreArchivo, nuevoId, isoLocal
   };
 })(window);
