@@ -1504,6 +1504,10 @@ button.meta-carpeta .dot { margin: 0 0 0 2px; flex: 0 0 auto; }
 .costo-ref { display: flex; align-items: center; gap: 4px; }
 .icon-btn.precio-ref { width: 28px; height: 28px; font-weight: 900; font-size: 13px; color: var(--text-secondary); border: 1px solid var(--gridline); border-radius: 6px; }
 .icon-btn.precio-ref.usado { color: var(--brand-orange-ink); border-color: var(--brand-orange); }
+.icon-btn.enlace-ref { width: 28px; height: 28px; color: var(--text-secondary); border: 1px solid var(--gridline); border-radius: 6px; opacity: .55; }
+.icon-btn.enlace-ref:hover, .icon-btn.enlace-ref:focus-visible { opacity: 1; }
+.icon-btn.enlace-ref svg { width: 15px; height: 15px; }
+.icon-btn.enlace-ref.usado { opacity: 1; color: var(--brand-orange-ink); border-color: var(--brand-orange); }
 .pr-tabla { min-width: 0; }
 .pr-tabla .pr-usar { white-space: nowrap; text-align: right; }
 .pr-tabla .pr-usar .btn { margin-left: 4px; }

@@ -99,6 +99,7 @@
     layers: svg('<path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5"/>'),
     version: svg('<path d="M8 4h11a1 1 0 0 1 1 1v11"/><rect x="4" y="8" width="12" height="12" rx="1"/><path d="M10 11v6M7 14h6"/>'),
     open: svg('<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>'),
+    enlace: svg('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'),
     sparkle: svg('<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/>'),
     target: svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>'),
     x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
@@ -642,11 +643,14 @@
           { icon: ICON.trash, title: 'Eliminar partida', act: 'del-row', list, uid, danger: true }
         ].filter(Boolean));
       } else {
+        const it = ENLACE_LISTAS.includes(list) ? findItem(list, uid) : null;
+        const url = it ? enlaceValido(it.enlace) : '';
         items = [
           { icon: ICON.copy, title: 'Duplicar fila', desc: 'Copia justo debajo, con la misma partida', act: 'dup-row', list, uid },
+          it ? { icon: ICON.enlace, title: url ? 'Cambiar o quitar enlace de la fuente' : 'Agregar enlace de la fuente', desc: 'Dónde se sacó el costo unitario', act: 'enlace-editar', list, uid } : null,
           { sep: true },
           { icon: ICON.trash, title: 'Eliminar', act: 'del-row', list, uid, danger: true }
-        ];
+        ].filter(Boolean);
       }
     } else if (key === 'alertas') {
       // Alertas de validación: cada una lleva directo a la fila que hay que corregir
@@ -2103,7 +2107,7 @@
         <td data-label="Partida">${partidaPicker(key, it)}</td>
         <td class="tercio" data-label="Cantidad">${rowInput(key, it, 'cantidad', `Cantidad por unidad de partida de ${code}`, 'w-sm', true)}</td>
         <td class="tercio" data-label="Unidad">${rowUnit(key, it, `unidad de ${code}`)}</td>
-        <td class="tercio" data-label="Costo unitario"><div class="costo-ref">${rowInput(key, it, 'costoUnitario', `Costo unitario de ${code}`, 'w-md', true)}${botonPrecioRef(key, it, code)}</div></td>
+        <td class="tercio" data-label="Costo unitario"><div class="costo-ref">${rowInput(key, it, 'costoUnitario', `Costo unitario de ${code}`, 'w-md', true)}${botonPrecioRef(key, it, code)}${botonEnlace(key, it, code)}</div></td>
         <td class="num calc veces tercio" data-label="× Partida"><span>× <span data-c="L:${key}:${it.uid}:qtyPartida" data-fmt="num"></span></span></td>
         <td class="num calc strong dos-tercios" data-label="Subtotal" data-formula="${key}:${it.uid}" data-c="L:${key}:${it.uid}:subtotal" data-fmt="clp"></td>
         <td class="cell-actions">${btnFila(key, it.uid, code)}</td>
@@ -2113,7 +2117,7 @@
       ${filtroBar(key)}
       <div class="tabla-contenedor">
         <table class="tbl tbl-apilable${larga ? ' tbl-larga' : ''}" style="min-width:980px">
-          ${larga ? colgroup([64, 0, 210, 120, 96, 170, 96, 130, 48]) : ''}
+          ${larga ? colgroup([64, 0, 210, 120, 96, 200, 96, 130, 48]) : ''}
           <thead><tr>
             <th>ID</th><th>Descripción</th><th>Partida</th>
             <th class="num">Cantidad<span class="th-sub">por unidad de partida</span></th><th>Unidad</th><th class="num">Costo unitario</th>
@@ -3245,6 +3249,8 @@
         case 'af-nombre': await renombrarAF(p); break;
         case 'req-completar': await completarDesdePlanilla(); break;
         case 'precio-ref': await abrirPrecios(d.list, d.uid); break;
+        case 'enlace-ref': await usarEnlace(d.list, d.uid); break;
+        case 'enlace-editar': await editarEnlace(d.list, d.uid); break;
         case 'sens-sesgo': simularSesgo(); break;
         case 'herr-actualizar': if (await asegurarCarpeta()) { QH().olvidar(); await pintarHerramientas(); pintarSesgo(); } break;
         case 'herr-cotizacion': await prepararCotizacion(); break;
@@ -4696,6 +4702,69 @@
       data-tip="${ref ? `<b>Precio de referencia</b>${esc(ref.tipo === 'ultimo' ? 'Última compra' : 'Promedio')} de «${esc(ref.nombre)}», reajustado por UF.` : '<b>Precios de compra de referencia</b>Lo que QUEMPIN pagó por productos parecidos, reajustado por UF (Cotizador Histórico).'}">$</button>`;
   }
   const ref_valor = (it) => (it.precioRef ? num(it.precioRef.valor) : NaN);
+
+  // ---- Enlace de la fuente del costo (paso 3, opcional) ---------------------------------
+  /* Dónde se sacó el costo unitario (la página del proveedor, una cotización en línea). El enlace no se
+     muestra en la tabla: solo el ícono, que lo abre. Se acepta solo http(s); «www.x.cl» pasa a https. */
+  const ENLACE_LISTAS = ['materiales', 'equipos', 'otros'];
+  function enlaceValido(s) {
+    let t = String(s || '').trim();
+    if (!t) return '';
+    if (!/^[a-z][a-z0-9+.-]*:/i.test(t)) t = 'https://' + t.replace(/^\/+/, '');
+    try {
+      const u = new URL(t);
+      return (u.protocol === 'http:' || u.protocol === 'https:') && u.hostname.includes('.') ? u.href : '';
+    } catch (e) { return ''; }
+  }
+  const dominioDe = (url) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return ''; } };
+  function botonEnlace(key, it, code) {
+    if (!ENLACE_LISTAS.includes(key)) return '';
+    const url = enlaceValido(it.enlace);
+    return `<button type="button" class="icon-btn enlace-ref ${url ? 'usado' : ''}" data-act="enlace-ref" data-list="${key}" data-uid="${it.uid}"
+      aria-label="${url ? `Abrir la fuente del costo de ${esc(code)}` : `Agregar enlace de la fuente del costo de ${esc(code)}`}"
+      data-tip="${url ? `<b>Fuente del costo</b>${esc(dominioDe(url))}: clic para abrirla. Para cambiarla, menú ⋯ de la fila.` : '<b>Enlace de la fuente</b>Opcional: dónde se sacó el costo unitario, para poder verificarlo.'}">${ICON.enlace}</button>`;
+  }
+  async function usarEnlace(list, uid) {
+    const it = findItem(list, uid);
+    if (!it) return;
+    const url = enlaceValido(it.enlace);
+    if (url) window.open(url, '_blank', 'noopener');
+    else await editarEnlace(list, uid);
+  }
+  async function editarEnlace(list, uid) {
+    const it = findItem(list, uid);
+    if (!it) return;
+    const ln = state.lineIdx.get(uid);
+    const actual = enlaceValido(it.enlace);
+    const promesa = ask({
+      title: 'Enlace de la fuente',
+      body: `<p>Dónde se sacó el costo unitario de <b>${esc((ln && ln.code) || '')}</b>${it.descripcion ? ` «${esc(it.descripcion)}»` : ''}. En la tabla solo se ve el ícono.</p>
+        <div class="fila-campos"><div class="campo ancho"><label for="enl-url">Enlace</label><input class="input" id="enl-url" type="text" inputmode="url" autocomplete="off" spellcheck="false" value="${esc(actual)}" placeholder="https://…"></div></div>
+        <p class="af-nota" id="enl-err" hidden>Ese enlace no es válido: pega la dirección completa de la página (https://…).</p>`,
+      buttons: [actual ? { label: 'Quitar enlace', value: 'quitar', danger: true, left: true } : null, { label: 'Cancelar' }, { label: 'Guardar', value: 'guardar', primary: true }]
+    });
+    // Enter en el campo guarda; un enlace inválido no cierra la ventana
+    const dlg = $('#modal'), campo = $('#enl-url'), err = $('#enl-err');
+    const guardar = dlg.querySelector('.btn-primario');
+    const revisar = (e) => {
+      if (!campo.value.trim() || enlaceValido(campo.value)) return;
+      e.preventDefault();
+      err.hidden = false;
+      campo.focus();
+    };
+    guardar.addEventListener('click', revisar);
+    campo.addEventListener('keydown', (e) => { if (e.key === 'Enter') { revisar(e); if (!e.defaultPrevented) { e.preventDefault(); guardar.click(); } } });
+    campo.addEventListener('input', () => { err.hidden = true; });
+    const v = await promesa;
+    if (v !== 'guardar' && v !== 'quitar') return;
+    const nuevo = v === 'quitar' ? '' : enlaceValido(campo.value);
+    if (nuevo === actual) return;
+    if (nuevo) it.enlace = nuevo; else delete it.enlace;
+    renderTab(`[data-act="enlace-ref"][data-uid="${uid}"]`);
+    flashRow(uid);
+    scheduleSave();
+    toast(nuevo ? `Enlace guardado (${dominioDe(nuevo)})` : 'Enlace quitado');
+  }
 
   async function abrirPrecios(list, uid) {
     const it = findItem(list, uid);
