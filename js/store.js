@@ -218,7 +218,8 @@
 
   // ---- Cambios de otros ---------------------------------------------------------
   /* Cambios que llegan de la carpeta compartida. borrados: uids cuyo archivo ya
-     no existe. opts.conflicto: la versión llegó mientras había cambios sin subir (opts.local).
+     no existe. opts.conflicto: la versión llegó mientras había cambios sin subir (opts.local), y
+     opts.base es la versión de la que salieron los dos, si se conoce.
      opts.autores / opts.origen: quién y de dónde, para los avisos. En modo local se guardan
      en este navegador. */
   function applyRemote(proyectos, borrados, opts) {
@@ -240,6 +241,7 @@
       emit({
         type: 'remote', ids, autores: Array.from(autores), inicial: !!(opts && opts.inicial),
         conflicto: !!(opts && opts.conflicto), local: (opts && opts.local) || null,
+        base: (opts && opts.base) || null,   // base común de los dos (edición simultánea, js/fusion.js)
         origen: (opts && opts.origen) || ''
       });
     }

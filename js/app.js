@@ -806,8 +806,12 @@
     if (cur && cur !== state.project) { resolverConflicto(cur); return; }
     const okSave = S.upsert(state.project);
     if (!okSave) setSaveState('No se pudo guardar en este navegador: exporta el proyecto', 'err');
-    else showSyncState();
+    else { anotarBase(); showSyncState(); }
   }
+  /* La base del editor: el proyecto abierto tal como quedó guardado por última vez (o como se cargó). Si
+     otra persona (otro equipo, otra pestaña) lo guarda mientras aquí hay cambios sin guardar, los dos
+     salieron de esta base y se juntan contra ella (js/fusion.js). */
+  function anotarBase() { state.base = state.project ? JSON.stringify(state.project) : null; }
   window.addEventListener('beforeunload', () => { if (saveTimer) saveNow(); });
 
   /* Hora de una fecha ISO: «14:15» si es de hoy, «22-10 18:04» si no. */
@@ -843,11 +847,41 @@
     pintarEditorCompartida();
   }
 
-  async function resolverConflicto(cur) {
+  /* Otra persona guardó el proyecto abierto mientras aquí había cambios sin guardar. Edición simultánea
+     (2026-11-10): primero se juntan los cambios de los dos contra la base común; si cambiaron datos
+     distintos, quedan los dos sin preguntar. Si cambiaron el mismo dato, se elige dato por dato. Sin base
+     común, las opciones de siempre. base: la base común que trae la carpeta (si no, la del editor);
+     autores: quién hizo los otros cambios. */
+  async function resolverConflicto(cur, base, autores) {
     if (state.conflicto) return;
+    const mio = state.project;
+    const quienCorto = (autores && autores.length ? autores.join(', ') : '')
+      || (cur.modificadoPor && cur.modificadoPor !== (S.getUser() || {}).email ? cur.modificadoPor : 'otra persona');
+    let baseComun = base || null;
+    if (!baseComun && state.base) { try { baseComun = S.normalize(JSON.parse(state.base)); } catch (e) { baseComun = null; } }
+    const F = window.QFusion;
+    // Mandarlo a la papelera (o sacarlo) no se junta: se decide con las opciones de siempre
+    const papelera = baseComun && (!!cur.eliminado !== !!baseComun.eliminado || !!mio.eliminado !== !!baseComun.eliminado);
+    if (F && baseComun && !papelera) {
+      const f = F.fusionar(baseComun, mio, cur);
+      if (!f.choques.length) { guardarJuntado(mio, f.resultado, `Se juntaron tus cambios con los de ${quienCorto}`); return; }
+      state.conflicto = true;
+      setSaveState('Cambios sin guardar: otra persona modificó este proyecto', 'err');
+      const v = await elegirChoques(f, mio, cur, quienCorto);
+      state.conflicto = false;
+      if (state.project !== mio) return;
+      if (v === 'aplicar') { guardarJuntado(mio, f.resultado, `Se juntaron tus cambios con los de ${quienCorto}`); return; }
+      if (v === 'copia') {
+        const c = copiaDeCambios(mio, ' (mis cambios)');
+        toast(`Tus cambios quedaron en ${c.codigo} v${c.version}`);
+        goProject(c, state.tab);
+        return;
+      }
+      setSaveState('Cambios sin guardar: otra persona modificó este proyecto. Edita algo para decidir.', 'err');
+      return;
+    }
     state.conflicto = true;
     setSaveState('Cambios sin guardar: otra persona modificó este proyecto', 'err');
-    const mio = state.project;
     const quien = cur.modificadoPor && cur.modificadoPor !== (S.getUser() || {}).email ? cur.modificadoPor
       : 'Alguien, en otro equipo o en otra pestaña,';
     const v = await ask({
@@ -870,11 +904,89 @@
     } else setSaveState('Cambios sin guardar: otra persona modificó este proyecto. Edita algo para decidir.', 'err');
   }
 
+  /* Guarda lo de los dos juntos y lo deja abierto. */
+  function guardarJuntado(mio, resultado, msg) {
+    if (state.project !== mio) return;
+    const p = S.normalize(resultado);
+    if (!S.upsert(p)) { setSaveState('No se pudo guardar en este navegador: exporta el proyecto', 'err'); return; }
+    recargarProyecto(S.get(p.uid));
+    toast(msg);
+  }
+
+  // Nombres de los datos de un proyecto, para la lista de choques
+  const LISTAS_FUSION = { partidas: 'Partidas', materiales: 'Materiales', equipos: 'Equipos', manoObra: 'Mano de obra', otros: 'Otros', entregables: 'Entregables', tareas: 'Tareas' };
+  const CAMPOS_FUSION = {
+    titulo: 'Título', cliente: 'Cliente', idLicitacion: 'ID de licitación', ubicacion: 'Ubicación', responsable: 'Responsable', fecha: 'Fecha',
+    estado: 'Estado', descripcion: 'Descripción', categoria: 'Categoría', tipoProyecto: 'Tipo de proyecto', nombre: 'Nombre', tipo: 'Tipo', listo: 'Listo',
+    unidad: 'Unidad', cantidad: 'Cantidad', costoUnitario: 'Costo unitario', partida: 'Partida', utilidadTipo: 'Tipo de utilidad', utilidadValor: 'Utilidad',
+    n1p: 'Nivel 1 · personas', n1d: 'Nivel 1 · días', n2p: 'Nivel 2 · personas', n2d: 'Nivel 2 · días', n3p: 'Nivel 3 · personas', n3d: 'Nivel 3 · días',
+    parametros: 'Parámetros', moneda: 'Moneda', iva: 'IVA', gastosGenerales: 'Gastos generales', imprevistos: 'Imprevistos', tarifaN1: 'Tarifa nivel 1',
+    tarifaN2: 'Tarifa nivel 2', tarifaN3: 'Tarifa nivel 3', margenObjetivo: 'Margen objetivo', margenMinimo: 'Margen mínimo', metaUtilidadDH: 'Meta de utilidad por día-hombre',
+    presupuestoMaximo: 'Presupuesto máximo', presupuestoIncluyeIva: 'Presupuesto incluye IVA', sensibilidad: 'Sensibilidad', catalogoOtros: 'Catálogo de otros',
+    vinculos: 'Vínculos', requerimiento: 'N° de requerimiento', eliminado: 'En la papelera'
+  };
+  /* «Materiales › Flanges de 2'' › Costo unitario» */
+  function etiquetaChoque(ch, mio, cur) {
+    const partes = [];
+    let a = mio, b = cur;
+    ch.ruta.forEach((paso) => {
+      if (paso && typeof paso === 'object') {
+        const x = (Array.isArray(a) && a.find((i) => i && i.uid === paso.uid)) || (Array.isArray(b) && b.find((i) => i && i.uid === paso.uid)) || null;
+        partes.push((x && (x.descripcion || x.nombre)) || 'Ítem sin nombre');
+        a = Array.isArray(a) ? a.find((i) => i && i.uid === paso.uid) : undefined;
+        b = Array.isArray(b) ? b.find((i) => i && i.uid === paso.uid) : undefined;
+      } else {
+        partes.push(LISTAS_FUSION[paso] || CAMPOS_FUSION[paso] || paso);
+        a = a ? a[paso] : undefined;
+        b = b ? b[paso] : undefined;
+      }
+    });
+    return partes.join(' › ');
+  }
+  /* Cómo se ve un valor en la lista de choques. */
+  function valorChoque(ch, lado, proyecto) {
+    const v = ch[lado];
+    if (ch.item) return v === undefined ? '<i>Lo borró</i>' : '<i>Lo cambió</i>';
+    if (v === undefined || v === null || v === '') return '<i>vacío</i>';
+    const campo = ch.ruta[ch.ruta.length - 1];
+    if (campo === 'partida') {
+      const pt = (proyecto.partidas || []).find((x) => x.uid === v);
+      return esc(pt ? pt.descripcion || 'Partida sin nombre' : '—');
+    }
+    if (typeof v === 'boolean') return v ? 'Sí' : 'No';
+    if (typeof v === 'number') return esc(nf(v));
+    if (typeof v === 'object') return '<i>Otros valores</i>';
+    return esc(String(v).length > 80 ? String(v).slice(0, 80) + '…' : v);
+  }
+  /* Los dos cambiaron los mismos datos: se elige uno por uno. Devuelve 'aplicar' (ya aplicado sobre
+     f.resultado), 'copia' o null. */
+  async function elegirChoques(f, mio, cur, quien) {
+    const filas = f.choques.map((ch, i) => `<tr>
+        <td>${esc(etiquetaChoque(ch, mio, cur))}</td>
+        <td><label class="choque-op"><input type="radio" name="choque-${i}" value="mio" checked> ${valorChoque(ch, 'mio', mio)}</label></td>
+        <td><label class="choque-op"><input type="radio" name="choque-${i}" value="suyo"> ${valorChoque(ch, 'suyo', cur)}</label></td></tr>`).join('');
+    const v = await ask({
+      title: 'Cambiaron lo mismo a la vez',
+      wide: true,
+      body: `<p><b>${esc(quien)}</b> cambió ${f.choques.length === 1 ? 'un dato' : f.choques.length + ' datos'} que tú también cambiaste. Elige qué dejar en cada uno ${info('El resto de los cambios de los dos ya está junto. Lo que no elijas como tuyo queda como lo dejó la otra persona.')}</p>
+        <div class="tabla-contenedor"><table class="tbl choques"><thead><tr><th>Dato</th><th>Tuyo</th><th>De ${esc(quien)}</th></tr></thead><tbody>${filas}</tbody></table></div>`,
+      buttons: [{ label: 'Guardar los míos como copia', value: 'copia', left: true }, { label: 'Aplicar', value: 'aplicar', primary: true }]
+    });
+    if (v !== 'aplicar') return v;
+    const dlg = $('#modal');
+    f.choques.forEach((ch, i) => {
+      const r = dlg.querySelector(`input[name="choque-${i}"]:checked`);
+      window.QFusion.aplicarEleccion(f.resultado, ch, r && r.value === 'suyo' ? 'suyo' : 'mio');
+    });
+    return 'aplicar';
+  }
+
   /* Reemplaza el proyecto abierto por su versión guardada, manteniendo la pestaña y el foco. */
   function recargarProyecto(p) {
     if (!p) return;
     const foco = document.activeElement && app.contains(document.activeElement) ? focusKeyOf(document.activeElement) : null;
     state.project = p;
+    anotarBase();
     state.utilUndo = null;
     iniciarHistorial(p); // lo anterior era sobre la versión reemplazada
     recalc();
@@ -1091,6 +1203,7 @@
   // ---------------------------------------------------------------------------
   function route() {
     if (saveTimer) saveNow();
+    if (QC()) QC().alAbrir();   // al salir del proyecto se saca la marca de «está editando»
     // Al salir de un presupuesto, su Excel de la carpeta de la oferta se pone al día de inmediato
     if (state.project && ofertaActiva()) QO().guardarPendientes();
     closePop();
@@ -1465,8 +1578,13 @@
       state.apuOpen = new Set();
       state.utilUndo = null;
     }
+    // La base para juntar cambios simultáneos: el proyecto como llega (guardado). Al cambiar solo de
+    // pestaña es el mismo objeto, quizás con cambios sin guardar, y la base no se toca.
+    const otro = state.project !== p;
     state.project = p;
+    if (otro || !state.base) anotarBase();
     state.tab = valid ? tab : 'ficha';
+    if (QC()) QC().alAbrir();   // la marca de «está editando» se pone al día
     // Al volver al mismo proyecto sin cambios de otros, el historial sigue
     if (hist.uid !== p.uid || fotoProyecto(p) !== hist.actual) iniciarHistorial(p);
     recalc();
@@ -3736,7 +3854,7 @@
         return;
       }
       recargarProyecto(cur);
-      toast(`Actualizado con cambios de ${quien}`);
+      toast(ev.juntado ? `Se juntaron tus cambios con los de ${quien}` : `Actualizado con cambios de ${quien}`);
     } else if (h.startsWith('#/papelera')) renderPapelera();
     else if (/^#\/(req|tag)\//.test(h)) route();
     else if (!h.startsWith('#/guia')) {
@@ -3811,7 +3929,7 @@
     const uid = ev.ids[0];
     const cur = S.get(uid);
     if (!cur) return;
-    if (state.project && state.project.uid === uid) { resolverConflicto(cur); return; }
+    if (state.project && state.project.uid === uid) { resolverConflicto(cur, ev.base, ev.autores); return; }
     if (!ev.local) return;
     const c = copiaDeCambios(ev.local, ' (cambios sin subir)');
     const quien = ev.autores.length ? ev.autores.join(', ') : ev.origen === 'carpeta' ? 'Otro equipo' : 'Otra persona';
@@ -6098,6 +6216,13 @@
           `<button type="button" class="btn btn-sm" data-act="compartir">${ICON.folder}${prob === 'sin-permiso' ? 'Dar permiso' : 'Conectar carpeta'}</button>${BTN_DESCARGAR(p.uid)}`);
       }
     }
+    // Edición simultánea (2026-11-10): quién más tiene abierto este proyecto
+    const otros = !html && compartiendo() ? QC().editando(p.uid) : [];
+    if (otros.length) {
+      const nombres = Array.from(new Set(otros.map((o) => o.usuario)));
+      html = `<div class="nota editando-nota" role="status"><span><strong>${esc(nombres.join(', '))}</strong> también ${nombres.length === 1 ? 'tiene' : 'tienen'} abierto este proyecto ${
+        info('Pueden trabajar a la vez: los cambios de cada uno se juntan solos al sincronizar (cerca de un minuto). Si los dos cambian el mismo dato, se pregunta cuál dejar.')}</span></div>`;
+    }
     if (el.innerHTML !== html) el.innerHTML = html;
   }
 
@@ -6922,7 +7047,7 @@
 
   // Arranque: los proyectos se comparten por la carpeta de OneDrive si este navegador lo activó,
   // y el Excel de cada uno se mantiene al día en la carpeta de su oferta.
-  if (QC()) QC().iniciar();
+  if (QC()) { QC().iniciar(); QC().alAbrir(() => (state.project ? state.project.uid : null)); }
   if (QO()) QO().iniciar();
   route();
 })();

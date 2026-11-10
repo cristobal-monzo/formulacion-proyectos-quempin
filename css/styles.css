@@ -268,6 +268,11 @@ select.is-set { border-color: var(--brand-orange) !important; box-shadow: inset 
 /* Carpeta compartida (proyectos del equipo por OneDrive): aviso en la lista y línea de estado */
 .nota.compartida-nota { align-items: center; }
 .nota.pulso-detenido { border-left-color: var(--status-bad); }   /* procesador del intercambio detenido (js/pulso.js) */
+/* Edición simultánea (2026-11-10): quién más tiene abierto el proyecto, y la lista de choques */
+.nota.editando-nota { align-items: center; border-left-color: var(--status-good); }
+.tbl.choques td { vertical-align: top; }
+.choque-op { display: flex; gap: 6px; align-items: flex-start; cursor: pointer; }
+.choque-op input { margin-top: 3px; }
 .nota > .actions { flex: 0 1 auto; }
 /* Teléfono (2026-10-16): los dos botones del aviso de la carpeta van lado a lado; uno por fila, el
    aviso medía 167 px y es el que más se ve en el teléfono, que no puede conectar la carpeta. */
