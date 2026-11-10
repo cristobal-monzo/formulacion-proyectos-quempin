@@ -1690,12 +1690,29 @@
     const nErr = r.warnings.filter((w) => w.level === 'error').length;
     const nWarn = r.warnings.filter((w) => w.level === 'warn').length;
     const txt = nErr || nWarn ? [nErr ? plural(nErr, 'error', 'errores') : '', nWarn ? plural(nWarn, 'aviso') : ''].filter(Boolean).join(' y ') : 'sin alertas';
-    const iva = nf(num(state.project.parametros.iva));
+    const t = r.totals;
+    const par = state.project.parametros;
+    const tasa = (v) => `${nf(num(v))} %`;
+    const fila = (l, v, cls = '') => `<div class="ld-fila ${cls}"><span>${l}</span><span>${v}</span></div>`;
+    // Al pasar el mouse (o con foco) sobre el neto o la utilidad: el desglose completo hasta el bruto
+    // (pedido del usuario, 2026-11-10: la barra muestra neto, utilidad y alertas; el resto, en el detalle)
+    const detalle = `<div class="lectura-detalle" role="tooltip" id="lectura-detalle">
+        ${fila('Materiales', dinero(t.mat))}${fila('Equipos', dinero(t.eq))}${fila('Mano de obra', dinero(t.mo))}${fila('Otros', dinero(t.otros))}
+        ${fila('Costo directo', dinero(t.cd), 'sub')}
+        ${fila(`Gastos generales${par.aplicaGG === false ? '' : ' ' + tasa(par.gastosGenerales)}`, dinero(t.gg))}
+        ${fila(`Imprevistos${par.aplicaImp === false ? '' : ' ' + tasa(par.imprevistos)}`, dinero(t.imp))}
+        ${fila('Costo total', dinero(t.costoTotal), 'sub')}
+        ${fila('Utilidad', dinero(t.utilidad))}
+        ${fila('Precio neto', dinero(t.precioNeto), 'sub')}
+        ${fila(`IVA ${tasa(par.iva)}`, dinero(t.iva))}
+        ${fila('Precio bruto', dinero(t.precioBruto), 'sub')}
+        ${fila(`<span class="dot ${r.status.margen}" aria-hidden="true" style="margin:0 6px 0 0"></span>Margen (utilidad / neto)`, pct(r.kpis.margen), 'ld-ind ld-sep')}
+        ${fila('Markup (utilidad / costo)', pct(r.kpis.markup), 'ld-ind')}
+      </div>`;
     pintar(el, `
-      <div class="lectura-item"><span class="l">Precio neto</span><span class="v">${dinero(r.totals.precioNeto)}</span></div>
-      <div class="lectura-item" title="Precio neto + IVA ${iva} %: lo que paga el cliente"><span class="l">Precio bruto</span><span class="v">${dinero(r.totals.precioBruto)}</span></div>
-      <div class="lectura-item"><span class="l">Margen</span><span class="v"><span class="dot ${r.status.margen}" aria-hidden="true" style="margin:0"></span>${pct(r.kpis.margen)}</span></div>
-      <div class="lectura-item"><span class="l">Alertas</span><button type="button" class="v" data-menu="alertas" aria-haspopup="menu" aria-expanded="false" aria-label="Alertas: ${txt}. Ver y corregir">${nErr ? `<span class="chip bad">✖ ${nErr}</span>` : ''}${nWarn ? `<span class="chip warn">▲ ${nWarn}</span>` : ''}${!nErr && !nWarn ? '<span class="chip ok">✔ 0</span>' : ''}</button></div>`);
+      <div class="lectura-item con-detalle" tabindex="0" aria-describedby="lectura-detalle"><span class="l">Precio neto</span><span class="v">${dinero(t.precioNeto)}</span></div>
+      <div class="lectura-item con-detalle" tabindex="0" aria-describedby="lectura-detalle"><span class="l">Utilidad</span><span class="v"><span class="dot ${r.status.margen}" aria-hidden="true" style="margin:0"></span>${dinero(t.utilidad)}</span></div>
+      <div class="lectura-item"><span class="l">Alertas</span><button type="button" class="v" data-menu="alertas" aria-haspopup="menu" aria-expanded="false" aria-label="Alertas: ${txt}. Ver y corregir">${nErr ? `<span class="chip bad">✖ ${nErr}</span>` : ''}${nWarn ? `<span class="chip warn">▲ ${nWarn}</span>` : ''}${!nErr && !nWarn ? '<span class="chip ok">✔ 0</span>' : ''}</button></div>${detalle}`);
   }
 
   /* Estado de cada paso: 'ok' (completo), 'err', 'warn' o 'pend', y qué falta para completarlo.
