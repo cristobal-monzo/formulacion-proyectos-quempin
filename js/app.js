@@ -2969,7 +2969,8 @@
       c[el.dataset.k] = readVal(el);
       touched = true;
     } else if (el.dataset.filtro && e.type === 'change') {
-      state.filtro[el.dataset.filtro] = el.value;
+      // El filtro de partida vale para las 4 categorías de costos (2026-11-10)
+      for (const k of Object.keys(state.filtro)) state.filtro[k] = el.value;
       renderTab(`#filtro-${el.dataset.filtro}`);
       return;
     } else if (el.dataset.orden && e.type === 'change') {
@@ -3605,7 +3606,7 @@
           recalc(); renderTab(`[data-menu="fila"][data-uid="${pt.uid}"]`); flashRow(pt.uid); scheduleSave();
           break;
         }
-        case 'ver-costos': state.filtro[state.costoTab] = d.uid; goTab(state.costoTab); break;
+        case 'ver-costos': for (const k of Object.keys(state.filtro)) state.filtro[k] = d.uid; goTab(state.costoTab); break;
         case 'dup-row': {
           const list = d.list;
           const i = p[list].findIndex((x) => x.uid === d.uid);
