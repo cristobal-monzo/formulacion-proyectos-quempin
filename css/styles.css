@@ -598,6 +598,11 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
 .tbl-toolbar .left, .tbl-toolbar .right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .filtro { display: inline-flex; align-items: center; gap: 8px; }
 .filtro label { font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+.buscar-costos { position: relative; display: inline-flex; align-items: center; }
+.buscar-costos svg { position: absolute; left: 10px; width: 15px; height: 15px; fill: none; stroke: var(--text-secondary); stroke-width: 2; stroke-linecap: round; pointer-events: none; }
+.buscar-costos input { min-height: 34px; width: 200px; font-size: 13px; padding: 6px 10px 6px 32px; border: 1px solid var(--gridline); border-radius: 7px; background-color: var(--surface-card); color: inherit; font-family: inherit; }
+.buscar-costos input.is-set { border-color: var(--brand-orange); box-shadow: inset 0 0 0 1px var(--brand-orange); }
+@media (max-width: 720px) { .buscar-costos, .buscar-costos input { width: 100%; } }
 .filtro select { min-height: 34px; font-size: 13px; padding: 6px 30px 6px 10px; border: 1px solid var(--gridline); border-radius: 7px; background-color: var(--surface-card); max-width: 320px; }
 
 /* ---- Selectores propios (partida, unidad, catálogo, menús) ----------------- */
