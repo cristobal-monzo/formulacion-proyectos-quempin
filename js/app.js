@@ -80,6 +80,7 @@
   const svg = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
   const ICON = {
     plus: svg('<path d="M12 5v14M5 12h14"/>'),
+    search: svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>'),
     upload: svg('<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/>'),
     download: svg('<path d="M12 4v12M7 11l5 5 5-5M4 20h16"/>'),
     trash: svg('<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>'),
@@ -130,6 +131,8 @@
     partIdx: new Map(),
     tab: 'ficha',
     filtro: { materiales: '', equipos: '', manoObra: '', otros: '' },
+    buscar: { materiales: '', equipos: '', manoObra: '', otros: '' }, // texto del buscador de cada tabla de costos
+    orden: { materiales: '', equipos: '', manoObra: '', otros: '' }, // '' como se ingresaron · mayor · menor · az
     apuOpen: new Set(),
     kpiOpen: new Set(),
     abiertos: new Set(), // secciones desplegables abiertas (parámetros de la ficha, ayudas)
@@ -1161,6 +1164,8 @@
       return p[b];
     }
     if (t === 'L') { const l = state.lineIdx.get(b); return l ? l[c] : null; }
+    // F:<lista>:<campo>: suma de las filas que se ven con el filtro y el buscador de esa tabla
+    if (t === 'F') return visibles(a).reduce((s, it) => { const l = state.lineIdx.get(it.uid); return s + (l ? num(l[b]) : 0); }, 0);
     return null;
   }
   function updateCalc() {
@@ -1575,6 +1580,8 @@
     const valid = TABS.some((t) => t.id === tab);
     if (!state.project || state.project.uid !== p.uid) {
       state.filtro = { materiales: '', equipos: '', manoObra: '', otros: '' };
+      state.buscar = { materiales: '', equipos: '', manoObra: '', otros: '' };
+      state.orden = { materiales: '', equipos: '', manoObra: '', otros: '' };
       state.apuOpen = new Set();
       state.utilUndo = null;
     }
@@ -2153,25 +2160,57 @@
     const p = state.project;
     const cfg = DETALLE[key];
     const f = state.filtro[key];
+    const q = state.buscar[key] || '';
+    const o = state.orden[key] || '';
     return `<div class="tbl-toolbar">
       <div class="left">
         <button type="button" class="btn btn-primario btn-sm" data-act="add-row" data-list="${key}">${ICON.plus}Agregar ${cfg.singular}</button>
         ${key === 'otros' ? `<button type="button" class="btn btn-sm" data-menu="catalogo" data-align="left" aria-haspopup="menu" aria-expanded="false">Agregar desde catálogo${ICON.caret}</button>` : ''}
         ${key !== 'manoObra' && window.QPegar ? `<button type="button" class="btn btn-sm" data-act="pegar-filas" data-list="${key}" data-tip="<b>Pegar desde Excel</b>Filas copiadas de una planilla de formulación, de cualquier Excel o de la cotización del Cotizador Histórico: descripción, unidad, cantidad y costo unitario.">${ICON.sheet}Pegar desde Excel</button>` : ''}
       </div>
-      ${p.partidas.length > 1 ? `<div class="right">
-        <div class="filtro"><label for="filtro-${key}">Mostrar</label>
+      <div class="right">
+        <div class="buscar-costos">${ICON.search}<input type="search" id="buscar-${key}" data-buscar="${key}" class="${q ? 'is-set' : ''}" placeholder="Buscar" aria-label="Buscar ${cfg.titulo.toLowerCase()} por descripción o ID" value="${esc(q)}" autocomplete="off"></div>
+        <div class="filtro"><label for="orden-${key}">Ordenar</label>
+          <select id="orden-${key}" data-orden="${key}" class="${o ? 'is-set' : ''}">
+            ${ORDENES.map(([v, t]) => `<option value="${v}" ${o === v ? 'selected' : ''}>${t}</option>`).join('')}
+          </select></div>
+        ${p.partidas.length > 1 ? `<div class="filtro"><label for="filtro-${key}">Mostrar</label>
           <select id="filtro-${key}" data-filtro="${key}" class="${f ? 'is-set' : ''}">
             <option value="">Todas las partidas</option>
             ${p.partidas.map((pt) => `<option value="${pt.uid}" ${f === pt.uid ? 'selected' : ''}>${codP(pt.uid)} · ${esc(pt.descripcion || 'Sin descripción')}${pt.base ? ' (partida base)' : ''}</option>`).join('')}
             <option value="__none__" ${f === '__none__' ? 'selected' : ''}>Sin partida asociada</option>
-          </select></div>
-      </div>` : ''}
+          </select></div>` : ''}
+      </div>
     </div>`;
   }
+  const ORDENES = [['', 'Como se ingresaron'], ['mayor', 'Mayor a menor costo'], ['menor', 'Menor a mayor costo'], ['az', 'Alfabético (A → Z)']];
   function filtered(key) {
     const f = state.filtro[key];
     return state.project[key].filter((it) => !f || (f === '__none__' ? !partidasDe(it).some((u) => state.partIdx.has(u)) : partidasDe(it).includes(f)));
+  }
+  /* Filas que muestra la tabla (2026-11-10): las de la partida elegida, que calzan con el buscador
+     (descripción o ID, sin importar tildes ni mayúsculas), en el orden elegido. El ID (M1, E3…) no cambia
+     al ordenar. Con filtro o búsqueda, el total de abajo suma solo estas filas. */
+  const hayFiltro = (key) => !!(state.filtro[key] || String(state.buscar[key] || '').trim());
+  function visibles(key) {
+    const q = norm(String(state.buscar[key] || '').trim());
+    const sub = (it) => num((state.lineIdx.get(it.uid) || {}).subtotal);
+    let items = filtered(key);
+    if (q) items = items.filter((it) => norm(`${(state.lineIdx.get(it.uid) || {}).code || ''} ${it.descripcion || ''}`).includes(q));
+    const o = state.orden[key];
+    if (o === 'mayor') items = items.slice().sort((a, b) => sub(b) - sub(a));
+    else if (o === 'menor') items = items.slice().sort((a, b) => sub(a) - sub(b));
+    else if (o === 'az') {
+      // Las filas sin descripción van al final
+      const d = (it) => String(it.descripcion || '').trim();
+      items = items.slice().sort((a, b) => (!d(a) - !d(b)) || d(a).localeCompare(d(b), 'es', { sensitivity: 'base', numeric: true }));
+    }
+    return items;
+  }
+  /* Etiqueta del total de una tabla de costos: con filtro dice cuántas filas suma */
+  function etiquetaTotal(key, nombre) {
+    if (!hayFiltro(key)) return `Total ${nombre} del proyecto`;
+    return `Total ${nombre} filtrado <span class="muted">· ${visibles(key).length} de ${state.project[key].length}</span>`;
   }
   function sinPartidasNote() {
     return state.project.partidas.length ? '' :
@@ -2214,7 +2253,7 @@
 
   function viewDetalle(key) {
     const cfg = DETALLE[key];
-    const items = filtered(key);
+    const items = visibles(key);
     const larga = items.length > FILAS_TABLA_LARGA;
     const rows = items.map((it) => {
       const ln = state.lineIdx.get(it.uid);
@@ -2241,8 +2280,8 @@
             <th class="num">Cantidad<span class="th-sub">por unidad de partida</span></th><th>Unidad</th><th class="num">Costo unitario</th>
             <th class="num">× Partida<span class="th-sub">su cantidad</span></th><th class="num">Subtotal</th><th><span class="visualmente-oculto">Acciones</span></th>
           </tr></thead>
-          <tbody>${rows || `<tr class="empty-row"><td colspan="9">${state.filtro[key] ? 'No hay ítems con este filtro.' : `Sin ${cfg.titulo.toLowerCase()} todavía. <button type="button" class="link-btn" data-act="add-row" data-list="${key}">Agregar el primero</button>`}</td></tr>`}</tbody>
-          <tfoot><tr><td></td><td colspan="6"><span class="swatch ${cfg.cat}" style="vertical-align:-1px;margin-right:8px"></span>Total ${cfg.titulo.toLowerCase()} del proyecto</td><td class="num" data-label="Total" data-c="T:${cfg.total}" data-fmt="clp"></td><td></td></tr></tfoot>
+          <tbody>${rows || `<tr class="empty-row"><td colspan="9">${hayFiltro(key) ? 'No hay ítems con este filtro.' : `Sin ${cfg.titulo.toLowerCase()} todavía. <button type="button" class="link-btn" data-act="add-row" data-list="${key}">Agregar el primero</button>`}</td></tr>`}</tbody>
+          <tfoot><tr><td></td><td colspan="6"><span class="swatch ${cfg.cat}" style="vertical-align:-1px;margin-right:8px"></span>${etiquetaTotal(key, cfg.titulo.toLowerCase())}</td><td class="num" data-label="Total" data-c="${hayFiltro(key) ? `F:${key}:subtotal` : `T:${cfg.total}`}" data-fmt="clp"></td><td></td></tr></tfoot>
         </table>
       </div>`;
   }
@@ -2251,7 +2290,7 @@
   function viewManoObra() {
     const key = 'manoObra';
     const par = state.project.parametros;
-    const items = filtered(key);
+    const items = visibles(key);
     const larga = items.length > FILAS_TABLA_LARGA;
     const rows = items.map((it) => {
       const ln = state.lineIdx.get(it.uid);
@@ -2279,9 +2318,10 @@
           ${larga ? colgroup([64, 0, 210, 140, 140, 140, 120, 130, 48]) : ''}
           <thead><tr><th>ID</th><th>Tarea</th><th>Partida</th>${nivel(1, par.tarifaN1)}${nivel(2, par.tarifaN2)}${nivel(3, par.tarifaN3)}
             <th class="num">Días-hombre</th><th class="num">Subtotal</th><th><span class="visualmente-oculto">Acciones</span></th></tr></thead>
-          <tbody>${rows || `<tr class="empty-row"><td colspan="9">${state.filtro[key] ? 'No hay tareas con este filtro.' : 'Sin tareas de mano de obra todavía. <button type="button" class="link-btn" data-act="add-row" data-list="manoObra">Agregar la primera</button>'}</td></tr>`}</tbody>
-          <tfoot><tr><td></td><td colspan="5"><span class="swatch cat-mo" style="vertical-align:-1px;margin-right:8px"></span>Total mano de obra · costo promedio por día-hombre: <span data-c="K:costoMODH" data-fmt="clp"></span></td>
-            <td class="num" data-label="Días-hombre" data-c="T:dh" data-fmt="num"></td><td class="num" data-label="Total" data-c="T:mo" data-fmt="clp"></td><td></td></tr></tfoot>
+          <tbody>${rows || `<tr class="empty-row"><td colspan="9">${hayFiltro(key) ? 'No hay tareas con este filtro.' : 'Sin tareas de mano de obra todavía. <button type="button" class="link-btn" data-act="add-row" data-list="manoObra">Agregar la primera</button>'}</td></tr>`}</tbody>
+          <tfoot><tr><td></td><td colspan="5"><span class="swatch cat-mo" style="vertical-align:-1px;margin-right:8px"></span>${hayFiltro(key) ? etiquetaTotal(key, 'mano de obra')
+            : 'Total mano de obra · costo promedio por día-hombre: <span data-c="K:costoMODH" data-fmt="clp"></span>'}</td>
+            <td class="num" data-label="Días-hombre" data-c="${hayFiltro(key) ? 'F:manoObra:dh' : 'T:dh'}" data-fmt="num"></td><td class="num" data-label="Total" data-c="${hayFiltro(key) ? 'F:manoObra:subtotal' : 'T:mo'}" data-fmt="clp"></td><td></td></tr></tfoot>
         </table>
       </div>`;
   }
@@ -2915,6 +2955,25 @@
       state.filtro[el.dataset.filtro] = el.value;
       renderTab(`#filtro-${el.dataset.filtro}`);
       return;
+    } else if (el.dataset.orden && e.type === 'change') {
+      state.orden[el.dataset.orden] = el.value;
+      renderTab(`#orden-${el.dataset.orden}`);
+      return;
+    } else if (el.dataset.buscar) {
+      // Se redibuja al dejar de escribir (con miles de filas, redibujar en cada tecla se nota)
+      const key = el.dataset.buscar;
+      clearTimeout(state.buscarTimer);
+      state.buscarTimer = setTimeout(() => {
+        const ahora = $(`#buscar-${key}`);
+        if (!ahora || !state.project || state.tab !== key) return;
+        if (state.buscar[key] === ahora.value) return;
+        state.buscar[key] = ahora.value;
+        const pos = ahora.selectionStart;
+        renderTab();
+        const nuevo = $(`#buscar-${key}`);
+        if (nuevo) { nuevo.focus(); try { nuevo.setSelectionRange(pos, pos); } catch (er) { /* sin cursor */ } }
+      }, e.type === 'change' ? 0 : 180);
+      return;
     }
     if (touched) {
       recalc();
@@ -2986,6 +3045,8 @@
   function addRow(list, focusField) {
     const p = state.project;
     let it;
+    // La fila nueva, vacía, no calzaría con la búsqueda y quedaría oculta
+    if (state.buscar && state.buscar[list]) state.buscar[list] = '';
     if (list === 'partidas') {
       it = S.newPartida();
       const last = cotizables(p).pop(); // la utilidad de la partida anterior (la base no tiene)
