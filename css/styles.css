@@ -452,7 +452,8 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
 }
 .barra-pestanas-interior { display: flex; align-items: center; gap: 0 20px; flex-wrap: wrap; }
 /* Pasos del editor: número (✓ al completarse, ! con errores), nombre y cantidad */
-.pasos-bar { display: flex; align-items: center; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; margin: 0 0 -1px -10px; }
+/* 2026-11-10: sin desplazamiento horizontal; si los pasos no caben, bajan a otra línea y la franja crece */
+.pasos-bar { display: flex; align-items: center; flex-wrap: wrap; flex: 1 1 auto; min-width: 0; margin: 0 0 -1px -10px; }
 .pasos-bar::-webkit-scrollbar { display: none; }
 .paso-tab {
   display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; min-height: 48px;
@@ -491,6 +492,18 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
   .paso-tab { padding-left: 8px; padding-right: 8px; gap: 7px; }
   .paso-sep { flex-basis: 10px; }
   .lectura-item { padding: 0 10px; }
+}
+/* Pantallas medianas: pasos más compactos para que quepan en la misma fila que la lectura */
+@media (min-width: 1061px) and (max-width: 1500px) {
+  .paso-tab { padding-left: 5px; padding-right: 5px; gap: 5px; font-size: 12.5px; }
+  .paso-sep { flex-basis: 6px; }
+  .lectura-item { padding: 0 8px; }
+  .lectura-item .v { font-size: 14px; }
+}
+@media (min-width: 1061px) and (max-width: 1280px) {
+  .barra-pestanas-interior { flex-wrap: wrap; }
+  .lectura { order: -1; width: 100%; padding-top: 8px; }
+  .lectura-item { flex: 1 1 0; }
 }
 
 /* ---- Encabezado del editor ------------------------------------------------ */
