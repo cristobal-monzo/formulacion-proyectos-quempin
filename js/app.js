@@ -1255,6 +1255,11 @@
       state.list.q = clave;
       state.avisoLista = { tipo, clave, n: ps.length };
       renderList();
+      // «Formular» desde el Portal (#/req/N/crear): sin proyecto de ese N°, abre directo el diálogo de nuevo proyecto
+      if (tipo === 'req' && parts[2] === 'crear' && !ps.length && /^\d{1,6}$/.test(clave)) {
+        history.replaceState(null, '', `#/req/${encodeURIComponent(clave)}`);
+        (async () => { if (await exigirCarpeta()) await crearProyectoLocal({ numero: clave }); })();
+      }
     } else if (parts[0] === 'papelera') {
       state.project = null;
       renderPapelera();
@@ -6391,11 +6396,28 @@
       } catch (err) { console.warn('Carpetas de oferta:', err); lista = null; }
     }
     let pl = null;
-    const cargaPlanilla = planillaPublicada().catch(() => null);
-    // Los N° ya pedidos a la Planilla que todavía esperan en el buzón (nuevo-requerimiento): no se repiten
+    const cargaBuzon = Promise.resolve(QI() ? QI().leerBuzon({ tipos: ['nuevo-requerimiento'] }) : []).catch(() => []);
+    // Lo ingresado en Requerimientos del Portal que todavía no llega al Excel ya es un requerimiento, con N° provisorio
+    // (2026-11-11, «Formular →» del Portal): se formula como una fila más. Si dos tomaron el mismo N°, el primero enviado.
+    const delPortal = (m) => ((m && m.fuente) || {}).herramienta === 'portal' && !!(m.requerimiento && m.requerimiento.numero);
+    const cargaPlanilla = Promise.all([planillaPublicada().catch(() => null), cargaBuzon]).then(([m, l]) => {
+      const pend = (l || []).filter(delPortal).sort((a, b) => String((a.origen || {}).enviado || '').localeCompare(String((b.origen || {}).enviado || '')));
+      if (!m || !pend.length) return m;
+      const out = new Map(m);
+      pend.forEach((x) => {
+        const r = x.requerimiento, k = String(r.numero);
+        if (out.has(k)) return;
+        const cierre = r.cierre ? new Date(r.cierre) : null;
+        out.set(k, { numero: k, estado: r.estado || '', titulo: r.titulo || '', ubicacion: r.ubicacion || '', referencia: r.referencia || '',
+          cierre: cierre && !isNaN(cierre) ? cierre : null, presupuesto: typeof r.presupuesto === 'number' && r.presupuesto > 0 ? r.presupuesto : null,
+          evaluador: r.evaluador || '', provisorio: true, pedido: String(x.id || '') });
+      });
+      return out;
+    });
+    // Los N° que el Formulador ya pidió a la Planilla y todavía esperan en el buzón (nuevo-requerimiento): no se repiten
     let reservas = null;      // N° → título; null = todavía no se leen
-    const cargaReservas = Promise.resolve(QI() ? QI().leerBuzon({ tipos: ['nuevo-requerimiento'] }) : []).catch(() => [])
-      .then((l) => new Map((l || []).map((m) => [String((m.requerimiento || {}).numero), String((m.requerimiento || {}).titulo || '')])));
+    const cargaReservas = cargaBuzon
+      .then((l) => new Map((l || []).filter((m) => !delPortal(m)).map((m) => [String((m.requerimiento || {}).numero), String((m.requerimiento || {}).titulo || '')])));
     let registrar = true;     // «registrar en la Planilla de Ingreso» un proyecto cuyo N° no está en ella (2026-10-26)
     const pedirIniciales = !yo();
     let opcion = '';      // la opción elegida a mano ('crear' | 'usar' | 'ninguna'); '' = la propuesta
@@ -6603,7 +6625,9 @@
     const np = S.newProject();
     if (d.titulo) np.titulo = d.titulo;
     // El N° escrito une el proyecto con la planilla aunque no tenga carpeta
-    if (d.numero && /^\d{1,6}$/.test(d.numero)) np.vinculos = Object.assign({}, np.vinculos, { requerimiento: { numero: d.numero, titulo: (d.req && d.req.titulo) || '' } });
+    // Con N° provisorio (todavía en el buzón, ingresado en el Portal) guarda el id del pedido: con él se sabrá el N° definitivo
+    if (d.numero && /^\d{1,6}$/.test(d.numero)) np.vinculos = Object.assign({}, np.vinculos, { requerimiento: Object.assign({ numero: d.numero, titulo: (d.req && d.req.titulo) || '' },
+      d.req && d.req.provisorio && d.req.pedido ? { pedido: d.req.pedido } : {}) });
     enOfertaLocal(np, sel, { datosOferta: true });
     const hechos = op ? QOp().aplicar(np, op, monedaDe(np)) : [];
     if (op) ajustarCodigo(np, d.numero);
