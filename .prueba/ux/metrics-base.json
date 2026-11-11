@@ -1,0 +1,614 @@
+{
+ "desk": {
+  "secciones": {
+   "inicio": [
+    {
+     "words": 131,
+     "screens": 1,
+     "ctrlFold": 3,
+     "ctrlTotal": 3,
+     "primary": 3,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "vacio-partidas": [
+    {
+     "words": 117,
+     "screens": 1,
+     "ctrlFold": 15,
+     "ctrlTotal": 15,
+     "primary": 2,
+     "overflow": 0,
+     "small": 3,
+     "unnamed": 0,
+     "jargon": 1,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": [
+      "back:768x19",
+      "estado:83x21",
+      "v:48x21"
+     ]
+    }
+   ],
+   "vacio-costos": [
+    {
+     "words": 112,
+     "screens": 1,
+     "ctrlFold": 16,
+     "ctrlTotal": 16,
+     "primary": 2,
+     "overflow": 0,
+     "small": 3,
+     "unnamed": 0,
+     "jargon": 4,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": [
+      "back:768x19",
+      "estado:83x21",
+      "v:48x21"
+     ]
+    }
+   ],
+   "ficha": [
+    {
+     "words": 240,
+     "screens": 1.64,
+     "ctrlFold": 48,
+     "ctrlTotal": 57,
+     "primary": 1,
+     "overflow": 0,
+     "small": 7,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": [
+      "back:768x19",
+      "estado:83x21",
+      "v:48x21",
+      "combo-btn:22x30",
+      "combo-btn:22x30",
+      "combo-btn:22x30",
+      "combo-btn:22x30"
+     ]
+    }
+   ],
+   "partidas": [
+    {
+     "words": 142,
+     "screens": 1,
+     "ctrlFold": 36,
+     "ctrlTotal": 36,
+     "primary": 2,
+     "overflow": 0,
+     "small": 6,
+     "unnamed": 0,
+     "jargon": 1,
+     "dupPrecio": 2,
+     "dupMargen": 1,
+     "smallList": [
+      "back:768x19",
+      "estado:83x21",
+      "v:48x21",
+      "combo-btn:22x30",
+      "combo-btn:22x30",
+      "combo-btn:22x30"
+     ]
+    }
+   ],
+   "materiales": [
+    {
+     "words": 129,
+     "screens": 1,
+     "ctrlFold": 39,
+     "ctrlTotal": 39,
+     "primary": 2,
+     "overflow": 0,
+     "small": 6,
+     "unnamed": 0,
+     "jargon": 4,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": [
+      "back:768x19",
+      "estado:83x21",
+      "v:48x21",
+      "combo-btn:22x30",
+      "combo-btn:22x30",
+      "combo-btn:22x30"
+     ]
+    }
+   ],
+   "manoObra": [
+    {
+     "words": 152,
+     "screens": 1,
+     "ctrlFold": 46,
+     "ctrlTotal": 46,
+     "primary": 2,
+     "overflow": 1,
+     "small": 3,
+     "unnamed": 0,
+     "jargon": 6,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": [
+      "back:768x19",
+      "estado:83x21",
+      "v:48x21"
+     ]
+    }
+   ],
+   "otros": [
+    {
+     "words": 137,
+     "screens": 1,
+     "ctrlFold": 48,
+     "ctrlTotal": 48,
+     "primary": 2,
+     "overflow": 0,
+     "small": 7,
+     "unnamed": 0,
+     "jargon": 4,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": [
+      "back:768x19",
+      "estado:83x21",
+      "v:48x21",
+      "combo-btn:22x30",
+      "combo-btn:22x30",
+      "combo-btn:22x30",
+      "combo-btn:22x30"
+     ]
+    }
+   ],
+   "resumen": [
+    {
+     "words": 806,
+     "screens": 3.27,
+     "ctrlFold": 41,
+     "ctrlTotal": 65,
+     "primary": 1,
+     "overflow": 0,
+     "small": 26,
+     "unnamed": 0,
+     "jargon": 11,
+     "dupPrecio": 7,
+     "dupMargen": 9,
+     "smallList": [
+      "back:768x19",
+      "estado:83x21",
+      "v:48x21",
+      "ir:71x18",
+      "info-icon:15x15",
+      "info-icon:15x15",
+      "info-icon:15x15",
+      "info-icon:15x15",
+      "info-icon:15x15",
+      "link-btn:106x19",
+      "copiar-txt:49x17",
+      "copiar-txt:49x17",
+      "SUMMARY:336x18",
+      "SUMMARY:336x18",
+      "SUMMARY:336x18",
+      "SUMMARY:336x18",
+      "SUMMARY:336x18",
+      "SUMMARY:336x18",
+      "SUMMARY:336x18",
+      "link-btn no-print:98x18",
+      "SUMMARY:336x18",
+      "INPUT:288x16",
+      "INPUT:288x16",
+      "INPUT:288x16",
+      "INPUT:288x16",
+      "ir no-print:75x20"
+     ]
+    }
+   ],
+   "listado": [
+    {
+     "words": 163,
+     "screens": 1.05,
+     "ctrlFold": 26,
+     "ctrlTotal": 26,
+     "primary": 1,
+     "overflow": 0,
+     "small": 3,
+     "unnamed": 0,
+     "jargon": 1,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": [
+      "info-icon:15x15",
+      "info-icon:15x15",
+      "info-icon:15x15"
+     ]
+    }
+   ],
+   "guia": [
+    {
+     "words": 1149,
+     "screens": 3.12,
+     "ctrlFold": 0,
+     "ctrlTotal": 0,
+     "primary": 0,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 12,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "papelera": [
+    {
+     "words": 21,
+     "screens": 1,
+     "ctrlFold": 1,
+     "ctrlTotal": 1,
+     "primary": 0,
+     "overflow": 0,
+     "small": 1,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": [
+      "back:70x19"
+     ]
+    }
+   ],
+   "config": [
+    {
+     "words": 55,
+     "screens": 1,
+     "ctrlFold": 6,
+     "ctrlTotal": 6,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 1,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ]
+  },
+  "tabsNuevo": [
+   "ficha",
+   "partidas",
+   "materiales",
+   "equipos",
+   "manoObra",
+   "otros",
+   "resumen"
+  ],
+  "tabs": [
+   "ficha",
+   "partidas",
+   "materiales",
+   "equipos",
+   "manoObra",
+   "otros",
+   "resumen"
+  ],
+  "errores": []
+ },
+ "mob": {
+  "secciones": {
+   "inicio": [
+    {
+     "words": 131,
+     "screens": 1.42,
+     "ctrlFold": 2,
+     "ctrlTotal": 3,
+     "primary": 3,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "vacio-partidas": [
+    {
+     "words": 117,
+     "screens": 1.36,
+     "ctrlFold": 15,
+     "ctrlTotal": 15,
+     "primary": 2,
+     "overflow": 1,
+     "small": 3,
+     "unnamed": 0,
+     "jargon": 1,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": [
+      "back:350x19",
+      "estado:83x21",
+      "v:105x21"
+     ]
+    }
+   ],
+   "vacio-costos": [
+    {
+     "words": 112,
+     "screens": 1.47,
+     "ctrlFold": 16,
+     "ctrlTotal": 16,
+     "primary": 2,
+     "overflow": 1,
+     "small": 3,
+     "unnamed": 0,
+     "jargon": 4,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": [
+      "back:350x19",
+      "estado:83x21",
+      "v:105x21"
+     ]
+    }
+   ],
+   "ficha": [
+    {
+     "words": 240,
+     "screens": 4.23,
+     "ctrlFold": 15,
+     "ctrlTotal": 57,
+     "primary": 1,
+     "overflow": 1,
+     "small": 7,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": [
+      "back:350x19",
+      "estado:83x21",
+      "v:105x21",
+      "combo-btn:22x30",
+      "combo-btn:22x30",
+      "combo-btn:22x30",
+      "combo-btn:22x30"
+     ]
+    }
+   ],
+   "partidas": [
+    {
+     "words": 142,
+     "screens": 1.52,
+     "ctrlFold": 15,
+     "ctrlTotal": 36,
+     "primary": 2,
+     "overflow": 1,
+     "small": 6,
+     "unnamed": 0,
+     "jargon": 1,
+     "dupPrecio": 2,
+     "dupMargen": 1,
+     "smallList": [
+      "back:350x19",
+      "estado:83x21",
+      "v:105x21",
+      "combo-btn:22x30",
+      "combo-btn:22x30",
+      "combo-btn:22x30"
+     ]
+    }
+   ],
+   "materiales": [
+    {
+     "words": 129,
+     "screens": 1.47,
+     "ctrlFold": 15,
+     "ctrlTotal": 39,
+     "primary": 2,
+     "overflow": 1,
+     "small": 6,
+     "unnamed": 0,
+     "jargon": 4,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": [
+      "back:350x19",
+      "estado:83x21",
+      "v:105x21",
+      "combo-btn:22x30",
+      "combo-btn:22x30",
+      "combo-btn:22x30"
+     ]
+    }
+   ],
+   "manoObra": [
+    {
+     "words": 152,
+     "screens": 1.58,
+     "ctrlFold": 16,
+     "ctrlTotal": 46,
+     "primary": 2,
+     "overflow": 1,
+     "small": 3,
+     "unnamed": 0,
+     "jargon": 6,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": [
+      "back:350x19",
+      "estado:83x21",
+      "v:105x21"
+     ]
+    }
+   ],
+   "otros": [
+    {
+     "words": 137,
+     "screens": 1.51,
+     "ctrlFold": 16,
+     "ctrlTotal": 48,
+     "primary": 2,
+     "overflow": 1,
+     "small": 7,
+     "unnamed": 0,
+     "jargon": 4,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": [
+      "back:350x19",
+      "estado:83x21",
+      "v:105x21",
+      "combo-btn:22x30",
+      "combo-btn:22x30",
+      "combo-btn:22x30",
+      "combo-btn:22x30"
+     ]
+    }
+   ],
+   "resumen": [
+    {
+     "words": 806,
+     "screens": 7.48,
+     "ctrlFold": 15,
+     "ctrlTotal": 65,
+     "primary": 1,
+     "overflow": 2,
+     "small": 26,
+     "unnamed": 0,
+     "jargon": 11,
+     "dupPrecio": 7,
+     "dupMargen": 9,
+     "smallList": [
+      "back:350x19",
+      "estado:83x21",
+      "v:105x21",
+      "ir:71x18",
+      "info-icon:15x15",
+      "info-icon:15x15",
+      "info-icon:15x15",
+      "info-icon:15x15",
+      "info-icon:15x15",
+      "link-btn:106x19",
+      "copiar-txt:49x17",
+      "copiar-txt:49x17",
+      "SUMMARY:314x18",
+      "SUMMARY:314x18",
+      "SUMMARY:314x18",
+      "SUMMARY:314x18",
+      "SUMMARY:314x18",
+      "SUMMARY:314x18",
+      "SUMMARY:314x18",
+      "link-btn no-print:98x18",
+      "SUMMARY:314x18",
+      "INPUT:316x16",
+      "INPUT:316x16",
+      "INPUT:316x16",
+      "INPUT:316x16",
+      "ir no-print:75x20"
+     ]
+    }
+   ],
+   "listado": [
+    {
+     "words": 163,
+     "screens": 1.98,
+     "ctrlFold": 6,
+     "ctrlTotal": 26,
+     "primary": 1,
+     "overflow": 1,
+     "small": 3,
+     "unnamed": 0,
+     "jargon": 1,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": [
+      "info-icon:15x15",
+      "info-icon:15x15",
+      "info-icon:15x15"
+     ]
+    }
+   ],
+   "guia": [
+    {
+     "words": 1149,
+     "screens": 8.04,
+     "ctrlFold": 0,
+     "ctrlTotal": 0,
+     "primary": 0,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 12,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "papelera": [
+    {
+     "words": 21,
+     "screens": 1,
+     "ctrlFold": 1,
+     "ctrlTotal": 1,
+     "primary": 0,
+     "overflow": 0,
+     "small": 1,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": [
+      "back:70x19"
+     ]
+    }
+   ],
+   "config": [
+    {
+     "words": 55,
+     "screens": 1,
+     "ctrlFold": 6,
+     "ctrlTotal": 6,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 1,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ]
+  },
+  "tabsNuevo": [
+   "ficha",
+   "partidas",
+   "materiales",
+   "equipos",
+   "manoObra",
+   "otros",
+   "resumen"
+  ],
+  "tabs": [
+   "ficha",
+   "partidas",
+   "materiales",
+   "equipos",
+   "manoObra",
+   "otros",
+   "resumen"
+  ],
+  "errores": []
+ }
+}

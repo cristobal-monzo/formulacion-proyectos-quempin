@@ -1,0 +1,8 @@
+{
+  "name": "quempin-pruebas",
+  "private": true,
+  "description": "La versión de playwright-core con la que pasan las suites del Formulador (2026-11-06). Se instala fuera de OneDrive: ver LEEME.md.",
+  "dependencies": {
+    "playwright-core": "1.63.0"
+  }
+}

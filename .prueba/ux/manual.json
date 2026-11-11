@@ -1,0 +1,7 @@
+{
+  "nota": "U1 clics ruta más corta (T1..T5); U5 transiciones sin siguiente paso; U6 tareas con rodeo o efecto colateral; C1 criterios de claridad no cumplidos (de 91)",
+  "base": { "U1": 17, "U5": 3, "U6": 2, "C1": 33,
+    "detalle": { "T1": 5, "T2": 3, "T3": 4, "T4": 2, "T5": 3 } },
+  "actual": { "U1": 16, "U5": 0, "U6": 0, "C1": 0,
+    "detalle": { "T1": 5, "T2": 3, "T3": 3, "T4": 2, "T5": 3 } }
+}

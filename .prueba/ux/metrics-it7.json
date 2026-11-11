@@ -1,0 +1,484 @@
+{
+ "desk": {
+  "secciones": {
+   "inicio": [
+    {
+     "words": 110,
+     "screens": 1,
+     "ctrlFold": 4,
+     "ctrlTotal": 4,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "vacio-partidas": [
+    {
+     "words": 91,
+     "screens": 1,
+     "ctrlFold": 14,
+     "ctrlTotal": 14,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "vacio-costos": [
+    {
+     "words": 122,
+     "screens": 1.04,
+     "ctrlFold": 19,
+     "ctrlTotal": 19,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "ficha": [
+    {
+     "words": 181,
+     "screens": 1.22,
+     "ctrlFold": 25,
+     "ctrlTotal": 26,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": []
+    }
+   ],
+   "partidas": [
+    {
+     "words": 105,
+     "screens": 1,
+     "ctrlFold": 28,
+     "ctrlTotal": 28,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 2,
+     "dupMargen": 1,
+     "smallList": []
+    }
+   ],
+   "materiales": [
+    {
+     "words": 132,
+     "screens": 1.03,
+     "ctrlFold": 39,
+     "ctrlTotal": 39,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": []
+    }
+   ],
+   "manoObra": [
+    {
+     "words": 154,
+     "screens": 1.07,
+     "ctrlFold": 45,
+     "ctrlTotal": 45,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": []
+    }
+   ],
+   "otros": [
+    {
+     "words": 146,
+     "screens": 1.08,
+     "ctrlFold": 47,
+     "ctrlTotal": 47,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": []
+    }
+   ],
+   "resumen": [
+    {
+     "words": 271,
+     "screens": 1.48,
+     "ctrlFold": 33,
+     "ctrlTotal": 39,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 3,
+     "dupMargen": 5,
+     "smallList": []
+    },
+    {
+     "words": 360,
+     "screens": 1.84,
+     "ctrlFold": 20,
+     "ctrlTotal": 35,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 1,
+     "dupMargen": 3,
+     "smallList": []
+    }
+   ],
+   "listado": [
+    {
+     "words": 114,
+     "screens": 1,
+     "ctrlFold": 25,
+     "ctrlTotal": 25,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "guia": [
+    {
+     "words": 401,
+     "screens": 1.92,
+     "ctrlFold": 0,
+     "ctrlTotal": 14,
+     "primary": 0,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "papelera": [
+    {
+     "words": 21,
+     "screens": 1,
+     "ctrlFold": 1,
+     "ctrlTotal": 1,
+     "primary": 0,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "config": [
+    {
+     "words": 57,
+     "screens": 1,
+     "ctrlFold": 15,
+     "ctrlTotal": 15,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ]
+  },
+  "tabsNuevo": [
+   "ficha",
+   "partidas",
+   "materiales",
+   "resumen",
+   "evaluacion"
+  ],
+  "tabs": [
+   "ficha",
+   "partidas",
+   "materiales",
+   "resumen",
+   "evaluacion"
+  ],
+  "errores": []
+ },
+ "mob": {
+  "secciones": {
+   "inicio": [
+    {
+     "words": 110,
+     "screens": 1.54,
+     "ctrlFold": 3,
+     "ctrlTotal": 4,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "vacio-partidas": [
+    {
+     "words": 79,
+     "screens": 1.27,
+     "ctrlFold": 13,
+     "ctrlTotal": 14,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "vacio-costos": [
+    {
+     "words": 106,
+     "screens": 1.43,
+     "ctrlFold": 17,
+     "ctrlTotal": 19,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "ficha": [
+    {
+     "words": 181,
+     "screens": 2.6,
+     "ctrlFold": 14,
+     "ctrlTotal": 26,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": []
+    }
+   ],
+   "partidas": [
+    {
+     "words": 93,
+     "screens": 2.18,
+     "ctrlFold": 16,
+     "ctrlTotal": 28,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 2,
+     "dupMargen": 1,
+     "smallList": []
+    }
+   ],
+   "materiales": [
+    {
+     "words": 116,
+     "screens": 2.23,
+     "ctrlFold": 18,
+     "ctrlTotal": 39,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": []
+    }
+   ],
+   "manoObra": [
+    {
+     "words": 127,
+     "screens": 2.41,
+     "ctrlFold": 18,
+     "ctrlTotal": 45,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": []
+    }
+   ],
+   "otros": [
+    {
+     "words": 130,
+     "screens": 2.51,
+     "ctrlFold": 20,
+     "ctrlTotal": 47,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 1,
+     "dupMargen": 1,
+     "smallList": []
+    }
+   ],
+   "resumen": [
+    {
+     "words": 259,
+     "screens": 3.04,
+     "ctrlFold": 13,
+     "ctrlTotal": 39,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 3,
+     "dupMargen": 5,
+     "smallList": []
+    },
+    {
+     "words": 360,
+     "screens": 3.84,
+     "ctrlFold": 12,
+     "ctrlTotal": 35,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 1,
+     "dupMargen": 3,
+     "smallList": []
+    }
+   ],
+   "listado": [
+    {
+     "words": 101,
+     "screens": 2.14,
+     "ctrlFold": 11,
+     "ctrlTotal": 18,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "guia": [
+    {
+     "words": 401,
+     "screens": 3.11,
+     "ctrlFold": 0,
+     "ctrlTotal": 14,
+     "primary": 0,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "papelera": [
+    {
+     "words": 21,
+     "screens": 1,
+     "ctrlFold": 1,
+     "ctrlTotal": 1,
+     "primary": 0,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ],
+   "config": [
+    {
+     "words": 57,
+     "screens": 1,
+     "ctrlFold": 15,
+     "ctrlTotal": 15,
+     "primary": 1,
+     "overflow": 0,
+     "small": 0,
+     "unnamed": 0,
+     "jargon": 0,
+     "dupPrecio": 0,
+     "dupMargen": 0,
+     "smallList": []
+    }
+   ]
+  },
+  "tabsNuevo": [
+   "ficha",
+   "partidas",
+   "materiales",
+   "resumen",
+   "evaluacion"
+  ],
+  "tabs": [
+   "ficha",
+   "partidas",
+   "materiales",
+   "resumen",
+   "evaluacion"
+  ],
+  "errores": []
+ }
+}
