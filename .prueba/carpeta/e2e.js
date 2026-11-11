@@ -290,12 +290,37 @@ async function crear(page) {
     check('Formular desde el Portal: unido al N° 340 con el id del pedido', p3d.vinculos.requerimiento.numero == 340 && p3d.vinculos.requerimiento.pedido === 'pedidoPortal1'
       && p3d.responsable === 'LC', [p3d.vinculos.requerimiento, p3d.responsable]);
     check('Formular desde el Portal: no pide otra fila a la Planilla', (await pedidos()).length === pedidosAntes && !(p3d.vinculos.planilla && p3d.vinculos.planilla.registro), (await pedidos()).length);
+    // Fase 2: con N° provisorio la carpeta espera la confirmación del Excel
+    lib = await arbol(page, BIB);
+    check('N° provisorio: la carpeta no se crea todavía y queda pendiente', !Object.keys(lib).some((k) => /^34[01]\./.test(k)) && p3d.vinculos.requerimiento.carpetaPendiente
+      && p3d.vinculos.requerimiento.carpetaPendiente.por === 'CM' && !p3d.vinculos.carpetaOferta, [Object.keys(lib).filter((k) => /^34/.test(k)), p3d.vinculos]);
+    // El Excel atiende el pedido, pero otro requerimiento llegó antes con el 340: le da el 341 (lo que hace planilla_escritura.py)
+    const mes = await page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; });
+    const [rutaBuzon, cuerpo] = portal('pedidoPortal1', '2026-11-11T10:00:00-03:00', 340, 'Bomba del Portal');
+    const archivado = Object.assign(JSON.parse(cuerpo), { resultado: { estado: 'aplicado', fecha: '2026-11-11', detalle: ['El N° 340 ya lo tenía «Otra»: quedó con el N° 341.'], requerimiento: 341 } });
+    await page.evaluate(async ([bib, ruta]) => {
+      let d = await (await navigator.storage.getDirectory()).getDirectoryHandle(bib);
+      const partes = ruta.split('/');
+      for (const p of partes.slice(0, -1)) d = await d.getDirectoryHandle(p);
+      await d.removeEntry(partes[partes.length - 1]);
+    }, [BIB, rutaBuzon]);
+    await escribir(page, [[rutaBuzon.replace('/buzon/', `/procesado/${mes}/`), JSON.stringify(archivado)]]);
+    await abrir(page, `#/p/${p3d.uid}/ficha`);
+    await page.reload();
+    await page.waitForSelector("#app .editor-head, #app .tabs", { timeout: 15000 }).catch(() => {});
+    await page.waitForFunction((uid) => { const p = window.QStore.get(uid); return p && p.vinculos.requerimiento && !p.vinculos.requerimiento.pedido && p.vinculos.carpetaOferta; }, p3d.uid, { timeout: 15000 }).catch(() => {});
+    const p3e = await proyecto(page, p3d.uid);
+    lib = await arbol(page, BIB);
+    check('N° confirmado distinto: el proyecto pasa al 341 y su código se corrige', p3e.vinculos.requerimiento.numero === '341' && !p3e.vinculos.requerimiento.pedido && p3e.codigo === '341. Bomba del Portal', [p3e.vinculos.requerimiento, p3e.codigo]);
+    check('N° confirmado: la carpeta nace con el N° definitivo', lib['341. Bomba del Portal/'] === 'dir' && !lib['340. Bomba del Portal/'] && !p3e.vinculos.requerimiento.carpetaPendiente
+      && p3e.vinculos.carpetaOferta && p3e.vinculos.carpetaOferta.nombre === '341. Bomba del Portal', [Object.keys(lib).filter((k) => /^34/.test(k)), p3e.vinculos.carpetaOferta]);
+    check('N° confirmado: el aviso lo dice', /quedó como N° 341/.test(await texto(page, '#toast')) || /341/.test(await texto(page, '#toast')), await texto(page, '#toast'));
     // El siguiente libre tiene en cuenta lo del Portal
     await abrir(page);
     await nuevo(page);
     await escribirEn(page, '#np-tit', 'Después del Portal');
     await page.waitForSelector('#np-reg', { timeout: 5000 }).catch(() => {});
-    check('sin N° después del Portal: propone el 341', (await texto(page, '#np-carpeta')).includes('como N° 341'), await texto(page, '#np-carpeta'));
+    check('sin N° después del Portal: propone el 342', (await texto(page, '#np-carpeta')).includes('como N° 342'), await texto(page, '#np-carpeta'));
     await page.click('#modal .modal-foot button:not(.btn-primario)'); await wait(300);
     // El enlace #/req/340 dejó la lista filtrada por ese N°, como todo enlace de otra herramienta
     const limpiar = await page.$('[data-act="limpiar-filtros"]');

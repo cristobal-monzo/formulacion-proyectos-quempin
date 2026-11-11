@@ -3921,7 +3921,7 @@
       route();
       return;
     }
-    if (ev.type === 'sync') { showSyncState(); pintarCompartida(); pintarPendientes(); if (state.project) pintarEditorOferta(); return; }
+    if (ev.type === 'sync') { showSyncState(); pintarCompartida(); pintarPendientes(); if (state.project) pintarEditorOferta(); reconciliarProvisorios(); return; }
     if (ev.type === 'remote' && ev.conflicto) { alConflicto(ev); return; }
     // Cambios de la carpeta compartida o de otra pestaña.
     if (ev.type !== 'remote' && ev.type !== 'config') return;
@@ -6488,7 +6488,10 @@
         const puede = !!e.t && !e.error;
         // Sin la biblioteca conectada («Trabajar sin la carpeta») se propone seguir sin carpeta
         const crear = puede && (opcion === 'crear' || (!opcion && !!lista));
-        html = radio('crear', crear, puede ? `Sí, crear <b>«${esc(e.nombre)}»</b> en la biblioteca <b>Formulación de proyectos</b>, junto a las ofertas en curso` : 'Sí, crear la carpeta con el N° y el nombre', !puede)
+        // N° provisorio (todavía en el buzón): la carpeta espera a que la Planilla lo confirme, para no nacer con un N° ajeno
+        const prov = !!(e.r && e.r.provisorio);
+        html = radio('crear', crear, puede ? (prov ? `Sí, crear <b>«${esc(e.nombre)}»</b> cuando la Planilla confirme el N° ${info('El N° ' + e.n + ' acaba de ingresarse en Requerimientos y aún no llega al Excel. Si otro requerimiento lo tomó antes, el Excel le da otro N°: la carpeta se crea con el N° definitivo y el código del proyecto se corrige solo.')}`
+          : `Sí, crear <b>«${esc(e.nombre)}»</b> en la biblioteca <b>Formulación de proyectos</b>, junto a las ofertas en curso`) : 'Sí, crear la carpeta con el N° y el nombre', !puede)
           + radio('ninguna', !crear, 'No, sin carpeta por ahora')
           + (e.error ? `<p class="np-nota err">${esc(e.error)}</p>` : '')
           + (!lista ? '<p class="np-nota">Al crear el proyecto se pide conectar la biblioteca <b>Formulación de proyectos - Documentos</b> (una vez por navegador).</p>' : '');
@@ -6612,7 +6615,9 @@
       d = { numero: sel.req ? String(sel.req.numero) : sel.carpeta ? '' : d.numero, titulo: sel.carpeta ? '' : d.titulo, req: sel.req || null };
     } else {
       let carpeta = d.carpeta;
-      if (d.crear) {
+      if (d.crear && d.req && d.req.provisorio) {
+        d.diferida = true;   // se crea al confirmarse el N° (reconciliarProvisorios)
+      } else if (d.crear) {
         // La carpeta «N°. Nombre» en la raíz de la biblioteca (js/oferta.js crearCarpeta: nunca toca otra)
         if (await asegurarBiblioteca()) {
           try { carpeta = Object.assign(await QO().crearCarpeta(d.numero, d.titulo), { nueva: true }); } catch (err) {
@@ -6627,7 +6632,8 @@
     // El N° escrito une el proyecto con la planilla aunque no tenga carpeta
     // Con N° provisorio (todavía en el buzón, ingresado en el Portal) guarda el id del pedido: con él se sabrá el N° definitivo
     if (d.numero && /^\d{1,6}$/.test(d.numero)) np.vinculos = Object.assign({}, np.vinculos, { requerimiento: Object.assign({ numero: d.numero, titulo: (d.req && d.req.titulo) || '' },
-      d.req && d.req.provisorio && d.req.pedido ? { pedido: d.req.pedido } : {}) });
+      d.req && d.req.provisorio && d.req.pedido ? { pedido: d.req.pedido } : {},
+      d.diferida ? { carpetaPendiente: { por: yo() || '' } } : {}) });
     enOfertaLocal(np, sel, { datosOferta: true });
     const hechos = op ? QOp().aplicar(np, op, monedaDe(np)) : [];
     if (op) ajustarCodigo(np, d.numero);
@@ -6638,8 +6644,75 @@
     goProject(np, 'ficha');
     const extra = (op ? ` ${textoDesdeOportunidad(hechos)}` : '') + (registrado ? ` Queda registrado en la Planilla de Ingreso como N° ${d.numero} en unos minutos.` : '');
     if (sel.carpeta) registrarAlElegirCarpeta(np.uid, `Proyecto ${np.codigo} creado ${sel.carpeta.nueva ? 'con su carpeta nueva' : 'en la carpeta'} «${sel.carpeta.nombre}».${extra}`);
+    else if (d.diferida) toast(`Proyecto ${np.codigo} creado. Su carpeta se crea cuando la Planilla confirme el N° ${d.numero} (unos minutos); puedes formular desde ya.`, false, 7000);
     else toast(`Proyecto ${np.codigo} creado.${extra} Cuando tengas la carpeta de su oferta, elígela desde el aviso de arriba.`, false, 6000);
     setTimeout(() => { const t = $('[data-f="titulo"]'); if (t && !np.titulo) t.focus(); }, 60);
+  }
+
+  /* N° provisorio (2026-11-11, plan «N° de requerimiento sin choques», fase 2). Un proyecto formulado desde un requerimiento
+     recién ingresado en el Portal guarda el id de su pedido (vinculos.requerimiento.pedido). Cuando el Excel lo atiende,
+     su resultado (procesado/) dice el N° definitivo: si es otro (alguien tomó el mismo N° antes), se corrigen el N° y el
+     código «N°. Nombre»; con el N° confirmado se crea la carpeta que esperaba (carpetaPendiente), solo en el navegador de
+     quien creó el proyecto y solo con permiso ya dado (esto corre sin que nadie haga clic). Rechazado o retirado: aviso. */
+  let reconciliando = null, reconciliadoEn = 0;
+  function reconciliarProvisorios(forzar) {
+    if (reconciliando || !QI() || (!forzar && Date.now() - reconciliadoEn < 60000)) return reconciliando;
+    const ps = S.all().filter((p) => p.vinculos && p.vinculos.requerimiento && p.vinculos.requerimiento.pedido);
+    if (!ps.length) return null;
+    reconciliadoEn = Date.now();
+    reconciliando = (async () => {
+      for (const p0 of ps) {
+        if (state.project && state.project.uid === p0.uid && saveTimer) continue;   // con cambios sin guardar: la vuelta siguiente
+        const vr0 = p0.vinculos.requerimiento;
+        const id = typeof vr0.pedido === 'string' ? vr0.pedido : String((vr0.pedido || {}).id || '');
+        const r = await QI().resultadoPorId(id).catch(() => undefined);
+        if (r === undefined || (r && r.estado === 'espera')) continue;
+        const p = S.get(p0.uid);
+        if (!p || !p.vinculos || !p.vinculos.requerimiento || !p.vinculos.requerimiento.pedido) continue;
+        const v = Object.assign({}, p.vinculos.requerimiento);
+        const antes = String(v.numero || '');
+        const ok = r && ['aplicado', 'sin-cambios'].includes(r.estado) && Number.isInteger(r.requerimiento);
+        const n = ok ? String(r.requerimiento) : '';
+        delete v.pedido;
+        const pendiente = v.carpetaPendiente || null;
+        if (!ok) {
+          delete v.carpetaPendiente;
+          v.pedidoFallido = r ? String(r.estado || 'rechazado') : 'retirado';
+        } else v.numero = n;
+        p.vinculos = Object.assign({}, p.vinculos, { requerimiento: v });
+        const cambio = ok && n !== antes;
+        if (cambio) ajustarCodigo(p, n);
+        S.upsert(p);
+        if (state.project && state.project.uid === p.uid) recargarProyecto(S.get(p.uid));
+        if (cambio) toast(`«${p.titulo || p.codigo}»: el N° ${antes} quedó como N° ${n} en la Planilla (otro requerimiento llegó antes). El código ya se corrigió.`, false, 10000);
+        else if (!ok) toast(`«${p.titulo || p.codigo}»: el requerimiento N° ${antes} ${r ? 'no se registró en la Planilla' : 'se retiró en el Portal'}. Revisa su N° en los datos del proyecto.`, true, 10000);
+        if (ok && pendiente && (!pendiente.por || pendiente.por === yo())) await crearCarpetaConfirmada(p.uid, n);
+      }
+    })().catch((e) => console.warn('N° provisorios:', e)).finally(() => { reconciliando = null; });
+    return reconciliando;
+  }
+  async function crearCarpetaConfirmada(uid, n) {
+    const p = S.get(uid);
+    if (!p || !QO() || QO().vinculo(p) || !ofertaActiva()) return false;
+    const e = await QI().estadoBiblioteca().catch(() => ({}));
+    if (!(e.recordada && e.permiso === 'granted')) return false;   // sin permiso no se pregunta en segundo plano: queda pendiente
+    let c;
+    try { c = Object.assign(await QO().crearCarpeta(n, p.titulo), { nueva: true }); } catch (err) {
+      toast(`No se pudo crear la carpeta del N° ${n}: ${(err && err.message) || err}. Elígela desde el aviso del proyecto.`, true, 9000);
+      c = null;
+    }
+    const q = S.get(uid);
+    if (!q) return false;
+    const v = Object.assign({}, q.vinculos.requerimiento);
+    delete v.carpetaPendiente;
+    q.vinculos = Object.assign({}, q.vinculos, { requerimiento: v });
+    if (c) enOfertaLocal(q, { carpeta: c, req: null });
+    S.upsert(q);
+    if (state.project && state.project.uid === uid) recargarProyecto(S.get(uid));
+    if (!c) return false;
+    guardarExcelOferta(uid, true);
+    registrarAlElegirCarpeta(uid, `N° ${n} confirmado: carpeta «${c.nombre}» creada.`);
+    return true;
   }
 
   /* Deja el presupuesto unido a la carpeta elegida. Con datosOferta (presupuesto nuevo), trae
@@ -7153,4 +7226,7 @@
   if (QC()) { QC().iniciar(); QC().alAbrir(() => (state.project ? state.project.uid : null)); }
   if (QO()) QO().iniciar();
   route();
+  // N° provisorios: al abrir y cada minuto (además de cada vuelta de la carpeta compartida)
+  setTimeout(() => reconciliarProvisorios(true), 1500);
+  setInterval(() => { if (document.visibilityState === 'visible') reconciliarProvisorios(); }, 60000);
 })();

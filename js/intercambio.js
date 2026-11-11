@@ -277,6 +277,31 @@
     }
     return null;
   }
+  /* Lo que pasó con un mensaje del que solo se sabe el id (2026-11-11, N° provisorio de un requerimiento del Portal):
+     { estado: 'espera' } si sigue en el buzón; su resultado si ya se archivó (este mes o los dos anteriores); null si no
+     está en ninguna parte (lo retiraron desde el Portal) o no se puede leer la carpeta (undefined). */
+  async function resultadoPorId(id) {
+    const h = await cargar();
+    if (!h || !id) return undefined;
+    const fin = `_${id}.json`;
+    try {
+      const buzon = await sub(h, 'buzon');
+      if (buzon) for await (const nombre of buzon.keys()) if (nombre.endsWith(fin)) return { estado: 'espera' };
+      const proc = await sub(h, 'procesado');
+      const hoy = new Date();
+      for (const k of [0, 1, 2]) {
+        const f = new Date(hoy.getFullYear(), hoy.getMonth() - k, 1);
+        const mes = proc && await sub(proc, `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}`);
+        if (!mes) continue;
+        for await (const nombre of mes.keys()) {
+          if (!nombre.endsWith(fin)) continue;
+          const m = await leerJSON(mes, nombre);
+          return (m && m.resultado) || { estado: 'espera' };
+        }
+      }
+    } catch (e) { return undefined; }
+    return null;
+  }
   /* Sin la API del navegador: descargar el mensaje para dejarlo a mano en «buzon». */
   function descargar(m) {
     const a = document.createElement('a');
@@ -351,6 +376,6 @@
   root.QIntercambio = {
     ESQUEMA, CATEGORIAS_AF, BIBLIOTECA, CARPETA_HERRAMIENTAS, disponible, estado, conectar, permitir, desconectar, onCambio,
     carpeta: carpetaConPermiso, biblioteca: bibliotecaConPermiso, estadoBiblioteca,
-    leerCatalogoAF, leerPublicacion, leerRaiz, enviar, enBuzon, leerBuzon, resultadoDe, descargar, mensajePresupuesto, mensajeApodo, costosAF, nombreArchivo, nuevoId, isoLocal
+    leerCatalogoAF, leerPublicacion, leerRaiz, enviar, enBuzon, leerBuzon, resultadoDe, resultadoPorId, descargar, mensajePresupuesto, mensajeApodo, costosAF, nombreArchivo, nuevoId, isoLocal
   };
 })(window);
