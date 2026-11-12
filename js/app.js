@@ -1258,7 +1258,16 @@
       // «Formular» desde el Portal (#/req/N/crear): sin proyecto de ese N°, abre directo el diálogo de nuevo proyecto
       if (tipo === 'req' && parts[2] === 'crear' && !ps.length && /^\d{1,6}$/.test(clave)) {
         history.replaceState(null, '', `#/req/${encodeURIComponent(clave)}`);
-        (async () => { if (await exigirCarpeta()) await crearProyectoLocal({ numero: clave }); })();
+        (async () => {
+          // Recién abierto el Formulador, la carpeta del equipo puede no estar conectada todavía: se espera un momento
+          // antes de pedirla (si no, «Formular →» mostraba «Conecta la biblioteca del equipo» a quien ya la tenía)
+          for (let i = 0; i < 20 && QI(); i++) {
+            const e = await QI().estado().catch(() => ({}));
+            if (e.conectada) break;
+            await new Promise((r) => setTimeout(r, 250));
+          }
+          if (await exigirCarpeta()) await crearProyectoLocal({ numero: clave });
+        })();
       }
     } else if (parts[0] === 'papelera') {
       state.project = null;
