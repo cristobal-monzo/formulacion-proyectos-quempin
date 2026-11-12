@@ -48,7 +48,7 @@ async function confirmarModal(page) {
   try {
     // ================= Con la biblioteca conectada: el formulario se abre solo =================
     const { ctx, page } = await contexto(browser, { width: 1366, height: 900 });
-    await ctx.addInitScript(() => { try { localStorage.setItem('quempin_usuario', 'CM'); localStorage.setItem('qpn.formulacion.iniciales', 'CM'); } catch (e) { /* */ } });
+    await ctx.addInitScript(() => { try { localStorage.setItem('quempin_usuario', 'CM'); localStorage.setItem('qpn.formulacion.iniciales', 'CM'); } catch (e) { /* */ } window.__abiertas = []; window.open = (u) => { window.__abiertas.push(String(u)); return null; }; });
     await page.goto(BASE + '#/guia');
     await prepararBiblioteca(page);
     await page.goto(BASE + '#/');
@@ -68,8 +68,23 @@ async function confirmarModal(page) {
     check('detrás, el aviso de la lista muestra lo que se lleva', /Municipalidad Ficticia/.test(aviso) && /5555-12-LE26/.test(aviso) && /\$17\.421\.600 con IVA/.test(aviso) && /Quilpué, Región de Valparaíso/.test(aviso), aviso);
     await foto(page, 'formulario-desde-oportunidad');
     const elegida = await texto(page, '#np-carpeta');
-    // Sin N° en la Planilla toma el siguiente libre y se registra en ella (2026-10-26)
-    check('la carpeta se crea con ese nombre y el N° que se registra', /Sí, crear «313\. Mantención de calderas liceo \(ficticio\)»/.test(elegida) && /registrar el proyecto en la Planilla de Ingreso como N° 313/.test(elegida), elegida);
+    // Sin N° (2026-11-12): el Formulador ya no lo registra; ofrece «Ingresar en Requerimientos», que lleva al Portal los
+    // datos de la licitación, y el proyecto se puede crear igual, con el nombre como código
+    check('sin N°: la carpeta se crea con el nombre y se ofrece ingresarla en Requerimientos', /Sí, crear «Mantención de calderas liceo \(ficticio\)»/.test(elegida)
+      && /Ingresar en Requerimientos/.test(elegida) && !/registrar el proyecto en la Planilla/.test(elegida), elegida);
+    await page.click('#np-carpeta .np-portal');
+    await wait(500);
+    const abiertas = await page.evaluate(() => window.__abiertas.slice());
+    const rq = abiertas.length === 1 && /\/portal\/#\/planilla\?nuevo=/.test(abiertas[0]) ? JSON.parse(decodeURIComponent(abiertas[0].split('nuevo=')[1])) : {};
+    check('al Portal va como Mercado Público, con su ID, cliente, ubicación, cierre y presupuesto', rq.titulo === LICITACION.nombre && rq.canal === 'Mercado Público'
+      && rq.referencia === '5555-12-LE26' && rq.cliente === 'Municipalidad Ficticia' && rq.ubicacion === 'Quilpué, Región de Valparaíso' && rq.presupuesto === 17421600
+      && /^\d{4}-\d{2}-\d{2}T15:00$/.test(rq.cierre || ''), abiertas);
+    check('sin N°: nada en el buzón para la Planilla', (await page.evaluate(() => window.QIntercambio.leerBuzon({ tipos: ['nuevo-requerimiento'] }))).length === 0);
+    // Otra vez el enlace: esta vez se crea el proyecto sin N°
+    await page.goto(enlace(LICITACION));
+    await page.reload();
+    await page.waitForSelector('#modal[open] #np-num', { timeout: 10000 });
+    await wait(900);
     await confirmarModal(page);
     let ps = await proyectos(page);
     let p = ps.find((x) => x.idLicitacion === '5555-12-LE26');
@@ -81,12 +96,8 @@ async function confirmarModal(page) {
     check('el editor muestra el título y el ID de licitación', (await page.inputValue('[data-f="titulo"]')) === LICITACION.nombre && (await page.inputValue('[data-f="idLicitacion"]')) === '5555-12-LE26');
     const aviso2 = await texto(page, '#toast');
     // El título ya lo puso la carpeta (que se creó con el nombre de la licitación): el aviso no lo repite
-    check('el aviso dice qué llegó de Mercado Público y que queda en la Planilla', /creado con su carpeta nueva «313\. Mantención de calderas liceo \(ficticio\)»\. Desde Mercado Público: categoría Licitación, cliente, ID de licitación, ubicación, descripción, presupuesto.* Queda registrado en la Planilla de Ingreso como N° 313/.test(aviso2), aviso2);
+    check('el aviso dice qué llegó de Mercado Público', /creado con su carpeta nueva «Mantención de calderas liceo \(ficticio\)»\. Desde Mercado Público: categoría Licitación, cliente, ID de licitación, ubicación, descripción, presupuesto/.test(aviso2), aviso2);
     check('nace con la categoría «Licitación» (2026-10-27)', (await page.inputValue('#f-categoria')) === 'Licitación');
-    const pedido = (await page.evaluate(() => window.QIntercambio.leerBuzon({ tipos: ['nuevo-requerimiento'] })))[0] || {};
-    const rq = pedido.requerimiento || {};
-    check('el pedido a la Planilla va como Mercado Público, con su ID, cierre y presupuesto', rq.numero === 313 && rq.canal === 'Mercado Público' && rq.referencia === '5555-12-LE26'
-      && rq.ubicacion === 'Quilpué, Región de Valparaíso' && rq.presupuesto === 17421600 && /^\d{4}-\d{2}-\d{2}T15:00$/.test(rq.cierre || ''), rq);
     await foto(page, 'proyecto-desde-oportunidad');
 
     // ---- Otra vez el mismo enlace (como lo hace el Portal: solo cambia el #): abre el que ya está ----

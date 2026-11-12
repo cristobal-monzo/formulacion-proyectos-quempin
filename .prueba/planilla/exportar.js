@@ -121,6 +121,9 @@ const filasDialogo = (page) => page.$$eval('#modal[open] .xp-tabla tbody tr', (t
     window.showDirectoryPicker = async () => (await navigator.storage.getDirectory()).getDirectoryHandle('Formulación de proyectos - Documentos', { create: true });
     FileSystemHandle.prototype.queryPermission = async function () { return 'granted'; };
     FileSystemHandle.prototype.requestPermission = async function () { return 'granted'; };
+    // «Ingresar en Requerimientos» abre el Portal en otra pestaña: se anota
+    window.__abiertas = [];
+    window.open = (u) => { window.__abiertas.push(String(u)); return null; };
   }, [[pa, pb, pc], KEY]);
   const page = await ctx.newPage();
   page.on('pageerror', (e) => errores.push(e.message));
@@ -180,28 +183,22 @@ const filasDialogo = (page) => page.$$eval('#modal[open] .xp-tabla tbody tr', (t
     await wait(500);
     check('N° ajeno sin confirmar: no deja nada en el buzón', (await buzon(page)).length === antes && /no parece ser este proyecto/.test(await texto(page, '#toast')), await texto(page, '#toast'));
 
-    // 3. Sin N°: lo registra con el siguiente libre, con el estado de la oferta, y el cliente y el valor junto con la fila
+    // 3. Sin N° (2026-11-12, fase 1 del plan contra choques de N°): ya no lo registra el Formulador. Ofrece «Ingresar en
+    //    Requerimientos», que abre el Portal con los datos del proyecto (estado de la oferta incluido), y no deja nada en el buzón
     await abrirSeguimiento(page, 'exportar003');
+    const antes3 = (await buzon(page)).length;
     await exportar(page);
-    // innerText: cada casilla de la tabla separada de la siguiente
     const reg = await page.$eval('#modal[open] .modal-body', (e) => e.innerText.replace(/\s+/g, ' ').trim()).catch(() => '');
-    check('sin N°: propone registrarlo como el 313, con estado «Ofertado»', /siguiente N° libre, el 313/.test(reg) && /Estado Ofertado/i.test(reg) && /Canal Otro/i.test(reg) && /Cliente Cliente C/i.test(reg), reg.slice(0, 500));
+    check('sin N°: ofrece ingresarlo en Requerimientos del Portal', /no tiene N° de requerimiento/.test(reg) && /Requerimientos del Portal/.test(reg), reg.slice(0, 500));
     await page.screenshot({ path: path.join(SHOTS, 'exportar-4-sin-numero.png') });
     await page.click('#modal[open] .modal-foot .btn-primario');
-    await wait(900);
-    bz = await buzon(page);
-    const nuevo = (bz.find((x) => /_nuevo-requerimiento_/.test(x.nombre)) || {}).m;
-    const junto = bz.map((x) => x.m).find((x) => x.tipo === 'editar-requerimiento' && x.requerimiento.numero === 313);
-    check('sin N°: pide la fila 313 con estado «Ofertado»', !!nuevo && nuevo.requerimiento.numero === 313 && nuevo.requerimiento.estado === 'Ofertado' && nuevo.requerimiento.titulo === 'Caldera sin número', nuevo);
-    check('sin N°: el cliente y el valor van en un cambio a esa misma fila', !!junto && junto.requerimiento.titulo === 'Caldera sin número' && Object.keys(junto.cambios).sort().join(',') === 'cliente,valorOfertado' && junto.cambios.cliente === 'Cliente C', junto);
+    await wait(600);
+    const abiertas = await page.evaluate(() => window.__abiertas.slice());
+    const datos = abiertas.length === 1 && /\/portal\/#\/planilla\?nuevo=/.test(abiertas[0]) ? JSON.parse(decodeURIComponent(abiertas[0].split('nuevo=')[1])) : null;
+    check('sin N°: abre el Portal con título, cliente y el estado de la oferta', !!datos && datos.titulo === 'Caldera sin número' && datos.cliente === 'Cliente C' && datos.estado === 'Ofertado', abiertas);
+    check('sin N°: no deja nada en el buzón ni le da N° al proyecto', (await buzon(page)).length === antes3, (await buzon(page)).map((x) => x.nombre));
     const g3 = await guardado(page, 'exportar003');
-    check('sin N°: el proyecto queda unido al 313 y su código lo lleva', g3.vinculos.requerimiento && String(g3.vinculos.requerimiento.numero) === '313' && g3.codigo === '313. Caldera sin número', [g3.codigo, g3.vinculos.requerimiento]);
-    check('sin N°: recuerda el registro y la exportación', !!(g3.vinculos.planilla && g3.vinculos.planilla.registro && g3.vinculos.planilla.ultimaExportacion), g3.vinculos.planilla);
-    // Exportar de nuevo mientras la fila no aparece: no la pide dos veces
-    await abrirSeguimiento(page, 'exportar003');
-    await page.evaluate(() => document.querySelector('#recorrido [data-act="exp-planilla"]').click());
-    await wait(900);
-    check('mientras espera la fila, no la pide otra vez', !(await page.$('#modal[open]')) && /ya se pidió/.test(await texto(page, '#toast')) && (await buzon(page)).filter((x) => /_nuevo-requerimiento_/.test(x.nombre)).length === 1, await texto(page, '#toast'));
+    check('sin N°: el proyecto sigue sin N° (lo da el Portal)', !(g3.vinculos && g3.vinculos.requerimiento && g3.vinculos.requerimiento.numero) && g3.codigo !== '313. Caldera sin número', [g3.codigo, g3.vinculos]);
 
     // 4. El menú del proyecto la ofrece
     const menu = await page.evaluate(() => { const b = document.querySelector('[data-menu="editor-more"]'); if (b) b.click(); return !!b; });

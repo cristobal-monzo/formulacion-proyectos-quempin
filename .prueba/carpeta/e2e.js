@@ -26,14 +26,15 @@ const check = (n, c, x) => results.push(`${c ? 'OK  ' : 'FAIL'} ${n}${x !== unde
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const PUB = (herramienta, datos) => JSON.stringify({ esquema: 'quempin.intercambio/1', herramienta, generado: '2026-10-19T10:00:00-03:00', datos });
+const REQS = [
+  { numero: 312, estado: 'Evaluación', titulo: 'Gimnasio municipal de prueba', ubicacion: 'Quilpué', referencia: '9999-1-LE26', cierre: '2026-11-20', presupuesto: 5950000, evaluador: 'LC' },
+  { numero: 298, estado: 'Evaluación', titulo: 'Quemadores SAG de prueba', ubicacion: 'Osorno', referencia: '', cierre: null, presupuesto: null },
+  { numero: 296, estado: 'Evaluación', titulo: 'Sala de calderas Llay Llay', ubicacion: 'Llay Llay', referencia: '', cierre: null, presupuesto: null },
+  { numero: 303, estado: 'Ofertado', titulo: 'Quemador Osorno de prueba', ubicacion: 'Osorno', referencia: '', cierre: null, presupuesto: null }
+];
 const INICIAL = [
   [`${HERR}/Intercambio/intercambio.json`, JSON.stringify({ esquema: 'quempin.intercambio/1', descripcion: 'prueba' })],
-  [`${HERR}/Intercambio/publicado/requerimientos.json`, PUB('planilla-requerimientos', { requerimientos: [
-    { numero: 312, estado: 'Evaluación', titulo: 'Gimnasio municipal de prueba', ubicacion: 'Quilpué', referencia: '9999-1-LE26', cierre: '2026-11-20', presupuesto: 5950000, evaluador: 'LC' },
-    { numero: 298, estado: 'Evaluación', titulo: 'Quemadores SAG de prueba', ubicacion: 'Osorno', referencia: '', cierre: null, presupuesto: null },
-    { numero: 296, estado: 'Evaluación', titulo: 'Sala de calderas Llay Llay', ubicacion: 'Llay Llay', referencia: '', cierre: null, presupuesto: null },
-    { numero: 303, estado: 'Ofertado', titulo: 'Quemador Osorno de prueba', ubicacion: 'Osorno', referencia: '', cierre: null, presupuesto: null }
-  ] })],
+  [`${HERR}/Intercambio/publicado/requerimientos.json`, PUB('planilla-requerimientos', { requerimientos: REQS })],
   [`${HERR}/Intercambio/publicado/folios.json`, PUB('sistema-quempin', { tipos: { 81: { nombre: 'Evaluación de costos', paises: {
     Chile: { ultimo: '812601', fecha: '2026-01-12', autor: 'JB', siguiente: '812602' }, Peru: { ultimo: null, siguiente: '812601' } } } } })],
   ['298. SAG Quemadores/Oferta.pdf', 'pdf de prueba'],
@@ -118,6 +119,9 @@ async function equipo(browser, viewport) {
     FileSystemHandle.prototype.requestPermission = async function () { window.__permiso = 'granted'; return 'granted'; };
     // Las direcciones quempin:// (QUEMPIN.exe) se anotan en vez de pedirle a Windows que abra el programa
     window.__lanzados = [];
+    // Lo que se abre en otra pestaña (el Portal, con «Ingresar en Requerimientos») se anota
+    window.__abiertas = [];
+    window.open = (u) => { window.__abiertas.push(String(u)); return null; };
     document.addEventListener('click', (e) => {
       const a = e.target && e.target.closest ? e.target.closest('a[href^="quempin:"]') : null;
       if (a) { window.__lanzados.push(a.getAttribute('href')); e.preventDefault(); }
@@ -215,58 +219,59 @@ async function crear(page) {
     check('N° con carpeta: queda en ella, con su nombre como código', p2.codigo === '298. SAG Quemadores' && p2.vinculos.carpetaOferta.nombre === '298. SAG Quemadores'
       && Object.keys(lib).filter((k) => /^298\..*\/$/.test(k)).length === 1, [p2.codigo, Object.keys(lib).filter((k) => k.startsWith('298'))]);
 
-    // 3. Sin N° (2026-10-26): toma el siguiente N° libre y pide su fila en la Planilla de Ingreso
+    // 3. Sin N° (2026-11-12, fase 1 del plan contra choques de N°): el Formulador ya no pide N° a la Planilla. Ofrece
+    //    «Ingresar en Requerimientos», que abre el Portal con los datos; el N° lo da el Portal.
     const pedidos = async () => Object.entries(await arbol(page, BIB)).filter(([k]) => k.startsWith(`${HERR}/Intercambio/buzon/`) && /_nuevo-requerimiento_/.test(k)).map(([, v]) => JSON.parse(v));
     await abrir(page);
     await nuevo(page);
     await escribirEn(page, '#np-tit', 'Caldera sin número');
-    await page.waitForSelector('#np-reg', { timeout: 5000 }).catch(() => {});
+    await page.waitForSelector('#np-carpeta .np-portal', { timeout: 5000 }).catch(() => {});
     dlg = await texto(page, '#np-carpeta');
-    check('sin N°: ofrece registrarlo en la Planilla con el siguiente N° libre (313)', dlg.includes('Sin N° de requerimiento: registrar el proyecto en la Planilla de Ingreso como N° 313')
-      && (await page.$eval('#np-reg', (e) => e.checked).catch(() => false)), dlg);
-    check('sin N°: el código lleva ese N°', (await texto(page, '#np-codigo')).includes('313. Caldera sin número'), await texto(page, '#np-codigo'));
+    check('sin N°: ofrece ingresarlo en Requerimientos y no registrarlo', dlg.includes('Sin N° de requerimiento') && dlg.includes('Ingresar en Requerimientos') && !(await page.$('#np-reg')), dlg);
+    check('sin N°: el código es solo el nombre', (await texto(page, '#np-codigo')).includes('Caldera sin número') && !/\d\. Caldera/.test(await texto(page, '#np-codigo')), await texto(page, '#np-codigo'));
     await page.screenshot({ path: path.join(SHOTS, '3-sin-numero.png') });
+    await page.click('#np-carpeta .np-portal'); await wait(400);
+    const abiertas = await page.evaluate(() => window.__abiertas.slice());
+    const alPortal = abiertas.length === 1 && /\/portal\/#\/planilla\?nuevo=/.test(abiertas[0]) ? JSON.parse(decodeURIComponent(abiertas[0].split('nuevo=')[1])) : null;
+    check('sin N°: «Ingresar en Requerimientos» abre el Portal con el nombre y cierra el diálogo', !!alPortal && alPortal.titulo === 'Caldera sin número' && !(await page.$('#modal[open]')), abiertas);
+    check('sin N°: no deja nada para la Planilla en el buzón', (await pedidos()).length === 0, await pedidos());
+    // El Portal lo ingresó y ya llegó al Excel con el 313: se formula con «Formular →», con su carpeta al tiro
+    await escribir(page, [[`${HERR}/Intercambio/publicado/requerimientos.json`, PUB('planilla-requerimientos', { requerimientos: REQS.concat([
+      { numero: 313, estado: 'Evaluación', titulo: 'Caldera sin número', ubicacion: 'Talca', referencia: '', cierre: null, presupuesto: null }]) })]]);
+    await abrir(page, '#/req/313/crear');
+    await page.reload();
+    await page.waitForSelector('#modal[open] #np-num', { timeout: 8000 }).catch(() => {});
+    await conNombre(page);
+    check('Formular el 313: código «313. Caldera sin número»', (await texto(page, '#np-codigo')).includes('313. Caldera sin número'), await texto(page, '#np-codigo'));
     await crear(page);
     const p3a = await proyecto(page, await uidAbierto(page));
     lib = await arbol(page, BIB);
-    let ped = await pedidos();
-    check('sin N°: carpeta «313. Caldera sin número», código igual y unido al N° 313', lib['313. Caldera sin número/'] === 'dir' && p3a.codigo === '313. Caldera sin número'
-      && p3a.vinculos.requerimiento.numero == 313, [p3a.codigo, p3a.vinculos && p3a.vinculos.requerimiento]);
-    const hoyISO = await page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
-    check('sin N°: deja el pedido nuevo-requerimiento con el formato de la Planilla', ped.length === 1 && ped[0].destino === 'planilla-requerimientos'
-      && JSON.stringify(ped[0].requerimiento) === JSON.stringify({ numero: 313, titulo: 'Caldera sin número', estado: 'Evaluación', canal: 'Otro', captador: 'CM', evaluador: 'CM', referencia: '-', apertura: hoyISO })
-      && ped[0].fuente.uid === p3a.uid && ped[0].fuente.codigo === '313. Caldera sin número', ped);
-    check('sin N°: el proyecto recuerda el pedido', p3a.vinculos.planilla && p3a.vinculos.planilla.registro && p3a.vinculos.planilla.registro.numero === 313 && p3a.vinculos.planilla.registro.id === (ped[0] || {}).id, p3a.vinculos.planilla);
-    check('sin N°: el aviso dice que queda en la Planilla', errores.length === 0);
+    check('Formular el 313: carpeta «313. Caldera sin número», código igual y unido al N° 313', lib['313. Caldera sin número/'] === 'dir' && p3a.codigo === '313. Caldera sin número'
+      && p3a.vinculos.requerimiento.numero == 313 && !p3a.vinculos.requerimiento.pedido, [p3a.codigo, p3a.vinculos && p3a.vinculos.requerimiento]);
+    await page.click('[data-act="limpiar-filtros"]').catch(() => {});
 
-    // 3b. El N° que ya se pidió (y espera en el buzón) no se vuelve a dar: el siguiente es el 314
+    // 3b. Un N° escrito que no está en Requerimientos: lo dice, ofrece ingresarlo y no deja crear con él
     await abrir(page);
     await nuevo(page);
-    await escribirEn(page, '#np-num', '313');
-    await escribirEn(page, '#np-tit', 'Otro proyecto');
-    dlg = await texto(page, '#np-carpeta');
-    check('N° ya pedido: lo dice y da el siguiente libre', dlg.includes('El N° 313 ya se pidió a la Planilla de Ingreso para «Caldera sin número»') && dlg.includes('El siguiente libre es el 314') && !(await page.$('#np-reg')), dlg);
-    await escribirEn(page, '#np-num', '');
-    await page.waitForSelector('#np-reg', { timeout: 5000 }).catch(() => {});
-    check('N° ya pedido: sin N°, propone el 314', (await texto(page, '#np-carpeta')).includes('como N° 314'), await texto(page, '#np-carpeta'));
-    // Un N° escrito que no está en la Planilla también se registra
     await escribirEn(page, '#np-num', '320');
+    await escribirEn(page, '#np-tit', 'Otro proyecto');
+    await wait(400);
     dlg = await texto(page, '#np-carpeta');
-    check('N° fuera de la Planilla: ofrece registrarlo con ese N°', dlg.includes('El N° 320 no está en la Planilla de Ingreso: registrarlo'), dlg);
+    check('N° fuera de Requerimientos: lo dice y no deja crear', dlg.includes('El N° 320 no está en Requerimientos') && dlg.includes('Ingresar en Requerimientos')
+      && await page.$eval('#modal .modal-foot .btn-primario', (b) => b.disabled), dlg);
     await page.click('#modal .modal-foot button:not(.btn-primario)'); await wait(300);
 
-    // 3c. Sin marcar «registrar»: como antes, la carpeta y el código son solo el nombre, y no se pide nada
+    // 3c. Sin N°: el proyecto se crea igual, con el nombre como código y sin pedir nada a la Planilla
     await abrir(page);
     await nuevo(page);
     await escribirEn(page, '#np-tit', 'Quemador de prueba');
-    await page.waitForSelector('#np-reg', { timeout: 5000 }).catch(() => {});
-    await page.click('#np-reg'); await wait(150);
-    check('sin N° ni registro: el código es el nombre', (await texto(page, '#np-codigo')).includes('Quemador de prueba') && !(await texto(page, '#np-codigo')).includes('314'), await texto(page, '#np-codigo'));
+    await wait(300);
+    check('sin N°: el código es el nombre', (await texto(page, '#np-codigo')).includes('Quemador de prueba') && !(await texto(page, '#np-codigo')).includes('314'), await texto(page, '#np-codigo'));
     await crear(page);
     const p3 = await proyecto(page, await uidAbierto(page));
     lib = await arbol(page, BIB);
-    check('sin N° ni registro: carpeta «Quemador de prueba» y el mismo código', lib['Quemador de prueba/'] === 'dir' && p3.codigo === 'Quemador de prueba', [p3.codigo]);
-    check('sin N° ni registro: no se pide nada a la Planilla', (await pedidos()).length === 1 && !(p3.vinculos && p3.vinculos.planilla), await pedidos());
+    check('sin N°: carpeta «Quemador de prueba» y el mismo código', lib['Quemador de prueba/'] === 'dir' && p3.codigo === 'Quemador de prueba', [p3.codigo]);
+    check('sin N°: no se pide nada a la Planilla', (await pedidos()).length === 0 && !(p3.vinculos && p3.vinculos.planilla), await pedidos());
 
     // 3d. «Formular →» del Portal (2026-11-11): un N° recién ingresado en Requerimientos, que todavía espera en el buzón,
     //     abre directo el diálogo con sus datos, sin tomarlo por un choque, y el proyecto guarda el id del pedido
@@ -319,8 +324,9 @@ async function crear(page) {
     await abrir(page);
     await nuevo(page);
     await escribirEn(page, '#np-tit', 'Después del Portal');
-    await page.waitForSelector('#np-reg', { timeout: 5000 }).catch(() => {});
-    check('sin N° después del Portal: propone el 342', (await texto(page, '#np-carpeta')).includes('como N° 342'), await texto(page, '#np-carpeta'));
+    await page.waitForSelector('#np-carpeta .np-portal', { timeout: 5000 }).catch(() => {});
+    check('sin N° después del Portal: no propone ningún N° (lo da el Portal)', (await texto(page, '#np-carpeta')).includes('Ingresar en Requerimientos')
+      && !/como N° \d/.test(await texto(page, '#np-carpeta')), await texto(page, '#np-carpeta'));
     await page.click('#modal .modal-foot button:not(.btn-primario)'); await wait(300);
     // El enlace #/req/340 dejó la lista filtrada por ese N°, como todo enlace de otra herramienta
     const limpiar = await page.$('[data-act="limpiar-filtros"]');

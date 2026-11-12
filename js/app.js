@@ -5900,52 +5900,18 @@
     const ultimaExportacion = { id: m.id, fecha: m.origen.enviado, archivo: QI().nombreArchivo(m), numero: Number(numero), cambios: m.cambios, etiquetas: campos.map((c) => c.etiqueta) };
     p.vinculos = Object.assign({}, p.vinculos, { planilla: Object.assign({}, (p.vinculos || {}).planilla, { ultimaExportacion }) });
   }
-  /* El proyecto todavía no tiene fila en la planilla (sin N°, o con un N° que no está): la pide con el formato de las
-     demás (registrarEnPlanilla), con el estado de la oferta. Lo que la fila nueva no lleva (cliente y valores) va en un
-     cambio a esa misma fila, que se escribe junto con ella. */
-  async function exportarFilaNueva(p, filas, pedidos, req, datos) {
-    if (!String(p.titulo || '').trim()) { toast('Ponle nombre al proyecto antes de registrarlo en la Planilla de Ingreso.', true); return false; }
-    let numero = req;
-    if (!numero) {
-      let carpetas = [];
-      try { carpetas = (QO() && await QO().carpetas(true)) || []; } catch (e) { carpetas = []; }
-      numero = String(QH().siguienteNumero(filas.map((x) => x.numero), carpetas.map((c) => c.numero),
-        pedidos.map((m) => (m.requerimiento || {}).numero), S.all().concat(S.trash()).map((x) => QH().reqDe(x))));
-    }
-    const est = QH().cambiosParaPlanilla(p, datos.valor);
-    const estado = est ? est.estado : 'Evaluación';
-    const extra = QH().camposParaExportar(p, null, datos).filter((c) => ['cliente', 'valorOfertado', 'valorAdjudicado'].includes(c.campo));
-    const id = datos.referencia;
-    const filasVista = [['N°', numero], ['Estado', estado], ['Canal', id ? 'Mercado Público' : 'Otro'], ['Título', p.titulo], ['Cliente', p.cliente],
-      ['Ubicación', p.ubicacion], ['ID o referencia', id || '-'], ['Eval.', p.responsable || yo()], ['Presupuesto (IVA inc.)', ok(datos.presupuesto) ? dinero(datos.presupuesto, 'CLP') : ''],
-      ...extra.filter((c) => c.campo !== 'cliente').map((c) => [c.etiqueta, dinero(c.nuevo, 'CLP')])].filter(([, x]) => String(x || '').trim());
+  /* El proyecto todavía no tiene fila en la planilla (sin N°, o con un N° que no está). Desde el 2026-11-12 el Formulador
+     no la pide: los requerimientos se ingresan solo en el Portal, que da el N° (plan «N° de requerimiento sin choques»,
+     fase 1). Se abre «Nuevo requerimiento» con los datos del proyecto; con el N° que le dé, se elige en el paso 1. */
+  async function exportarFilaNueva(p, filas, pedidos, req) {
+    if (!String(p.titulo || '').trim()) { toast('Ponle nombre al proyecto antes de ingresarlo en Requerimientos.', true); return false; }
     const v = await ask({
-      title: 'Registrar en la Planilla de Ingreso',
-      wide: true,
-      body: `<p>${req ? `El N° <b>${esc(req)}</b> no está en la planilla: fila nueva` : `Sin N° de requerimiento: fila nueva con el siguiente N° libre, el <b>${esc(numero)}</b>`} ${info(`Se escribe en unos 10 minutos, con el formato de las demás filas${req ? '' : ', y el proyecto queda unido a ese N°'}. El N° lo pone la fórmula de la planilla: si en esos minutos ese N° deja de estar libre, la fila no se escribe y el Seguimiento lo avisa.`)}</p>
-        <div class="tabla-contenedor"><table class="tbl xp-tabla"><tbody>${filasVista.map(([k, x]) => `<tr><th scope="row">${esc(k)}</th><td>${/^\$/.test(String(x)) ? x : esc(String(x))}</td></tr>`).join('')}</tbody></table></div>`,
-      buttons: [{ label: 'Cancelar' }, { label: 'Registrar en la Planilla', value: 'ok', primary: true }]
+      title: 'Ingresar en Requerimientos',
+      body: `<p>${req ? `El N° <b>${esc(req)}</b> no está en Requerimientos.` : 'Este proyecto no tiene N° de requerimiento.'} Se ingresa en Requerimientos del Portal, que le da su N°. ${info('Así dos personas no toman el mismo N°. Se abre «Nuevo requerimiento» con los datos de este proyecto; al guardarlo, escribe ese N° en el paso 1 de este proyecto.')}</p>`,
+      buttons: [{ label: 'Cancelar' }, { label: 'Ingresar en Requerimientos', value: 'ok', primary: true }]
     });
-    if (v !== 'ok') return false;
-    if (!req) {
-      p.vinculos = Object.assign({}, p.vinculos, { requerimiento: { numero, titulo: p.titulo } });
-      ajustarCodigo(p, numero);
-    }
-    if (!(await registrarEnPlanilla(p, numero, null, estado))) return false;
-    if (extra.length) {
-      const m = QH().mensajeEditarRequerimiento(p, numero, p.titulo, extra, usuarioActual(p));
-      try { await QH().enviar(m); recordarExportacion(p, m, numero, extra); } catch (e) { toast(`El registro quedó pedido, pero no ${extra.map((c) => c.etiqueta).join(' ni ')}: ${(e && e.message) || e}. Exporta de nuevo cuando aparezca.`, true, 9000); }
-    }
-    scheduleSave();
-    QH().olvidar();
-    updateHeader();
-    pintarRequerimiento();
-    pintarHerramientas();
-    pintarSigue();
-    const vo = QO() && QO().vinculo(p);
-    const carpeta = vo && !/^\d{1,6}\.\s/.test(vo.nombre) ? ` La carpeta «${vo.nombre}» sigue sin el N°: renómbrala «${numero}. …» y el proyecto la sigue.` : '';
-    toast(`Pedido a la Planilla de Ingreso: N° ${numero}, fila nueva en unos 10 minutos.${carpeta}`, false, 8000);
-    return true;
+    if (v === 'ok') ingresarEnPortal(datosParaPortal(p, null));
+    return false;
   }
 
   const nombreSeguro = (t) => String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9 _.-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
@@ -6418,7 +6384,8 @@
     let reservas = null;      // N° → título; null = todavía no se leen
     const cargaReservas = cargaBuzon
       .then((l) => new Map((l || []).filter((m) => !delPortal(m)).map((m) => [String((m.requerimiento || {}).numero), String((m.requerimiento || {}).titulo || '')])));
-    let registrar = true;     // «registrar en la Planilla de Ingreso» un proyecto cuyo N° no está en ella (2026-10-26)
+    // Desde el 2026-11-12 el Formulador no pide N° a la Planilla (plan «N° de requerimiento sin choques», fase 1): un
+    // requerimiento nuevo se ingresa en el Portal («Ingresar en Requerimientos»), que es el único que da N°.
     const pedirIniciales = !yo();
     let opcion = '';      // la opción elegida a mano ('crear' | 'usar' | 'ninguna'); '' = la propuesta
     let autoTit = '';
@@ -6447,35 +6414,35 @@
     const libre = () => (pl && reservas && QH() ? QH().siguienteNumero(pl.keys(), (lista || []).map((c) => c.numero), reservas.keys(),
       S.all().map((p) => QH().reqDe(p))) : null);
     // Lo que se haría con lo escrito: el nombre (y código), la carpeta que ya existe y si se puede crear.
-    // n0: el N° escrito; n: el del proyecto (sin N° y con «registrar», el siguiente libre).
+    // n0: el N° escrito, que es también el del proyecto (sin N°, el código es solo el nombre).
     const estado = () => {
       const n0 = num.value.trim(), t = tit.value;
       const r = pl && n0 ? pl.get(String(parseInt(n0, 10))) || null : null;
       const lib = libre();
       const reservado = n0 && reservas ? reservas.get(String(parseInt(n0, 10))) : undefined;
-      const puedeRegistrar = !!t.trim() && !r && reservado === undefined && (!!n0 || !!lib);
-      const n = n0 || (registrar && puedeRegistrar ? String(lib) : '');
+      const n = n0;
       const nombre = QO() ? QO().nombreOferta(n, t) : String(t || '').trim();
       const k = nfcLower(nombre);
       const existente = (lista || []).find((c) => n && c.numero === n) || (k ? (lista || []).find((c) => nfcLower(c.nombre) === k) : null) || null;
       let error = '';
       if (!existente && t.trim() && lista) { try { QO().nombreCarpetaNueva(n, t, lista); } catch (err) { error = err.message; } }
-      return { n, n0, t: String(t || '').replace(/\s+/g, ' ').trim(), nombre, existente, error, r, lib, reservado, puedeRegistrar };
+      return { n, n0, t: String(t || '').replace(/\s+/g, ' ').trim(), nombre, existente, error, r, lib, reservado };
     };
+    const BTN_PORTAL = `<button class="link-btn np-portal" value="portal">Ingresar en Requerimientos</button>`;
     const radio = (valor, sel, html, dis) => `<label class="np-op${dis ? ' dis' : ''}"><input type="radio" name="np-op" value="${valor}" ${sel ? 'checked' : ''} ${dis ? 'disabled' : ''}><span>${html}</span></label>`;
     const pintar = () => {
       const e = estado();
       const codigo = e.existente ? e.existente.nombre : e.nombre;
-      cod.innerHTML = codigo ? `Código del proyecto: <b class="code-badge">${esc(codigo)}</b>${e.existente ? ' <span class="muted">· el nombre de la carpeta que ya existe</span>' : !e.n0 && e.n ? ' <span class="muted">· con el N° que se registra en la Planilla</span>' : ''}`
+      cod.innerHTML = codigo ? `Código del proyecto: <b class="code-badge">${esc(codigo)}</b>${e.existente ? ' <span class="muted">· el nombre de la carpeta que ya existe</span>' : ''}`
         : '<span class="muted">Escribe el nombre: con el N°, el código queda «N°. Nombre».</span>';
       let planilla = '';
-      if (pl && e.r) planilla = `<span class="np-pl">Planilla de Ingreso, N° ${esc(e.n0)}: ${esc(e.r.titulo || 'sin título')}${e.r.estado ? ` · ${esc(e.r.estado)}` : ''}</span>`;
-      else if (pl && e.reservado !== undefined) planilla = `<span class="np-pl err">El N° ${esc(e.n0)} ya se pidió a la Planilla de Ingreso para «${esc(e.reservado || 'otro proyecto')}» y espera que se escriba.${e.lib ? ` El siguiente libre es el ${e.lib}.` : ''}</span>`;
-      else if (pl && e.puedeRegistrar) {
-        const que = e.n0 ? `El N° ${esc(e.n0)} no está en la Planilla de Ingreso: registrarlo` : `Sin N° de requerimiento: registrar el proyecto en la Planilla de Ingreso como <b>N° ${e.lib}</b>`;
-        planilla = `<label class="np-reg"><input type="checkbox" id="np-reg" ${registrar ? 'checked' : ''}><span>${que}, con Estado «Evaluación». Se escribe sola en unos minutos.</span></label>`;
-      } else if (pl && e.n0) planilla = `<span class="np-pl err">El N° ${esc(e.n0)} no está en la Planilla de Ingreso.</span>`;
-      else if (pl && e.lib && !e.t) planilla = `<span class="np-pl">Sin N° de requerimiento, el proyecto se registra en la Planilla de Ingreso como N° ${e.lib}.</span>`;
+      const nuevoEnPortal = info('Los requerimientos se ingresan solo en Requerimientos del Portal, que les da su N°: así dos personas no toman el mismo. Se abre «Nuevo requerimiento» con este nombre; al guardarlo, vuelve con «Formular →».');
+      if (pl && e.r) planilla = `<span class="np-pl">Requerimientos, N° ${esc(e.n0)}${e.r.provisorio ? ' (recién ingresado)' : ''}: ${esc(e.r.titulo || 'sin título')}${e.r.estado ? ` · ${esc(e.r.estado)}` : ''}</span>`;
+      else if (pl && e.reservado !== undefined) planilla = `<span class="np-pl err">El N° ${esc(e.n0)} ya se pidió a la Planilla de Ingreso para «${esc(e.reservado || 'otro proyecto')}» y espera que se escriba.</span>`;
+      else if (pl && e.n0) planilla = `<span class="np-pl err">El N° ${esc(e.n0)} no está en Requerimientos. ${BTN_PORTAL} ${nuevoEnPortal}</span>`;
+      else if (pl && !e.n0) planilla = `<span class="np-pl">Sin N° de requerimiento. ${BTN_PORTAL} ${nuevoEnPortal}</span>`;
+      // Un N° escrito tiene que existir en Requerimientos (o estar recién ingresado): el Formulador ya no los crea
+      boton.disabled = !!(pl && e.n0 && !e.r);
       let html;
       if (sinNavegador) {
         html = `<p class="np-nota">Este navegador no puede crear carpetas: usa Chrome o Edge de escritorio. El proyecto se crea sin carpeta y la eliges después.</p>`;
@@ -6524,7 +6491,6 @@
     tit.addEventListener('input', () => { pintar(); });
     ops.addEventListener('change', (ev) => {
       if (ev.target.name === 'np-op') opcion = ev.target.value;
-      if (ev.target.id === 'np-reg') { registrar = ev.target.checked; pintar(); const c = $('#np-reg'); if (c) c.focus(); }
     });
     // Enter crea el proyecto (sin él, el formulario lo tomaría como el primer botón: cerrar)
     $('#modal .modal-body').addEventListener('keydown', (ev) => {
@@ -6551,6 +6517,7 @@
     const e = estado();
     delete combos['np-num'];
     if (v === 'elegir') return { elegir: true, numero: e.n0, titulo: e.t };
+    if (v === 'portal') return { portal: true, titulo: e.t };
     if (v !== 'ok') return null;
     pl = pl || await cargaPlanilla;
     const r = pl && e.n ? pl.get(String(parseInt(e.n, 10))) || null : null;
@@ -6560,39 +6527,47 @@
     return {
       crear: !e.existente && marcada === 'crear' && !!e.t && !e.error,
       carpeta: e.existente && marcada === 'usar' ? e.existente : null,
-      numero: e.n, titulo: e.t, req: r, iniciales,
-      // Se pide la fila solo con la Planilla leída: sin ella no se sabe qué N° está libre
-      registrar: !r && registrar && e.puedeRegistrar && !!e.n
+      numero: e.n, titulo: e.t, req: r, iniciales
     };
   }
 
-  /* Pide a la Planilla de Ingreso la fila del proyecto nuevo (mensaje nuevo-requerimiento, 2026-10-26), con el
-     formato de las demás: Estado «Evaluación», Canal «Otro» (o «Mercado Público» con ID de licitación),
-     Capt. quien lo crea, Eval. el responsable, «-» sin referencia y la Apertura de hoy. Devuelve si se pidió.
-     El ID y el presupuesto, solo si su categoría los lleva (2026-10-27). estado: el de la oferta, si ya no está
-     en evaluación («Exportar a la Planilla» de un proyecto ya enviado). */
-  async function registrarEnPlanilla(p, numero, op, estado) {
-    const par = p.parametros || {};
-    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const cierre = op && /^\d{4}-\d{2}-\d{2}/.test(String(op.cierre || '')) ? String(op.cierre).slice(0, 16) : '';
-    const id = S.conId(p) ? String(p.idLicitacion || '').trim() : '';
-    const datos = {
-      numero, titulo: p.titulo || '', estado: estado || 'Evaluación', canal: id ? 'Mercado Público' : 'Otro',
-      captador: yo() || p.responsable || '', evaluador: p.responsable || yo() || '',
-      ubicacion: p.ubicacion || '', referencia: id || '-', apertura: iso(new Date()), cierre,
-      // La planilla lleva pesos: un presupuesto en otra moneda no se manda
-      presupuesto: S.conPresupuesto(p) && monedaDe(p) === 'CLP' && par.presupuestoIncluyeIva && num(par.presupuestoMaximo) > 0 ? num(par.presupuestoMaximo) : null
-    };
-    try {
-      const m = QH().mensajeNuevoRequerimiento(p, datos, usuarioActual(p));
-      await QH().enviar(m);
-      p.vinculos = Object.assign({}, p.vinculos, { planilla: Object.assign({}, (p.vinculos || {}).planilla, { registro: { id: m.id, fecha: m.origen.enviado, numero: Number(numero) } }) });
-      S.upsert(p);
-      return true;
-    } catch (err) {
-      toast(`No se pudo pedir el registro en la Planilla de Ingreso: ${(err && err.message) || err}. Pásalo a mano con el N° ${numero}.`, true, 9000);
-      return false;
+  /* «Ingresar en Requerimientos» (2026-11-12, plan «N° de requerimiento sin choques», fase 1). El Formulador ya no pide
+     N° a la Planilla (antes: registrarEnPlanilla, mensaje nuevo-requerimiento): el requerimiento se ingresa en el Portal,
+     el único que da N°, con «Nuevo requerimiento» ya llenado con lo que se sabe. Dentro del Portal se le manda un
+     mensaje; abierto suelto, se abre el Portal con los datos en la dirección. Se vuelve con «Formular →». */
+  const PORTAL = TABLEROS + 'portal/';
+  function datosParaPortal(p, op) {
+    const d = { titulo: String((p && p.titulo) || '').trim() };
+    if (p && p.cliente) d.cliente = String(p.cliente);
+    if (p && p.ubicacion) d.ubicacion = String(p.ubicacion);
+    if (p && p.responsable && QU() && QU().valido(p.responsable)) d.evaluador = p.responsable;
+    const id = p && S.conId(p) ? String(p.idLicitacion || '').trim() : '';
+    if (id) { d.referencia = id; d.canal = 'Mercado Público'; }
+    const par = (p && p.parametros) || {};
+    if (p && S.conPresupuesto(p) && monedaDe(p) === 'CLP' && par.presupuestoIncluyeIva && num(par.presupuestoMaximo) > 0) d.presupuesto = num(par.presupuestoMaximo);
+    if (op && QOp()) {
+      const c = QOp().campos(op);
+      Object.assign(d, { titulo: d.titulo || c.titulo || '', canal: 'Mercado Público' });
+      if (c.cliente) d.cliente = c.cliente;
+      if (c.ubicacion) d.ubicacion = c.ubicacion;
+      if (c.idLicitacion) d.referencia = c.idLicitacion;
+      if (c.presupuesto > 0) d.presupuesto = Math.round(c.presupuesto);
+      if (/^\d{4}-\d{2}-\d{2}/.test(String(op.cierre || ''))) d.cierre = String(op.cierre).slice(0, 16);
     }
+    const est = p && p.estado && QH() ? QH().cambiosParaPlanilla(p, 0) : null;     // Enviada → Ofertado, etc.
+    if (est && est.estado) d.estado = est.estado;
+    return d;
+  }
+  function ingresarEnPortal(datos) {
+    try {
+      const top = window.top;
+      if (top !== window && top.location.origin === location.origin && /\/portal\//.test(top.location.pathname)) {
+        top.postMessage({ tipo: 'quempin-nuevo-requerimiento', datos }, location.origin);
+        toast('Ingrésalo en «Nuevo requerimiento» del Portal; después vuelve con «Formular →».', false, 7000);
+        return;
+      }
+    } catch (e) { /* el Portal es de otro sitio: se abre aparte */ }
+    window.open(PORTAL + '#/planilla?nuevo=' + encodeURIComponent(JSON.stringify(datos)), '_blank', 'noopener');
   }
   const nfcLower = (s) => String(s || '').normalize('NFC').toLowerCase();
 
@@ -6603,6 +6578,7 @@
     const op = o.op || null;
     let d = await dialogoNuevo(o);
     if (!d) return;
+    if (d.portal) { ingresarEnPortal(datosParaPortal({ titulo: d.titulo }, op)); return; }
     let sel;
     if (d.elegir) {
       // El selector de siempre, con lo que ya se escribió
@@ -6638,11 +6614,9 @@
     const hechos = op ? QOp().aplicar(np, op, monedaDe(np)) : [];
     if (op) ajustarCodigo(np, d.numero);
     S.upsert(np);
-    // Sin N° en la Planilla de Ingreso: se pide su fila, con el código y los datos ya puestos
-    const registrado = d.registrar ? await registrarEnPlanilla(np, d.numero, op) : false;
     if (sel.carpeta) guardarExcelOferta(np.uid, true);
     goProject(np, 'ficha');
-    const extra = (op ? ` ${textoDesdeOportunidad(hechos)}` : '') + (registrado ? ` Queda registrado en la Planilla de Ingreso como N° ${d.numero} en unos minutos.` : '');
+    const extra = op ? ` ${textoDesdeOportunidad(hechos)}` : '';
     if (sel.carpeta) registrarAlElegirCarpeta(np.uid, `Proyecto ${np.codigo} creado ${sel.carpeta.nueva ? 'con su carpeta nueva' : 'en la carpeta'} «${sel.carpeta.nombre}».${extra}`);
     else if (d.diferida) toast(`Proyecto ${np.codigo} creado. Su carpeta se crea cuando la Planilla confirme el N° ${d.numero} (unos minutos); puedes formular desde ya.`, false, 7000);
     else toast(`Proyecto ${np.codigo} creado.${extra} Cuando tengas la carpeta de su oferta, elígela desde el aviso de arriba.`, false, 6000);
