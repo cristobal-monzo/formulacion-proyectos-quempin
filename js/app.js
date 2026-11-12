@@ -4837,7 +4837,7 @@
     const planillaWeb = PLANILLA_WEB;
     return `<div class="campo ancho"><label for="f-req">N° de requerimiento <span class="opc">(Planilla de Ingreso)</span> ${info(`El N° con que se registró el requerimiento: une este proyecto con su cotización, el Análisis Financiero y el Flujo de Caja. La lista muestra los ${REQ_RECIENTES} últimos ingresados; para uno anterior, escribe su N° o parte del título.`)}</label>
         <div class="req-fila"><div class="combo"><input class="input" id="f-req" inputmode="numeric" autocomplete="off" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" value="${esc(v && v.numero ? v.numero : '')}" placeholder="Ej.: 280"><button type="button" class="combo-btn" data-picker="combo" tabindex="-1" aria-label="Ver los requerimientos">${ICON.caret}</button></div>
-          <button type="button" class="btn btn-sm" data-act="req-completar" data-tip="<b>Completar desde la planilla</b>Trae el título, la ubicación, el ID de licitación y el presupuesto del requerimiento a los campos que estén vacíos, y deja como código «N°. Nombre», igual que el nombre de la carpeta de la oferta.">Completar desde la planilla</button>
+          <button type="button" class="btn btn-sm" data-act="req-completar" data-tip="<b>Completar desde la planilla</b>Trae el título, el cliente, la ubicación, el ID de licitación y el presupuesto del requerimiento. Lo que ya tiene otro dato se muestra antes de reemplazarlo. Deja como código «N°. Nombre», igual que el nombre de la carpeta de la oferta.">Completar desde la planilla</button>
           ${planillaWeb ? `<a class="link-btn req-abrir" href="${esc(planillaWeb)}" target="_blank" rel="noopener" data-tip="<b>Abrir la planilla de ingreso</b>Se abre en Excel para la web, en otra pestaña, para buscar o verificar el N°.">${ICON.open}Abrir la planilla</a>` : ''}</div>
         <span class="hint en-icono" id="req-hint">El N° con que se registró el requerimiento: une este proyecto con su cotización, el Análisis Financiero y el Flujo de Caja. La lista muestra los ${REQ_RECIENTES} últimos ingresados; para uno anterior, escribe su N° o parte del título.</span></div>`;
   }
@@ -4874,18 +4874,51 @@
     if (!req) { toast('Primero escribe el N° de requerimiento.', true); return; }
     if (!(await asegurarCarpeta())) return;
     const datos = await QH().requerimientos(true);
-    const r = ((datos && datos.requerimientos) || []).find((x) => String(x.numero) === req);
-    if (!r) { toast(`El N° ${req} no está en ${enLaPlanilla(datos)}.`, true); return; }
-    const hechos = [];
-    if (!String(p.titulo || '').trim() && r.titulo) { p.titulo = r.titulo; hechos.push('título'); }
-    if (!String(p.ubicacion || '').trim() && r.ubicacion) { p.ubicacion = r.ubicacion; hechos.push('ubicación'); }
-    // Solo lo que lleva su categoría: un trato directo no tiene ID de licitación ni presupuesto con que competir
-    if (S.conId(p) && !String(p.idLicitacion || '').trim() && r.referencia) { p.idLicitacion = String(r.referencia); hechos.push('ID de licitación'); }
-    if (S.conPresupuesto(p) && !(num(p.parametros.presupuestoMaximo) > 0) && ok(r.presupuesto) && r.presupuesto > 0) {
-      p.parametros.presupuestoMaximo = r.presupuesto;
-      p.parametros.presupuestoIncluyeIva = true;
-      hechos.push('presupuesto (con IVA)');
+    const r0 = ((datos && datos.requerimientos) || []).find((x) => String(x.numero) === req);
+    if (!r0) { toast(`El N° ${req} no está en ${enLaPlanilla(datos)}.`, true); return; }
+    // La casilla de un dato geográfico de Excel se lee vacía en el navegador: vale lo que publica el procesador
+    const r = Object.assign({}, r0);
+    if (['ubicacion', 'cliente'].some((k) => !String(r[k] || '').trim())) {
+      const pub = await QH().publicacion('requerimientos', true).catch(() => null);
+      const rp = ((pub && pub.requerimientos) || []).find((x) => String(x.numero) === req && norm(x.titulo) === norm(r.titulo)) || {};
+      ['ubicacion', 'cliente'].forEach((k) => { if (!String(r[k] || '').trim() && rp[k]) r[k] = rp[k]; });
     }
+    /* Pedido del equipo (2026-11-12): lo que la planilla dice distinto reemplaza a lo del proyecto. Lo vacío se llena
+       sin preguntar; lo que ya tiene otro texto se muestra antes (actual → planilla) y se reemplaza lo marcado. */
+    const par = p.parametros;
+    const txt = (v) => String(v === null || v === undefined ? '' : v).trim();
+    const campos = [];
+    const campo = (etiqueta, actual, nuevo, poner) => { if (txt(nuevo) && txt(actual) !== txt(nuevo)) campos.push({ etiqueta, actual: txt(actual), nuevo: txt(nuevo), poner }); };
+    campo('título', p.titulo, r.titulo, () => { p.titulo = txt(r.titulo); });
+    campo('cliente', p.cliente, r.cliente, () => { p.cliente = txt(r.cliente); });
+    campo('ubicación', p.ubicacion, r.ubicacion, () => { p.ubicacion = txt(r.ubicacion); });
+    // Solo lo que lleva su categoría: un trato directo no tiene ID de licitación ni presupuesto con que competir
+    if (S.conId(p)) campo(S.categoriaDe(p) === 'Compra ágil' ? 'ID de la compra ágil' : 'ID de licitación', p.idLicitacion, r.referencia, () => { p.idLicitacion = txt(r.referencia); });
+    if (S.conPresupuesto(p) && ok(r.presupuesto) && r.presupuesto > 0) {
+      const hay = num(par.presupuestoMaximo) > 0;
+      const igual = hay && num(par.presupuestoMaximo) === r.presupuesto && !!par.presupuestoIncluyeIva;
+      if (!igual) campos.push({ etiqueta: 'presupuesto (con IVA)', actual: hay ? `${dinero(num(par.presupuestoMaximo))} ${par.presupuestoIncluyeIva ? 'con IVA' : 'neto'}` : '',
+        nuevo: `${dinero(r.presupuesto)} con IVA`, poner: () => { par.presupuestoMaximo = r.presupuesto; par.presupuestoIncluyeIva = true; } });
+    }
+    const vacios = campos.filter((c) => !c.actual);
+    const distintos = campos.filter((c) => c.actual);
+    if (distintos.length) {
+      const v = await ask({
+        title: 'Completar desde la planilla',
+        wide: true,
+        body: `<p>La planilla dice otra cosa en el <b>N° ${esc(req)}</b>. Lo marcado se reemplaza por lo de la planilla.</p>
+          <div class="tabla-contenedor"><table class="tbl xp-tabla"><thead><tr><th aria-label="Reemplazar"></th><th>Campo</th><th>En el proyecto</th><th>En la planilla</th></tr></thead><tbody>
+            ${distintos.map((c, i) => `<tr><td><input type="checkbox" id="cp-${i}" data-cp="${i}" checked></td><td><label for="cp-${i}">${esc(c.etiqueta[0].toUpperCase() + c.etiqueta.slice(1))}</label></td>
+              <td>${esc(c.actual)}</td><td><b>${esc(c.nuevo)}</b></td></tr>`).join('')}
+          </tbody></table></div>
+          ${vacios.length ? `<p class="hint">También se llena lo que está vacío: ${esc(vacios.map((c) => c.etiqueta).join(', '))}.</p>` : ''}`,
+        buttons: [{ label: 'Cancelar' }, { label: 'Completar', value: 'ok', primary: true }]
+      });
+      if (v !== 'ok') return;
+      distintos.forEach((c, i) => { if (!($(`#cp-${i}`) || {}).checked) c.omitir = true; });
+    }
+    const hechos = [];
+    campos.forEach((c) => { if (!c.omitir) { c.poner(); hechos.push(c.etiqueta); } });
     const version = p.version;
     p.vinculos = Object.assign({}, p.vinculos, { requerimiento: { numero: req, titulo: r.titulo || '' } });
     if (ajustarCodigo(p, req)) hechos.push(`código ${p.codigo}${p.version !== version ? ` v${p.version}` : ''}`);
@@ -4893,7 +4926,7 @@
     renderTab('#f-req');
     updateHeader();
     scheduleSave();
-    toast(hechos.length ? `Desde la planilla: ${hechos.join(', ')}.` : 'Los campos ya tenían datos: no se cambió nada.');
+    toast(hechos.length ? `Desde la planilla: ${hechos.join(', ')}.` : 'El proyecto ya dice lo mismo que la planilla: no se cambió nada.');
   }
 
   // ---- Precios de referencia (paso 3) -------------------------------------------------
