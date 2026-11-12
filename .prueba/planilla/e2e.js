@@ -140,11 +140,25 @@ const texto = (page, sel) => page.$eval(sel, (e) => e.textContent).catch(() => '
     check('…y el código «N°. Nombre» en vez del correlativo (2026-10-19)', (await page.inputValue('[data-f="codigo"]')) === '29. Requerimiento ficticio 29', await page.inputValue('[data-f="codigo"]'));
     check('la pista del código lo explica', (await texto(page, '#codigo-hint')).includes('N° y nombre, como la carpeta de la oferta'), await texto(page, '#codigo-hint'));
     check('el año sigue a mano para el correlativo', /^\d{4}$/.test(anio));
-    // Otro N°: el código cambia con él (el título ya escrito se queda); el ID de licitación ya escrito se respeta
+    // Otro N° (2026-11-12, pedido del equipo): lo que la planilla dice distinto se muestra y se reemplaza lo marcado
     const otroReq = async (n) => { await page.fill('#f-req', n); await page.dispatchEvent('#f-req', 'change'); await page.keyboard.press('Escape'); await wait(300); await page.click('[data-act="req-completar"]'); await wait(500); };
+    const filasDlg = () => page.$$eval('#modal[open] .xp-tabla tbody tr', (trs) => trs.map((tr) => tr.children[1].textContent.trim()));
+    const botonDlg = async (texto) => { await page.click(`#modal[open] .modal-foot button:text-is("${texto}")`); await wait(500); };
     await otroReq('28');
-    check('con otro N° (28) el código pasa a «28. …»', (await page.inputValue('[data-f="codigo"]')) === '28. Requerimiento ficticio 29', await page.inputValue('[data-f="codigo"]'));
-    check('…y el ID de licitación escrito no se pisa', (await page.inputValue('[data-f="idLicitacion"]')) === 'REF-29', await page.inputValue('[data-f="idLicitacion"]'));
+    const distintas28 = await filasDlg();
+    check('con otro N° (28), lo distinto se muestra antes de reemplazarlo', distintas28.includes('Título') && distintas28.some((x) => /^ID de/.test(x)) && distintas28.includes('Presupuesto (con IVA)'), distintas28);
+    await page.uncheck(`#modal[open] #cp-${distintas28.indexOf('Título')}`);
+    await botonDlg('Completar');
+    check('…lo desmarcado (el título) se queda', (await page.inputValue('[data-f="titulo"]')) === 'Requerimiento ficticio 29', await page.inputValue('[data-f="titulo"]'));
+    check('…lo marcado se reemplaza: el ID de licitación pasa a REF-28', (await page.inputValue('[data-f="idLicitacion"]')) === 'REF-28', await page.inputValue('[data-f="idLicitacion"]'));
+    check('…y el presupuesto a 28.000.000', (await page.inputValue('[data-f="parametros.presupuestoMaximo"]')) === '28.000.000', await page.inputValue('[data-f="parametros.presupuestoMaximo"]'));
+    check('el código pasa a «28. …»', (await page.inputValue('[data-f="codigo"]')) === '28. Requerimiento ficticio 29', await page.inputValue('[data-f="codigo"]'));
+    await page.click('[data-act="req-completar"]');
+    await wait(500);
+    const distintas28b = await filasDlg();
+    check('de nuevo, solo queda distinto el título', distintas28b.join('|') === 'Título', distintas28b);
+    await botonDlg('Cancelar');
+    check('«Cancelar» no cambia nada', (await page.inputValue('[data-f="titulo"]')) === 'Requerimiento ficticio 29', await page.inputValue('[data-f="titulo"]'));
     // Un código escrito a mano no se toca
     await page.fill('[data-f="codigo"]', 'OBRA-ESPECIAL');
     await page.dispatchEvent('[data-f="codigo"]', 'change');
@@ -153,6 +167,10 @@ const texto = (page, sel) => page.$eval(sel, (e) => e.textContent).catch(() => '
     await page.fill('[data-f="idLicitacion"]', '');
     await page.dispatchEvent('[data-f="idLicitacion"]', 'change');
     await otroReq('27');
+    const distintas27 = await filasDlg();
+    check('el ID vacío no se pregunta: se llena', !distintas27.some((x) => /^ID de/.test(x)) && /ID de/.test(await texto(page, '#modal[open] .modal-body')), distintas27);
+    await botonDlg('Completar');
+    check('el título se reemplaza por el del 27', (await page.inputValue('[data-f="titulo"]')) === 'Requerimiento ficticio 27', await page.inputValue('[data-f="titulo"]'));
     check('un código escrito a mano se respeta', (await page.inputValue('[data-f="codigo"]')) === 'OBRA-ESPECIAL', await page.inputValue('[data-f="codigo"]'));
     check('el ID de licitación vacío se completa (REF-27)', (await page.inputValue('[data-f="idLicitacion"]')) === 'REF-27', await page.inputValue('[data-f="idLicitacion"]'));
     await wait(600);
