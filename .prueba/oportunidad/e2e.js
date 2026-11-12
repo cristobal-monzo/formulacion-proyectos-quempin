@@ -82,7 +82,6 @@ async function confirmarModal(page) {
     check('sin N°: nada en el buzón para la Planilla', (await page.evaluate(() => window.QIntercambio.leerBuzon({ tipos: ['nuevo-requerimiento'] }))).length === 0);
     // Otra vez el enlace: esta vez se crea el proyecto sin N°
     await page.goto(enlace(LICITACION));
-    await page.reload();
     await page.waitForSelector('#modal[open] #np-num', { timeout: 10000 });
     await wait(900);
     await confirmarModal(page);

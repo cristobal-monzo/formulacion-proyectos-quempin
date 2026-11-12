@@ -183,7 +183,7 @@ async function crear(page) {
     dlg = await texto(page, '#np-carpeta');
     check('nuevo: propone crear la carpeta con ese mismo nombre en Formulación de proyectos', dlg.includes('Sí, crear «312. Gimnasio municipal de prueba» en la biblioteca Formulación de proyectos')
       && (await page.$eval('#np-opciones input[value="crear"]', (e) => e.checked)), dlg);
-    check('nuevo: dice qué N° es en la planilla', dlg.includes('Planilla de Ingreso, N° 312: Gimnasio municipal de prueba'), dlg);
+    check('nuevo: dice qué N° es en la planilla', dlg.includes('Requerimientos, N° 312: Gimnasio municipal de prueba'), dlg);
     await page.screenshot({ path: path.join(SHOTS, '1-nuevo-proyecto.png') });
     await crear(page);
     const uid1 = await uidAbierto(page);
@@ -238,8 +238,8 @@ async function crear(page) {
     // El Portal lo ingresó y ya llegó al Excel con el 313: se formula con «Formular →», con su carpeta al tiro
     await escribir(page, [[`${HERR}/Intercambio/publicado/requerimientos.json`, PUB('planilla-requerimientos', { requerimientos: REQS.concat([
       { numero: 313, estado: 'Evaluación', titulo: 'Caldera sin número', ubicacion: 'Talca', referencia: '', cierre: null, presupuesto: null }]) })]]);
+    await page.reload();          // la Planilla publicada se vuelve a leer
     await abrir(page, '#/req/313/crear');
-    await page.reload();
     await page.waitForSelector('#modal[open] #np-num', { timeout: 8000 }).catch(() => {});
     await conNombre(page);
     check('Formular el 313: código «313. Caldera sin número»', (await texto(page, '#np-codigo')).includes('313. Caldera sin número'), await texto(page, '#np-codigo'));
