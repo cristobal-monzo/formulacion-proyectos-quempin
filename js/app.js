@@ -2364,8 +2364,8 @@
     return `${pasoHead(key, ayudaCostos(key))}${costosSubnav()}${sinPartidasNote()}
       ${filtroBar(key)}${barraSeleccion(key)}
       <div class="tabla-contenedor">
-        <table class="tbl tbl-apilable${larga ? ' tbl-larga' : ''}" style="min-width:980px">
-          ${larga ? colgroup([88, 0, 210, 120, 96, 200, 96, 130, 48]) : ''}
+        <table class="tbl tbl-apilable tbl-costos${larga ? ' tbl-larga' : ''}">
+          ${larga ? colgroup([88, 0, 170, 96, 96, 170, 80, 120, 48]) : ''}
           <thead><tr>
             ${thSeleccion(key, items)}<th>Descripción</th><th>Partida</th>
             <th class="num">Cantidad<span class="th-sub">por unidad de partida</span></th><th>Unidad</th><th class="num">Costo unitario</th>
@@ -2406,8 +2406,8 @@
     return `${pasoHead(key, ayuda)}${costosSubnav()}${sinPartidasNote()}
       ${filtroBar(key)}${barraSeleccion(key)}
       <div class="tabla-contenedor">
-        <table class="tbl mo tbl-apilable${larga ? ' tbl-larga' : ''}" style="min-width:1000px">
-          ${larga ? colgroup([88, 0, 210, 140, 140, 140, 120, 130, 48]) : ''}
+        <table class="tbl mo tbl-apilable tbl-costos${larga ? ' tbl-larga' : ''}">
+          ${larga ? colgroup([88, 0, 160, 116, 116, 116, 100, 120, 48]) : ''}
           <thead><tr>${thSeleccion(key, items)}<th>Tarea</th><th>Partida</th>${nivel(1, par.tarifaN1)}${nivel(2, par.tarifaN2)}${nivel(3, par.tarifaN3)}
             <th class="num">Días-hombre</th><th class="num">Subtotal</th><th><span class="visualmente-oculto">Acciones</span></th></tr></thead>
           <tbody>${rows || `<tr class="empty-row"><td colspan="9">${hayFiltro(key) ? 'No hay tareas con este filtro.' : 'Sin tareas de mano de obra todavía. <button type="button" class="link-btn" data-act="add-row" data-list="manoObra">Agregar la primera</button>'}</td></tr>`}</tbody>

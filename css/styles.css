@@ -611,6 +611,17 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
 .tbl td:has(> .ci.desc) { width: 40%; }
 .tbl.mo td:has(> .ci.desc) { width: auto; }
 .tbl.mo .ci.desc { min-width: 160px; }
+/* Tablas de costos sin desplazamiento lateral (2026-11-12): sin ancho mínimo fijo; la descripción y
+   la partida se achican hasta caber en la pantalla. */
+.tbl.tbl-costos { width: 100%; }
+.tbl.tbl-costos td:has(> .ci.desc) { width: 26%; }
+.tbl.tbl-costos.mo td:has(> .ci.desc) { width: 20%; }
+.tbl.tbl-costos .ci.desc { min-width: 110px; }
+.tbl.tbl-costos .picker { min-width: 96px; max-width: 240px; }
+.tbl.tbl-costos .picker .txt { width: 0; flex: 1 1 auto; } /* el nombre de la partida no fija el ancho: se corta con «…» */
+.tbl.tbl-costos td[data-label="Partida"] { width: 18%; }
+.tbl.tbl-costos .ci.w-sm { min-width: 60px; }
+.tbl.tbl-costos .ci.w-md { min-width: 80px; }
 
 .tbl-toolbar { display: flex; gap: 8px 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; margin: 0 0 12px; }
 .tbl-toolbar .left, .tbl-toolbar .right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -1189,7 +1200,7 @@ select.ci { align-items: center; }   /* con appearance: base-select el texto que
 .kpi-name { display: flex; align-items: center; gap: 8px; }
 
 /* ---- Mano de obra: cabe en 1366 px ------------------------------------------------ */
-.tbl.mo .picker { min-width: 130px; max-width: 190px; }
+.tbl.mo .picker { min-width: 110px; max-width: 190px; }
 .tbl.mo .ci.desc { min-width: 140px; }
 .tbl.mo .ci.w-xxs { min-width: 40px; max-width: 48px; padding: 0 5px; }
 
@@ -1233,6 +1244,40 @@ select.ci { align-items: center; }   /* con appearance: base-select el texto que
   .tbl-lista tr.clickable td.col-titulo .proj-title { font-size: 14px; }
   .subtab { min-width: 0; flex: 1 1 140px; }
   .paso-pie .btn { flex: 1 1 auto; }
+}
+
+/* Tablas de costos en pantallas angostas (641 a 959 px): las 9 columnas editables no caben, así que se
+   leen como tarjetas, igual que en el teléfono (2026-11-12). Mismas reglas que el bloque de arriba. */
+@media (min-width: 641px) and (max-width: 959px) {
+  .tabla-contenedor:has(> .tbl-costos) { overflow: visible; border: 0; background: none; }
+  .tbl-costos { min-width: 0 !important; display: block; font-size: 13px; }
+  .tbl-costos thead { display: none; }
+  .tbl-costos tbody, .tbl-costos tfoot { display: block; }
+  .tbl-costos tr { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px 10px; padding: 12px 14px; margin-bottom: 10px; background: var(--surface-card); border: 1px solid var(--border-hairline); border-radius: 10px; }
+  .tbl-costos td { grid-column: span 3; display: block; padding: 0 !important; border: 0 !important; min-width: 0; width: auto !important; background: none !important; }
+  .tbl-costos td.tercio { grid-column: span 2; }
+  .tbl-costos td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 4px; font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; text-align: left; }
+  .tbl-costos td.num { text-align: left; }
+  .tbl-costos td.code, .tbl-costos td.cell-actions { display: flex; }
+  .tbl-costos td.code { align-items: center; grid-row: 1; }
+  .tbl-costos tr.sel { background: var(--orange-soft); border-color: var(--brand-orange); }
+  .tbl-costos td.cell-actions { grid-row: 1; flex-direction: row; justify-content: flex-end; align-items: center; }
+  .tbl-costos td:has(> .picker) { grid-column: 1 / -1; }
+  .tbl-costos td.lvl { grid-column: span 2; }
+  .tbl-costos td.code:has(+ td > .ci.desc) { grid-column: 1 / span 1; }
+  .tbl-costos td.code + td:has(> .ci.desc) { grid-row: 1; grid-column: 2 / span 4; }
+  .tbl-costos td.code + td:has(> .ci.desc)::before { display: none; }
+  .tbl-costos td.code:has(+ td > .ci.desc) ~ td.cell-actions { grid-column: 6; }
+  .tbl-costos .ci, .tbl-costos .picker, .tbl-costos .combo { width: 100%; max-width: none !important; min-width: 0 !important; }
+  .tbl-costos .ci { height: 40px; font-size: 15px; }
+  .tbl-costos .pxd .ci { flex: 1 1 0; }
+  .tbl-costos tr.has-error { box-shadow: inset 3px 0 0 var(--status-bad); }
+  .tbl-costos tr.has-warn { box-shadow: inset 3px 0 0 var(--status-warning); }
+  .tbl-costos tr.empty-row, .tbl-costos tfoot tr { display: block; }
+  .tbl-costos tr.empty-row td { display: block; text-align: center; }
+  .tbl-costos tfoot tr { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; background: var(--surface-1); }
+  .tbl-costos tfoot td:empty { display: none; }
+  .tbl-costos tfoot td { display: inline-block; }
 }
 
 /* Composición del precio: leyenda con monto y porcentaje en una línea */
