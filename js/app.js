@@ -6482,11 +6482,16 @@
       if (pl && e.r) planilla = `<span class="np-pl">Requerimientos, N° ${esc(e.n0)}${e.r.provisorio ? ' (recién ingresado)' : ''}: ${esc(e.r.titulo || 'sin título')}${e.r.estado ? ` · ${esc(e.r.estado)}` : ''}</span>`;
       else if (pl && e.reservado !== undefined) planilla = `<span class="np-pl err">El N° ${esc(e.n0)} ya se pidió a la Planilla de Ingreso para «${esc(e.reservado || 'otro proyecto')}» y espera que se escriba.</span>`;
       else if (pl && e.n0) planilla = `<span class="np-pl err">El N° ${esc(e.n0)} no está en Requerimientos. ${BTN_PORTAL} ${nuevoEnPortal}</span>`;
-      else if (pl && !e.n0) planilla = `<span class="np-pl">Sin N° de requerimiento. ${BTN_PORTAL} ${nuevoEnPortal}</span>`;
       // Un N° escrito tiene que existir en Requerimientos (o estar recién ingresado): el Formulador ya no los crea
       boton.disabled = !!(pl && e.n0 && !e.r);
+      // Sin N° no se crea ninguna formulación (2026-11-12, pedido del usuario): ni con carpeta ni «sin carpeta». El botón
+      // lleva a Requerimientos del Portal, igual que «Ingresar en Requerimientos».
+      const sinN = !e.n0;
+      boton.textContent = sinN ? 'Ingresar en Requerimientos' : 'Crear proyecto';
       let html;
-      if (sinNavegador) {
+      if (sinN) {
+        html = `<p class="np-nota np-sin-n">Sin N° de requerimiento: primero se ingresa en Requerimientos del Portal, que le da su N°. ${nuevoEnPortal}</p>`;
+      } else if (sinNavegador) {
         html = `<p class="np-nota">Este navegador no puede crear carpetas: usa Chrome o Edge de escritorio. El proyecto se crea sin carpeta y la eliges después.</p>`;
         opcion = 'ninguna';
       } else if (e.existente) {
@@ -6553,7 +6558,8 @@
     });
     pintar();
     (num.value ? tit : num).focus();
-    cargaPlanilla.then((m) => { pl = m; if (m && $('#np-num') === num) { desdePlanilla(); pintar(); } });
+    // Una Planilla vacía es una que no se pudo leer (sin la carpeta del equipo): el N° escrito no se puede revisar y se acepta
+    cargaPlanilla.then((m) => { pl = m && m.size ? m : null; if (pl && $('#np-num') === num) { desdePlanilla(); pintar(); } });
     cargaReservas.then((m) => { reservas = m; if ($('#np-num') === num) pintar(); });
     const v = await prom;
     const e = estado();
@@ -6561,6 +6567,7 @@
     if (v === 'elegir') return { elegir: true, numero: e.n0, titulo: e.t };
     if (v === 'portal') return { portal: true, titulo: e.t };
     if (v !== 'ok') return null;
+    if (!e.n0) return { portal: true, titulo: e.t };
     pl = pl || await cargaPlanilla;
     const r = pl && e.n ? pl.get(String(parseInt(e.n, 10))) || null : null;
     const iniciales = pedirIniciales && QU() ? QU().valido(iniEl.value) : '';
@@ -6631,6 +6638,8 @@
       }, op ? opcionesOportunidad(op) : {}));
       if (!sel) return;
       d = { numero: sel.req ? String(sel.req.numero) : sel.carpeta ? '' : d.numero, titulo: sel.carpeta ? '' : d.titulo, req: sel.req || null };
+      // Una carpeta sin N° de Requerimientos tampoco forma un proyecto: se ingresa primero en el Portal
+      if (!d.numero) { ingresarEnPortal(datosParaPortal({ titulo: d.titulo || (sel.carpeta && (sel.carpeta.titulo || sel.carpeta.nombre)) || '' }, op)); return; }
     } else {
       let carpeta = d.carpeta;
       if (d.crear && d.req && d.req.provisorio) {

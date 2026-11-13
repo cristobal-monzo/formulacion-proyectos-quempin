@@ -61,18 +61,17 @@ async function confirmarModal(page) {
     await wait(900);
     check('la dirección queda corta: #/oportunidad/<código>', page.url().endsWith('#/oportunidad/5555-12-LE26'), page.url());
     check('el formulario se abre solo: «Nuevo proyecto desde Mercado Público»', /Nuevo proyecto desde Mercado Público/.test(await texto(page, '#modal')));
-    check('sin N° en la planilla: el nombre de la licitación, el N° vacío y la carpeta por crear con ese nombre',
-      (await page.inputValue('#np-tit')) === LICITACION.nombre && (await page.inputValue('#np-num')) === '' && await page.$eval('#np-opciones input[value="crear"]', (e) => e.checked),
+    check('sin N° en la planilla: el nombre de la licitación, el N° vacío y sin opciones de carpeta (sin N° no hay proyecto)',
+      (await page.inputValue('#np-tit')) === LICITACION.nombre && (await page.inputValue('#np-num')) === '' && !(await page.$('#np-opciones input[name="np-op"]')),
       [await page.inputValue('#np-tit'), await page.inputValue('#np-num')]);
     const aviso = await texto(page, '#app .nota-op');
     check('detrás, el aviso de la lista muestra lo que se lleva', /Municipalidad Ficticia/.test(aviso) && /5555-12-LE26/.test(aviso) && /\$17\.421\.600 con IVA/.test(aviso) && /Quilpué, Región de Valparaíso/.test(aviso), aviso);
     await foto(page, 'formulario-desde-oportunidad');
     const elegida = await texto(page, '#np-carpeta');
-    // Sin N° (2026-11-12): el Formulador ya no lo registra; ofrece «Ingresar en Requerimientos», que lleva al Portal los
-    // datos de la licitación, y el proyecto se puede crear igual, con el nombre como código
-    check('sin N°: la carpeta se crea con el nombre y se ofrece ingresarla en Requerimientos', /Sí, crear «Mantención de calderas liceo \(ficticio\)»/.test(elegida)
-      && /Ingresar en Requerimientos/.test(elegida) && !/registrar el proyecto en la Planilla/.test(elegida), elegida);
-    await page.click('#np-carpeta .np-portal');
+    // Sin N° (2026-11-12): no hay formulación sin pasar por Requerimientos. El botón principal es «Ingresar en
+    // Requerimientos» y lleva al Portal los datos de la licitación
+    check('sin N°: el botón es «Ingresar en Requerimientos»', /Sin N° de requerimiento/.test(elegida) && (await texto(page, '#modal .modal-foot .btn-primario')) === 'Ingresar en Requerimientos', elegida);
+    await page.click('#modal .modal-foot .btn-primario');
     await wait(500);
     const abiertas = await page.evaluate(() => window.__abiertas.slice());
     const rq = abiertas.length === 1 && /\/portal\/#\/planilla\?nuevo=/.test(abiertas[0]) ? JSON.parse(decodeURIComponent(abiertas[0].split('nuevo=')[1])) : {};
@@ -80,10 +79,21 @@ async function confirmarModal(page) {
       && rq.referencia === '5555-12-LE26' && rq.cliente === 'Municipalidad Ficticia' && rq.ubicacion === 'Quilpué, Región de Valparaíso' && rq.presupuesto === 17421600
       && /^\d{4}-\d{2}-\d{2}T15:00$/.test(rq.cierre || ''), abiertas);
     check('sin N°: nada en el buzón para la Planilla', (await page.evaluate(() => window.QIntercambio.leerBuzon({ tipos: ['nuevo-requerimiento'] }))).length === 0);
-    // Otra vez el enlace: esta vez se crea el proyecto sin N°
+    check('sin N°: no se creó ningún proyecto', !(await proyectos(page)).some((x) => x.idLicitacion === '5555-12-LE26'));
+    // El Portal la ingresó y ya llegó al Excel con el N° 313: con ese N° sí se formula
+    await page.evaluate(async ([bib, inter]) => {
+      let d = await (await navigator.storage.getDirectory()).getDirectoryHandle(bib);
+      for (const n of inter.concat('publicado')) d = await d.getDirectoryHandle(n);
+      const h = await d.getFileHandle('requerimientos.json');
+      const pub = JSON.parse(await (await h.getFile()).text());
+      pub.datos.requerimientos.unshift({ numero: 313, estado: 'Evaluación', titulo: 'Mantención de calderas liceo (ficticio)' });
+      const w = await h.createWritable(); await w.write(JSON.stringify(pub)); await w.close();
+    }, [R.BIBLIOTECA, R.INTERCAMBIO]);
+    await page.reload();
     await page.goto(enlace(LICITACION));
     await page.waitForSelector('#modal[open] #np-num', { timeout: 10000 });
     await wait(900);
+    await page.fill('#np-num', '313'); await page.dispatchEvent('#np-num', 'input'); await wait(400);
     await confirmarModal(page);
     let ps = await proyectos(page);
     let p = ps.find((x) => x.idLicitacion === '5555-12-LE26');
@@ -95,7 +105,7 @@ async function confirmarModal(page) {
     check('el editor muestra el título y el ID de licitación', (await page.inputValue('[data-f="titulo"]')) === LICITACION.nombre && (await page.inputValue('[data-f="idLicitacion"]')) === '5555-12-LE26');
     const aviso2 = await texto(page, '#toast');
     // El título ya lo puso la carpeta (que se creó con el nombre de la licitación): el aviso no lo repite
-    check('el aviso dice qué llegó de Mercado Público', /creado con su carpeta nueva «Mantención de calderas liceo \(ficticio\)»\. Desde Mercado Público: categoría Licitación, cliente, ID de licitación, ubicación, descripción, presupuesto/.test(aviso2), aviso2);
+    check('el aviso dice qué llegó de Mercado Público', /creado con su carpeta nueva «313\. Mantención de calderas liceo \(ficticio\)»\. Desde Mercado Público: categoría Licitación, cliente, ID de licitación, ubicación, descripción, presupuesto/.test(aviso2), aviso2);
     check('nace con la categoría «Licitación» (2026-10-27)', (await page.inputValue('#f-categoria')) === 'Licitación');
     await foto(page, 'proyecto-desde-oportunidad');
 
