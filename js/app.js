@@ -1457,7 +1457,28 @@
     return `<div class="nota" role="status"><span>Llegaste desde otra herramienta, pero en este navegador todavía no hay un proyecto con ${que}.${compartiendo() ? ' Si lo formuló un colega, aparece cuando llegue de la carpeta del equipo.' : ''}</span><span class="actions">${crear}<button type="button" class="btn btn-ghost btn-sm" data-act="limpiar-filtros">Ver todos</button></span></div>`;
   }
 
+  /* Con el botón del mouse apretado sobre la tabla, la lista no se redibuja: si la fila cambia entre
+     apretar y soltar, el navegador no da el clic y abrir un proyecto pedía dos clics (2026-11-13).
+     Lo que llegue en ese momento (cambios de la carpeta del equipo) se pinta justo después del clic. */
+  let listaApretada = false, listaPendiente = false;
+  document.addEventListener('pointerdown', (e) => {
+    listaApretada = e.button === 0 && !!(e.target.closest && e.target.closest('#list-body'));
+  }, true);
+  const soltarLista = () => {
+    if (!listaApretada) return;
+    setTimeout(() => {   // después del clic, que ya pudo abrir el proyecto
+      listaApretada = false;
+      if (!listaPendiente) return;
+      listaPendiente = false;
+      if (!state.project && $('#list-body')) refreshList();
+    }, 0);
+  };
+  document.addEventListener('pointerup', soltarLista, true);
+  document.addEventListener('pointercancel', soltarLista, true);
+  window.addEventListener('blur', soltarLista);   // soltado fuera de la ventana
+
   function refreshList() {
+    if (listaApretada) { listaPendiente = true; return; }
     const list = listFiltered();
     const rs = new Map(list.map((p) => [p.uid, computeProject(p)]));
     renderListKpis(list, rs);
@@ -2989,6 +3010,10 @@
     const el = e.target;
     if (!state.project) {
       const L = state.list;
+      // «change» llega al salir del campo, con el valor que «input» ya aplicó: redibujar la lista ahí
+      // reemplazaba la fila recién apretada y el clic para abrir el proyecto se perdía (2026-11-13)
+      const campo = { 'list-search': 'q', 'list-estado': 'estado', 'list-resp': 'resp', 'list-mes': 'mes', 'list-tipo': 'tipo' }[el.id];
+      if (e.type === 'change' && campo && L[campo] === el.value) return;
       if (el.id === 'list-search') L.q = el.value;
       else if (el.id === 'list-estado') L.estado = el.value;
       else if (el.id === 'list-resp') { L.resp = el.value; guardarMisProyectos(el.value === '@yo'); }
