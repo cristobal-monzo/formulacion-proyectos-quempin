@@ -569,6 +569,13 @@ button.estado svg { width: 11px; height: 11px; fill: none; stroke: currentColor;
 .tbl tbody tr:hover td { background: var(--surface-1); }
 .tbl tfoot td { font-weight: 900; border-top: 1.5px solid var(--brand-gray-7); padding: 10px 8px; }
 .tbl .code { font-weight: 900; color: var(--text-secondary); font-size: 12px; white-space: nowrap; width: 1%; }
+/* Selección de varias filas en las tablas de costos (2026-11-12) */
+.tbl .sel-casilla { width: 16px; height: 16px; margin: 0 8px 0 0; vertical-align: middle; accent-color: var(--brand-orange); cursor: pointer; }
+.tbl th.th-id { white-space: nowrap; }
+.tbl tbody tr.sel td, .tbl tbody tr.sel:hover td { background: var(--orange-soft); }
+.sel-barra { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; padding: 8px 12px; border-radius: 10px; background: var(--orange-soft); }
+.sel-barra[hidden] { display: none; }
+.sel-barra .sel-n { font-weight: 700; margin-right: auto; }
 /* Columnas que se calculan solas: sombreadas en naranjo muy tenue, como en la Memoria de Cálculo */
 .tbl .calc { background: var(--tinte-calculado); }
 .tbl tbody tr:hover td.calc { background: var(--tinte-calculado); }
@@ -1198,6 +1205,9 @@ select.ci { align-items: center; }   /* con appearance: base-select el texto que
   .tbl-apilable td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 4px; font-size: 10.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; text-align: left; }
   .tbl-apilable td.num { text-align: left; }
   .tbl-apilable td.code, .tbl-apilable td.cell-actions { display: flex; }
+  .tbl-apilable td.code { align-items: center; }
+  .tbl-apilable .sel-casilla { width: 20px; height: 20px; }
+  .tbl-apilable tr.sel { background: var(--orange-soft); border-color: var(--brand-orange); }
   .tbl-apilable .code-badge + .ver { display: inline; }
   .tbl-apilable td.code { grid-column: 1 / span 3; grid-row: 1; align-self: center; }
   .tbl-apilable td.cell-actions { grid-column: 4 / span 3; grid-row: 1; flex-direction: row; justify-content: flex-end; align-items: center; }
