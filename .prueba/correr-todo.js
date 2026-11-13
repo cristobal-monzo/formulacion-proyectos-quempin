@@ -30,7 +30,7 @@ const PUERTOS = [8797, 8798, 8799];
 const SUITES = [
   'compartida/unidad', 'fusion/unidad', 'flujo/unidad', 'oferta/unidad', 'gantt/unidad', 'gantt/datos', 'pendientes/unidad', 'pegar/unidad', 'usuario/unidad', 'oportunidad/unidad', 'carpeta/unidad', 'numeros/unidad',
   'flujo/e2e', 'integracion/e2e', 'moneda/e2e', 'oferta/e2e', 'compartida/e2e', 'planilla/e2e', 'planilla/exportar', 'deshacer/e2e', 'ux/plegado', 'partida-base/e2e', 'ux/sin-scroll', 'candado/e2e', 'gantt/e2e',
-  'pendientes/e2e', 'pegar/e2e', 'pegar/portal', 'usuario/e2e', 'oportunidad/e2e', 'carpeta/e2e', 'categoria/e2e', 'observaciones/e2e', 'enlace/e2e', 'buscar-costos/e2e', 'numeros/e2e', 'seleccion/e2e', 'costos-ancho/e2e'
+  'pendientes/e2e', 'pegar/e2e', 'pegar/portal', 'usuario/e2e', 'oportunidad/e2e', 'carpeta/e2e', 'categoria/e2e', 'observaciones/e2e', 'enlace/e2e', 'buscar-costos/e2e', 'numeros/e2e', 'seleccion/e2e', 'costos-ancho/e2e', 'lista-clic/e2e'
 ];
 const TIPOS = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
