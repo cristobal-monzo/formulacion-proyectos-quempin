@@ -79,8 +79,9 @@ const editar = async (page, sel, valor) => { await page.fill(sel, valor); await 
     // «Nuevo proyecto» (2026-10-19): pregunta si se crea la carpeta de la oferta; aquí se sigue sin carpeta
     await page.waitForSelector('#modal[open] #np-num', { timeout: 8000 });
     check('nuevo: el formulario pregunta si se crea la carpeta de la oferta', (await texto(page, '#np-carpeta')).includes('¿Crear la carpeta de la oferta?'), await texto(page, '#np-carpeta'));
-    await page.check('#np-opciones input[value="ninguna"]');
-    await clickModal(page, 'Crear proyecto');
+    // Sin N° el diálogo ya no crea proyectos (2026-11-12): un proyecto sin N° es uno de antes, que ya existía
+    await page.click('#modal .modal-foot button:not(.btn-primario)'); await wait(300);
+    await page.evaluate(() => { const p = window.QStore.newProject(); window.QStore.upsert(p); location.hash = `#/p/${p.uid}/ficha`; });
     await page.waitForSelector('#f-req', { timeout: 10000 });
     const uid = (await page.evaluate(() => location.hash)).split('/')[2];
     check('paso 1 sin N°: la barra lo dice, sin botón (el campo está a la vista)', (await texto(page, '#ed-recorrido')).includes('Falta el N° de requerimiento') && !(await page.$('#ed-recorrido [data-act="sigue"]')), await texto(page, '#ed-recorrido'));

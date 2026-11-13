@@ -123,6 +123,9 @@ async function equipo(browser, opciones) {
   const ctx = await browser.newContext({ viewport: (opciones && opciones.viewport) || { width: 1280, height: 900 }, locale: 'es-CL' });
   await ctx.addInitScript(() => {
     try { localStorage.setItem('quempin_viz_unlocked', '1'); } catch (e) { /* */ }
+    // Lo que se abre en otra pestaña (el Portal, con «Ingresar en Requerimientos») se anota
+    window.__abiertas = [];
+    window.open = (u) => { window.__abiertas.push(String(u)); return null; };
     // El selector devuelve la biblioteca completa, o la ruta que la prueba indique (__elegir)
     window.showDirectoryPicker = async () => {
       let d = await navigator.storage.getDirectory();
@@ -170,11 +173,10 @@ async function nuevoConSelector(page) {
   await page.waitForSelector('#modal[open] #cp-buscar', { timeout: 5000 });
   await wait(300);
 }
+/* Un proyecto sin N° ni carpeta: desde el 2026-11-12 el diálogo ya no los crea (sin N° no hay formulación), así que es uno
+   de antes, que ya existía */
 async function nuevoSinCarpeta(page) {
-  await page.click('[data-act="nuevo"]:not([data-numero])');
-  await page.waitForSelector('#modal[open] #np-num', { timeout: 5000 });
-  await page.check('#np-opciones input[value="ninguna"]');
-  await page.click('#modal .modal-foot .btn-primario');
+  await page.evaluate(() => { const p = window.QStore.newProject(); window.QStore.upsert(p); location.hash = `#/p/${p.uid}/ficha`; });
   await wait(600);
 }
 /* El nombre del Excel de un presupuesto (con código «N°. Nombre», solo su N°) */
@@ -320,10 +322,14 @@ async function escribirTitulo(page, t) {
     await elegirEnDialogo(page, '296', 'CAPREDENA', false); await wait(300);
     const pregunta = await texto(page, '#cp-elegida');
     check('N° distinto en la planilla: el formulario lo dice y pregunta si es la misma oferta', pregunta.includes('Sala de calderas Llay Llay') && !!(await page.$('#cp-misma:not(:checked)')), pregunta.slice(0, 300));
+    const antes8 = await page.evaluate(() => [window.QStore.all().length, window.__abiertas.length]);
     await page.click('#modal .modal-foot .btn-primario'); await wait(1200);
-    check('«No, solo la carpeta»: el título sale de la carpeta y sin N° de requerimiento', (await page.inputValue('[data-f="titulo"]')) === 'CAPREDENA' && (await page.inputValue('#f-req')) === '');
+    // Sin N° no hay formulación (2026-11-12): «No, solo la carpeta» deja la carpeta sin N° de Requerimientos, así que lleva al Portal
+    const despues8 = await page.evaluate(() => [window.QStore.all().length, window.__abiertas.length, window.__abiertas.slice(-1)[0] || '']);
+    check('«No, solo la carpeta»: sin N° no se crea el proyecto y se abre Requerimientos con el nombre de la carpeta', despues8[0] === antes8[0] && despues8[1] === antes8[1] + 1
+      && /\/portal\/#\/planilla\?nuevo=/.test(despues8[2]) && /CAPREDENA/.test(decodeURIComponent(despues8[2])), despues8);
     regs = await registros(page);
-    check('nuevo con la carpeta 296: toma el 812606 con el título de referencia', regs.length === 5 && regs[4].documento.folio === '812606' && regs[4].documento.referencia === 'CAPREDENA', regs.map((m) => m.documento));
+    check('sin proyecto, no toma N° del Control de Documentos', regs.length === 4, regs.map((m) => m.documento));
 
     // 9. Duplicar: pregunta la oferta de la copia
     await abrir(page, `#/p/${uid1}/ficha`);
@@ -335,7 +341,7 @@ async function escribirTitulo(page, t) {
     x = await leerExcel(page, `0 OFERTAS PRESENTADAS/0 Ofertas Cerradas 2025/Hospital de ejemplo/${await archivoDe(page, uid4)}`);
     check('duplicar: el Excel de la copia queda en la oferta elegida', !!x && x.uid === uid4, x);
     regs = await registros(page);
-    check('duplicar con carpeta: la copia toma el 812607', regs.length === 6 && regs[5].documento.folio === '812607' && regs[5].fuente.uid === uid4, folios(regs));
+    check('duplicar con carpeta: la copia toma el 812606', regs.length === 5 && regs[4].documento.folio === '812606' && regs[4].fuente.uid === uid4, folios(regs));
 
     // 10. La oferta pasa a Adjudicadas: el Excel la sigue
     await mover(page, '298. SAG Quemadores', '0 OFERTAS ADJUDICADAS/298. SAG Quemadores');
@@ -344,7 +350,7 @@ async function escribirTitulo(page, t) {
     x = await leerExcel(page, `0 OFERTAS ADJUDICADAS/298. SAG Quemadores/Formulación 298 v1.xlsx`);
     check('carpeta movida a Adjudicadas: el Excel se actualiza allá', !!x && x.titulo === 'Quemadores SAG adjudicado', x && x.titulo);
     check('carpeta movida: no se recrea la carpeta vieja', !Object.keys(await biblioteca(page)).some((k) => k.startsWith('298. ')));
-    check('carpeta movida: no toma otro número', (await registros(page)).length === 6);
+    check('carpeta movida: no toma otro número', (await registros(page)).length === 5);
 
     // 11. Configuración
     await page.click('#cfgBtn, [data-act="config"]'); await wait(500);
@@ -368,6 +374,7 @@ async function escribirTitulo(page, t) {
     await B.page.click('#compartida [data-act="compartir"]'); await wait(900);
     check('B conectado a la carpeta de herramientas: no recuerda la biblioteca', (await B.page.evaluate(async () => (await window.QIntercambio.estadoBiblioteca()).recordada)) === false);
     await B.page.click('[data-act="nuevo"]:not([data-numero])'); await wait(600);
+    await B.page.fill('#np-num', '298'); await B.page.dispatchEvent('#np-num', 'input'); await wait(400);   // sin N° no hay proyecto (2026-11-12)
     // Sin la biblioteca completa no llega a las carpetas: «Nuevo proyecto» propone seguir sin carpeta (2026-10-19)
     check('B: sin la biblioteca, «Nuevo proyecto» propone seguir sin carpeta', await B.page.$eval('#np-opciones input[value="ninguna"]', (e) => e.checked).catch(() => false));
     await B.page.click('#modal .modal-foot .btn-primario'); await wait(600);

@@ -30,7 +30,8 @@ const REQS = [
   { numero: 312, estado: 'Evaluación', titulo: 'Gimnasio municipal de prueba', ubicacion: 'Quilpué', referencia: '9999-1-LE26', cierre: '2026-11-20', presupuesto: 5950000, evaluador: 'LC' },
   { numero: 298, estado: 'Evaluación', titulo: 'Quemadores SAG de prueba', ubicacion: 'Osorno', referencia: '', cierre: null, presupuesto: null },
   { numero: 296, estado: 'Evaluación', titulo: 'Sala de calderas Llay Llay', ubicacion: 'Llay Llay', referencia: '', cierre: null, presupuesto: null },
-  { numero: 303, estado: 'Ofertado', titulo: 'Quemador Osorno de prueba', ubicacion: 'Osorno', referencia: '', cierre: null, presupuesto: null }
+  { numero: 303, estado: 'Ofertado', titulo: 'Quemador Osorno de prueba', ubicacion: 'Osorno', referencia: '', cierre: null, presupuesto: null },
+  { numero: 305, estado: 'Evaluación', titulo: 'Proyecto a mano', ubicacion: '', referencia: '', cierre: null, presupuesto: null }
 ];
 const INICIAL = [
   [`${HERR}/Intercambio/intercambio.json`, JSON.stringify({ esquema: 'quempin.intercambio/1', descripcion: 'prueba' })],
@@ -225,16 +226,19 @@ async function crear(page) {
     await abrir(page);
     await nuevo(page);
     await escribirEn(page, '#np-tit', 'Caldera sin número');
-    await page.waitForSelector('#np-carpeta .np-portal', { timeout: 5000 }).catch(() => {});
+    await wait(400);
     dlg = await texto(page, '#np-carpeta');
-    check('sin N°: ofrece ingresarlo en Requerimientos y no registrarlo', dlg.includes('Sin N° de requerimiento') && dlg.includes('Ingresar en Requerimientos') && !(await page.$('#np-reg')), dlg);
+    const botonSinN = await texto(page, '#modal .modal-foot .btn-primario');
+    check('sin N°: no ofrece carpeta ni «sin carpeta»; el botón es «Ingresar en Requerimientos»', dlg.includes('Sin N° de requerimiento') && botonSinN === 'Ingresar en Requerimientos'
+      && !(await page.$('#np-opciones input[name="np-op"]')) && !(await page.$('#np-reg')), [dlg, botonSinN]);
     check('sin N°: el código es solo el nombre', (await texto(page, '#np-codigo')).includes('Caldera sin número') && !/\d\. Caldera/.test(await texto(page, '#np-codigo')), await texto(page, '#np-codigo'));
     await page.screenshot({ path: path.join(SHOTS, '3-sin-numero.png') });
-    await page.click('#np-carpeta .np-portal'); await wait(400);
+    const proyectosAntes = await page.evaluate(() => window.QStore.all().length);
+    await page.click('#modal .modal-foot .btn-primario'); await wait(400);
     const abiertas = await page.evaluate(() => window.__abiertas.slice());
     const alPortal = abiertas.length === 1 && /\/portal\/#\/planilla\?nuevo=/.test(abiertas[0]) ? JSON.parse(decodeURIComponent(abiertas[0].split('nuevo=')[1])) : null;
     check('sin N°: «Ingresar en Requerimientos» abre el Portal con el nombre y cierra el diálogo', !!alPortal && alPortal.titulo === 'Caldera sin número' && !(await page.$('#modal[open]')), abiertas);
-    check('sin N°: no deja nada para la Planilla en el buzón', (await pedidos()).length === 0, await pedidos());
+    check('sin N°: no deja nada para la Planilla en el buzón ni crea un proyecto', (await pedidos()).length === 0 && (await page.evaluate(() => window.QStore.all().length)) === proyectosAntes, await pedidos());
     // El Portal lo ingresó y ya llegó al Excel con el 313: se formula con «Formular →», con su carpeta al tiro
     await escribir(page, [[`${HERR}/Intercambio/publicado/requerimientos.json`, PUB('planilla-requerimientos', { requerimientos: REQS.concat([
       { numero: 313, estado: 'Evaluación', titulo: 'Caldera sin número', ubicacion: 'Talca', referencia: '', cierre: null, presupuesto: null }]) })]]);
@@ -261,17 +265,18 @@ async function crear(page) {
       && await page.$eval('#modal .modal-foot .btn-primario', (b) => b.disabled), dlg);
     await page.click('#modal .modal-foot button:not(.btn-primario)'); await wait(300);
 
-    // 3c. Sin N°: el proyecto se crea igual, con el nombre como código y sin pedir nada a la Planilla
+    // 3c. Sin N° no hay formulación (2026-11-12, pedido del usuario): ni con «No, sin carpeta», que ya no aparece. El botón
+    //     lleva al Portal y no crea nada. «Quemador de prueba» queda como una carpeta que ya existía (la usan las pruebas de abajo).
+    await escribir(page, [['Quemador de prueba/leeme.txt', 'carpeta antigua sin N°']]);
     await abrir(page);
     await nuevo(page);
-    await escribirEn(page, '#np-tit', 'Quemador de prueba');
+    await escribirEn(page, '#np-tit', 'Otro sin número');
     await wait(300);
-    check('sin N°: el código es el nombre', (await texto(page, '#np-codigo')).includes('Quemador de prueba') && !(await texto(page, '#np-codigo')).includes('314'), await texto(page, '#np-codigo'));
-    await crear(page);
-    const p3 = await proyecto(page, await uidAbierto(page));
-    lib = await arbol(page, BIB);
-    check('sin N°: carpeta «Quemador de prueba» y el mismo código', lib['Quemador de prueba/'] === 'dir' && p3.codigo === 'Quemador de prueba', [p3.codigo]);
-    check('sin N°: no se pide nada a la Planilla', (await pedidos()).length === 0 && !(p3.vinculos && p3.vinculos.planilla), await pedidos());
+    const nAntes = await page.evaluate(() => [window.QStore.all().length, window.__abiertas.length]);
+    await page.click('#modal .modal-foot .btn-primario'); await wait(500);
+    const nDespues = await page.evaluate(() => [window.QStore.all().length, window.__abiertas.length]);
+    check('sin N°: no se crea el proyecto y se abre el Portal', nDespues[0] === nAntes[0] && nDespues[1] === nAntes[1] + 1 && !(await page.$('#modal[open]')), [nAntes, nDespues]);
+    check('sin N°: no se pide nada a la Planilla', (await pedidos()).length === 0, await pedidos());
 
     // 3d. «Formular →» del Portal (2026-11-11): un N° recién ingresado en Requerimientos, que todavía espera en el buzón,
     //     abre directo el diálogo con sus datos, sin tomarlo por un choque, y el proyecto guarda el id del pedido
@@ -324,8 +329,8 @@ async function crear(page) {
     await abrir(page);
     await nuevo(page);
     await escribirEn(page, '#np-tit', 'Después del Portal');
-    await page.waitForSelector('#np-carpeta .np-portal', { timeout: 5000 }).catch(() => {});
-    check('sin N° después del Portal: no propone ningún N° (lo da el Portal)', (await texto(page, '#np-carpeta')).includes('Ingresar en Requerimientos')
+    await wait(400);
+    check('sin N° después del Portal: no propone ningún N° (lo da el Portal)', (await texto(page, '#modal .modal-foot .btn-primario')) === 'Ingresar en Requerimientos'
       && !/como N° \d/.test(await texto(page, '#np-carpeta')), await texto(page, '#np-carpeta'));
     await page.click('#modal .modal-foot button:not(.btn-primario)'); await wait(300);
     // El enlace #/req/340 dejó la lista filtrada por ese N°, como todo enlace de otra herramienta
@@ -437,7 +442,8 @@ async function crear(page) {
     // 10. Un código escrito a mano no cambia al elegir la carpeta
     await abrir(page);
     await nuevo(page);
-    await escribirEn(page, '#np-tit', 'Proyecto a mano');
+    await escribirEn(page, '#np-num', '305');
+    await conNombre(page);
     await page.check('#np-opciones input[value="ninguna"]');
     await crear(page);
     const uid6 = await uidAbierto(page);

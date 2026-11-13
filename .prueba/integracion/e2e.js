@@ -77,8 +77,9 @@ const clickModal = (page, label) => page.click(`#modal button:has-text("${label}
     await wait(400);
     if (await page.$('#modal[open]')) { await clickModal(page, 'Conectar la biblioteca'); await wait(800); }
     await page.waitForSelector('#modal[open] #np-num', { timeout: 8000 });   // «Nuevo proyecto» (2026-10-19)
-    await page.check('#np-opciones input[value="ninguna"]');
-    await clickModal(page, 'Crear proyecto');
+    // Sin N° el diálogo ya no crea proyectos (2026-11-12): un proyecto sin N° es uno de antes, que ya existía
+    await page.click('#modal .modal-foot button:not(.btn-primario)'); await wait(300);
+    await page.evaluate(() => { const p = window.QStore.newProject(); window.QStore.upsert(p); location.hash = `#/p/${p.uid}/ficha`; });
     await page.waitForSelector('#f-req', { timeout: 10000 });
     const uid = (await page.evaluate(() => location.hash)).split('/')[2];
     await page.fill('[data-f="titulo"]', '');

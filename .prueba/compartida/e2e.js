@@ -148,9 +148,13 @@ async function escribirTitulo(eq, t) {
     const exige = await texto(A, '#modal');
     check('crear sin carpeta: se exige conectar la biblioteca', exige.includes('Conecta la biblioteca del equipo') && exige.includes('Conectar la biblioteca'), exige.slice(0, 200));
     await A.page.click('#modal button:has-text("Trabajar sin la carpeta")'); await wait(600);
-    // «Nuevo proyecto» (2026-10-19): sin la biblioteca, la propuesta es seguir sin carpeta
+    // «Nuevo proyecto» (2026-10-19): sin la biblioteca, la propuesta es seguir sin carpeta. Sin N° no se crea (2026-11-12):
+    // sin la biblioteca la Planilla no se lee, así que el N° escrito no se puede revisar y se acepta
+    await A.page.fill('#np-num', '999'); await A.page.dispatchEvent('#np-num', 'input'); await wait(300);
     check('sin la biblioteca: «Nuevo proyecto» propone seguir sin carpeta', await A.page.$eval('#np-opciones input[value="ninguna"]', (e) => e.checked).catch(() => false));
-    await A.page.click('#modal .modal-foot .btn-primario'); await wait(600);
+    // El 999 no está en Requerimientos: no se crea. El proyecto de la prueba es uno de antes, sin N° ni carpeta
+    await A.page.click('#modal .modal-foot button:not(.btn-primario)'); await wait(300);
+    await A.page.evaluate(() => { const p = window.QStore.newProject(); window.QStore.upsert(p); location.hash = `#/p/${p.uid}/ficha`; }); await wait(600);
     await escribirTitulo(A, 'Oferta compartida'); await wait(600);
     const uidOferta = await A.page.evaluate(() => location.hash.split('/')[2]);
     check('sin carpeta, el indicador dice que está solo en este navegador', (await texto(A, '#save-state')).includes('solo en este navegador'), await texto(A, '#save-state'));
@@ -324,8 +328,9 @@ async function escribirTitulo(eq, t) {
     await C.page.click('#modal button:has-text("Conectar la biblioteca")'); await wait(900);
     // Con la biblioteca conectada se pregunta si se crea la carpeta de la oferta (2026-10-19)
     check('C: con la biblioteca conectada pregunta por la carpeta de la oferta', (await texto(C, '#modal')).includes('¿Crear la carpeta de la oferta?'), await texto(C, '#modal'));
-    await C.page.check('#np-opciones input[value="ninguna"]');
-    await C.page.click('#modal .modal-foot .btn-primario'); await wait(600);
+    // Sin N° el diálogo ya no crea proyectos (2026-11-12): el de C se crea como uno de antes, sin N° ni carpeta
+    await C.page.click('#modal .modal-foot button:not(.btn-primario)'); await wait(300);
+    await C.page.evaluate(() => { const p = window.QStore.newProject(); window.QStore.upsert(p); location.hash = `#/p/${p.uid}/ficha`; }); await wait(600);
     await escribirTitulo(C, 'Presupuesto de C'); await wait(2500);
     const uidC = await C.page.evaluate(() => location.hash.split('/')[2]);
     check('C: el presupuesto nuevo queda en la carpeta del equipo', (await tituloEnCarpeta(C, uidC)) === 'Presupuesto de C', await tituloEnCarpeta(C, uidC));
@@ -337,6 +342,8 @@ async function escribirTitulo(eq, t) {
     const D = await equipo(browser, 'D', { sinApi: true });
     await abrir(D);
     await D.page.click('[data-act="nuevo"]'); await wait(500);
+    // Sin N° no hay formulación (2026-11-12); sin acceso a carpetas la Planilla no se lee y el N° escrito se acepta
+    await D.page.fill('#np-num', '312'); await D.page.dispatchEvent('#np-num', 'input'); await wait(300);
     check('sin acceso a carpetas: «Nuevo proyecto» lo dice y sigue sin carpeta', (await texto(D, '#np-carpeta')).includes('no puede crear carpetas'), await texto(D, '#np-carpeta'));
     await D.page.click('#modal .modal-foot .btn-primario'); await wait(600);
     await escribirTitulo(D, 'Presupuesto desde Firefox'); await wait(700);

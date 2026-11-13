@@ -88,7 +88,10 @@ const texto = (page, sel) => page.$eval(sel, (e) => e.textContent).catch(() => '
     await wait(400);
     if (await page.$('#modal[open]')) { await page.click('#modal button:has-text("Conectar la biblioteca")'); await wait(800); }
     // «Nuevo proyecto» (2026-10-19): pregunta si se crea la carpeta de la oferta; aquí se sigue sin carpeta
-    if (await page.$('#modal[open] #np-num')) { await page.check('#np-opciones input[value="ninguna"]'); await page.click('#modal .modal-foot .btn-primario'); await wait(600); }
+    await page.waitForSelector('#modal[open] #np-num', { timeout: 8000 });
+    // Sin N° el diálogo ya no crea proyectos (2026-11-12): un proyecto sin N° es uno de antes, que ya existía
+    await page.click('#modal .modal-foot button:not(.btn-primario)'); await wait(300);
+    await page.evaluate(() => { const p = window.QStore.newProject(); window.QStore.upsert(p); location.hash = `#/p/${p.uid}/ficha`; });
     await page.waitForSelector('#f-req', { timeout: 10000 });
     await page.waitForFunction(async () => (await window.QHerramientas.requerimientos()).requerimientos.length > 0, null, { timeout: 10000 });
     await wait(300);
