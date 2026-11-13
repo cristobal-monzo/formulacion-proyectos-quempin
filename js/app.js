@@ -133,6 +133,9 @@
     filtro: { materiales: '', equipos: '', manoObra: '', otros: '' },
     buscar: { materiales: '', equipos: '', manoObra: '', otros: '' }, // texto del buscador de cada tabla de costos
     orden: { materiales: '', equipos: '', manoObra: '', otros: '' }, // '' como se ingresaron · mayor · menor · az
+    // Filas marcadas en cada tabla de costos, para eliminar varias de una vez (2026-11-12)
+    sel: { materiales: new Set(), equipos: new Set(), manoObra: new Set(), otros: new Set() },
+    selAncla: null, // última casilla marcada: con Mayús se marca el tramo hasta ahí
     apuOpen: new Set(),
     kpiOpen: new Set(),
     abiertos: new Set(), // secciones desplegables abiertas (parámetros de la ficha, ayudas)
@@ -1596,6 +1599,8 @@
       state.filtro = { materiales: '', equipos: '', manoObra: '', otros: '' };
       state.buscar = { materiales: '', equipos: '', manoObra: '', otros: '' };
       state.orden = { materiales: '', equipos: '', manoObra: '', otros: '' };
+      state.sel = { materiales: new Set(), equipos: new Set(), manoObra: new Set(), otros: new Set() };
+      state.selAncla = null;
       state.apuOpen = new Set();
       state.utilUndo = null;
     }
@@ -2238,6 +2243,60 @@
     }
     return items;
   }
+  /* Selección de varias filas (2026-11-12): una casilla en la columna ID de cada fila, «todas» en el
+     encabezado (marca las filas que se ven) y Mayús + clic marca el tramo desde la última casilla.
+     Solo cuentan las filas visibles: al filtrar o buscar, las ocultas salen de la selección. */
+  function selVisible(key, items) {
+    const set = state.sel[key];
+    const vis = new Set(items.map((it) => it.uid));
+    set.forEach((u) => { if (!vis.has(u)) set.delete(u); });
+    return set;
+  }
+  const casillaFila = (key, uid, code) => `<input type="checkbox" class="sel-casilla" data-sel="${key}" data-uid="${uid}" ${state.sel[key].has(uid) ? 'checked' : ''} aria-label="Seleccionar ${esc(code)}">`;
+  function thSeleccion(key, items) {
+    const n = state.sel[key].size;
+    return `<th class="th-id"><input type="checkbox" class="sel-casilla" data-sel-todo="${key}" ${items.length && n === items.length ? 'checked' : ''} ${items.length ? '' : 'disabled'} aria-label="Seleccionar todas las filas que se ven">ID</th>`;
+  }
+  function barraSeleccion(key) {
+    const n = state.sel[key].size;
+    return `<div class="sel-barra" id="sel-barra" ${n ? '' : 'hidden'} role="status">
+      <span class="sel-n">${n === 1 ? '1 fila seleccionada' : `${n} filas seleccionadas`}</span>
+      <button type="button" class="btn btn-sm btn-danger" data-act="del-sel" data-list="${key}">${ICON.trash}Eliminar</button>
+      <button type="button" class="btn btn-sm" data-act="sel-quitar" data-list="${key}">Quitar selección</button>
+    </div>`;
+  }
+  /* Pinta la selección sin volver a dibujar la tabla (no pierde el scroll ni el foco) */
+  function pintarSeleccion(key) {
+    const set = state.sel[key];
+    const casillas = $$(`#tab-body input[data-sel="${key}"]`);
+    casillas.forEach((c) => { c.checked = set.has(c.dataset.uid); const tr = c.closest('tr'); if (tr) tr.classList.toggle('sel', c.checked); });
+    const todo = $(`#tab-body input[data-sel-todo="${key}"]`);
+    if (todo) { todo.checked = !!casillas.length && set.size === casillas.length; todo.indeterminate = set.size > 0 && set.size < casillas.length; }
+    const b = $('#sel-barra');
+    if (b) {
+      b.hidden = !set.size;
+      b.querySelector('.sel-n').textContent = set.size === 1 ? '1 fila seleccionada' : `${set.size} filas seleccionadas`;
+    }
+  }
+  function marcarSeleccion(c, mayus) {
+    const key = c.dataset.selTodo || c.dataset.sel;
+    const set = state.sel[key];
+    if (!set) return;
+    const uids = $$(`#tab-body input[data-sel="${key}"]`).map((x) => x.dataset.uid);
+    if (c.dataset.selTodo) {
+      if (c.checked) uids.forEach((u) => set.add(u)); else set.clear();
+      state.selAncla = null;
+    } else {
+      const uid = c.dataset.uid;
+      const a = state.selAncla && state.selAncla.key === key ? uids.indexOf(state.selAncla.uid) : -1;
+      const b = uids.indexOf(uid);
+      // Mayús + clic: el tramo desde la última casilla queda como esta (marcado o no)
+      const tramo = mayus && a >= 0 && b >= 0 ? uids.slice(Math.min(a, b), Math.max(a, b) + 1) : [uid];
+      tramo.forEach((u) => { if (c.checked) set.add(u); else set.delete(u); });
+      state.selAncla = { key, uid };
+    }
+    pintarSeleccion(key);
+  }
   /* Etiqueta del total de una tabla de costos: con filtro dice cuántas filas suma */
   function etiquetaTotal(key, nombre) {
     if (!hayFiltro(key)) return `Total ${nombre} del proyecto`;
@@ -2285,12 +2344,13 @@
   function viewDetalle(key) {
     const cfg = DETALLE[key];
     const items = visibles(key);
+    const sel = selVisible(key, items);
     const larga = items.length > FILAS_TABLA_LARGA;
     const rows = items.map((it) => {
       const ln = state.lineIdx.get(it.uid);
       const code = ln ? ln.code : '';
-      return `<tr data-row="${it.uid}">
-        <td class="code">${code}</td>
+      return `<tr data-row="${it.uid}"${sel.has(it.uid) ? ' class="sel"' : ''}>
+        <td class="code">${casillaFila(key, it.uid, code)}${code}</td>
         <td data-label="Descripción">${rowInput(key, it, 'descripcion', `Descripción de ${code}`, 'desc', false, `placeholder="Descripción del ${cfg.singular}"`)}</td>
         <td data-label="Partida">${partidaPicker(key, it)}</td>
         <td class="tercio" data-label="Cantidad">${rowInput(key, it, 'cantidad', `Cantidad por unidad de partida de ${code}`, 'w-sm', true)}</td>
@@ -2302,12 +2362,12 @@
       </tr>`;
     }).join('');
     return `${pasoHead(key, ayudaCostos(key))}${costosSubnav()}${sinPartidasNote()}
-      ${filtroBar(key)}
+      ${filtroBar(key)}${barraSeleccion(key)}
       <div class="tabla-contenedor">
         <table class="tbl tbl-apilable${larga ? ' tbl-larga' : ''}" style="min-width:980px">
-          ${larga ? colgroup([64, 0, 210, 120, 96, 200, 96, 130, 48]) : ''}
+          ${larga ? colgroup([88, 0, 210, 120, 96, 200, 96, 130, 48]) : ''}
           <thead><tr>
-            <th>ID</th><th>Descripción</th><th>Partida</th>
+            ${thSeleccion(key, items)}<th>Descripción</th><th>Partida</th>
             <th class="num">Cantidad<span class="th-sub">por unidad de partida</span></th><th>Unidad</th><th class="num">Costo unitario</th>
             <th class="num">× Partida<span class="th-sub">su cantidad</span></th><th class="num">Subtotal</th><th><span class="visualmente-oculto">Acciones</span></th>
           </tr></thead>
@@ -2322,13 +2382,14 @@
     const key = 'manoObra';
     const par = state.project.parametros;
     const items = visibles(key);
+    const sel = selVisible(key, items);
     const larga = items.length > FILAS_TABLA_LARGA;
     const rows = items.map((it) => {
       const ln = state.lineIdx.get(it.uid);
       const code = ln ? ln.code : '';
       const lv = (n) => `<td class="lvl" data-label="Nivel ${n} · personas × días"><div class="pxd">${rowInput(key, it, `n${n}p`, `Personas del nivel ${n} en ${code}`, 'w-xxs', true)}<span class="por" aria-hidden="true">×</span>${rowInput(key, it, `n${n}d`, `Días del nivel ${n} en ${code}`, 'w-xxs', true)}</div></td>`;
-      return `<tr data-row="${it.uid}">
-        <td class="code">${code}</td>
+      return `<tr data-row="${it.uid}"${sel.has(it.uid) ? ' class="sel"' : ''}>
+        <td class="code">${casillaFila(key, it.uid, code)}${code}</td>
         <td data-label="Tarea">${rowInput(key, it, 'descripcion', `Tarea ${code}`, 'desc', false, 'placeholder="Descripción de la tarea"')}</td>
         <td data-label="Partida">${partidaPicker(key, it)}</td>
         ${lv(1)}${lv(2)}${lv(3)}
@@ -2343,11 +2404,11 @@
       <p>Tarifas por día-hombre: nivel 1 ${dinero(num(par.tarifaN1))} · nivel 2 ${dinero(num(par.tarifaN2))} · nivel 3 ${dinero(num(par.tarifaN3))}.
         <button type="button" class="link-btn" data-act="tab" data-tab="ficha" data-focus="tarifas">Cambiar las tarifas</button></p>`;
     return `${pasoHead(key, ayuda)}${costosSubnav()}${sinPartidasNote()}
-      ${filtroBar(key)}
+      ${filtroBar(key)}${barraSeleccion(key)}
       <div class="tabla-contenedor">
         <table class="tbl mo tbl-apilable${larga ? ' tbl-larga' : ''}" style="min-width:1000px">
-          ${larga ? colgroup([64, 0, 210, 140, 140, 140, 120, 130, 48]) : ''}
-          <thead><tr><th>ID</th><th>Tarea</th><th>Partida</th>${nivel(1, par.tarifaN1)}${nivel(2, par.tarifaN2)}${nivel(3, par.tarifaN3)}
+          ${larga ? colgroup([88, 0, 210, 140, 140, 140, 120, 130, 48]) : ''}
+          <thead><tr>${thSeleccion(key, items)}<th>Tarea</th><th>Partida</th>${nivel(1, par.tarifaN1)}${nivel(2, par.tarifaN2)}${nivel(3, par.tarifaN3)}
             <th class="num">Días-hombre</th><th class="num">Subtotal</th><th><span class="visualmente-oculto">Acciones</span></th></tr></thead>
           <tbody>${rows || `<tr class="empty-row"><td colspan="9">${hayFiltro(key) ? 'No hay tareas con este filtro.' : 'Sin tareas de mano de obra todavía. <button type="button" class="link-btn" data-act="add-row" data-list="manoObra">Agregar la primera</button>'}</td></tr>`}</tbody>
           <tfoot><tr><td></td><td colspan="5"><span class="swatch cat-mo" style="vertical-align:-1px;margin-right:8px"></span>${hayFiltro(key) ? etiquetaTotal(key, 'mano de obra')
@@ -3324,6 +3385,8 @@
     if (pk) { openPicker(pk); return; }
     const th = e.target.closest('th[data-sort]');
     if (th) { sortBy(th.dataset.sort); return; }
+    const cs = e.target.closest('input[data-sel], input[data-sel-todo]');
+    if (cs) { marcarSeleccion(cs, e.shiftKey); return; }
     const btn = e.target.closest('[data-act]');
     if (btn && !btn.disabled) { doAct(btn.dataset.act, btn.dataset, btn); return; }
     const tr = e.target.closest('tr[data-open]');
@@ -3662,6 +3725,28 @@
           }
           p[list] = p[list].filter((x) => x.uid !== uid);
           recalc(); renderTab(); scheduleSave();
+          break;
+        }
+        case 'sel-quitar': state.sel[d.list].clear(); state.selAncla = null; pintarSeleccion(d.list); break;
+        case 'del-sel': {
+          const list = d.list;
+          const set = state.sel[list];
+          const borrar = p[list].filter((x) => set.has(x.uid));
+          if (!borrar.length) break;
+          const cfg = DETALLE[list];
+          const varios = { materiales: 'materiales', equipos: 'equipos', manoObra: 'tareas', otros: 'costos' }[list];
+          const nombre = borrar.length === 1 ? `1 ${cfg.singular}` : `${borrar.length} ${varios}`;
+          const codigos = borrar.map((x) => (state.lineIdx.get(x.uid) || {}).code).filter(Boolean);
+          const v = await ask({
+            title: `Eliminar ${nombre}`,
+            body: `<p>¿Eliminar <b>${esc(codigos.slice(0, 12).join(', '))}${codigos.length > 12 ? ` y ${codigos.length - 12} más` : ''}</b>? Ctrl+Z los recupera.</p>`,
+            buttons: [{ label: 'Cancelar', left: true }, { label: 'Eliminar', value: 'si', danger: true }]
+          });
+          if (v !== 'si') break;
+          p[list] = p[list].filter((x) => !set.has(x.uid));
+          set.clear(); state.selAncla = null;
+          recalc(); renderTab(); scheduleSave();
+          toast(`${borrar.length === 1 ? 'Eliminado' : 'Eliminados'}: ${nombre}. Ctrl+Z ${borrar.length === 1 ? 'lo' : 'los'} recupera.`);
           break;
         }
         case 'mover': {
