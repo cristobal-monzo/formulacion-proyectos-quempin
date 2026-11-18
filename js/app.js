@@ -4685,7 +4685,9 @@
     const v0 = vinculoAF(p);
     // El proyecto del AF con el mismo N° de requerimiento es el que corresponde; si no hay, el más parecido
     const req = QH() ? QH().reqDe(p) : null;
-    const porReq = req ? proyectos.find((q) => String(q.req || '') === req) : null;
+    // La ficha lleva el N° en «N° Requerimiento» o como TAG (TAG = N° desde el 2026-11-05). Solo con el campo, la
+    // ficha 312 (sin N° escrito) perdía contra JUNJ, recordada por palabras parecidas (2026-11-18).
+    const porReq = req ? proyectos.find((q) => String(q.req || '') === req) || proyectos.find((q) => String(q.tag || '') === req) : null;
     // La ficha que lleva el N° manda sobre la que se recuerda del envío anterior: si aquel fue a la ficha de otro
     // proyecto (con el mismo nombre de cliente), no se vuelve a proponer (2026-11-03).
     const recordadaOtra = !!(v0 && porReq && porReq.tag !== v0.tag);
