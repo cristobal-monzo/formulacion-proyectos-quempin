@@ -32,9 +32,9 @@ function navegador(inicial) {
 // ---- La lista ------------------------------------------------------------------------------------
 {
   const { U } = navegador();
-  check('la lista es la pedida, en su orden', JSON.stringify(U.LISTA) === JSON.stringify(['NB', 'ES', 'LC', 'CM', 'MP', 'SV']), U.LISTA);
+  check('la lista es la pedida, en su orden', JSON.stringify(U.LISTA) === JSON.stringify(['NB', 'ES', 'LC', 'CM', 'MP']), U.LISTA);
   check('la clave es la del Portal QUEMPIN', U.CLAVE === 'quempin_usuario');
-  check('valido: sin importar mayúsculas ni espacios', U.valido(' lc ') === 'LC' && U.valido('Sv') === 'SV');
+  check('valido: sin importar mayúsculas ni espacios', U.valido(' lc ') === 'LC' && U.valido('Es') === 'ES');
   check('valido: unas iniciales que no son del equipo no valen', U.valido('JB') === '' && U.valido('') === '' && U.valido(null) === '' && U.valido(undefined) === '');
   check('mismo: compara sin mayúsculas, y vacío nunca es nadie', U.mismo('lc', 'LC') && U.mismo('Ana Pérez', 'ana pérez') && !U.mismo('', '') && !U.mismo('LC', 'CM'));
 }
@@ -81,7 +81,7 @@ function navegador(inicial) {
   desdeOtraPestana('otra_clave', 'x');
   check('otras claves no avisan', vistos.length === 3, vistos);
   quitar();
-  U.elegir('SV');
+  U.elegir('ES');
   check('alCambiar devuelve con qué dejar de escuchar', vistos.length === 3, vistos);
 }
 

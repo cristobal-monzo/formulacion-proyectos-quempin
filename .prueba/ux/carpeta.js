@@ -98,7 +98,7 @@ const check = (n, c, x) => { results.push(`${c ? 'OK  ' : 'FAIL'} ${n}${x !== un
     await page.click('#modal .modal-foot .btn-primario');
     await wait(200);
     check('sin iniciales no se cierra y lo explica', (await hay(page, '#modal[open]')) && (await texto(page, '#cp-ini-hint')).includes('Elige tus iniciales'), await texto(page, '#cp-ini-hint'));
-    await page.selectOption('#cp-ini', 'SV');
+    await page.selectOption('#cp-ini', 'ES');
     await page.click('#modal .modal-foot .btn-primario');
     await page.waitForSelector('#tab-body', { timeout: 8000 });
     await wait(1500);
@@ -108,7 +108,7 @@ const check = (n, c, x) => { results.push(`${c ? 'OK  ' : 'FAIL'} ${n}${x !== un
     await wait(1500);
     const msgs = await buzon(page);
     const reg = msgs.find((m) => m.tipo === 'registro-documento');
-    check('la evaluación de costos tomó su N° con las iniciales del formulario', !!reg && reg.documento.autor === 'SV', reg && reg.documento);
+    check('la evaluación de costos tomó su N° con las iniciales del formulario', !!reg && reg.documento.autor === 'ES', reg && reg.documento);
     await foto(page, 'carpeta-proyecto-abierto');
 
     // Doble clic elige y confirma; ya no pide iniciales (las recuerda)

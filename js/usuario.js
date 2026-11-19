@@ -16,7 +16,7 @@
 (function (root) {
   'use strict';
 
-  const LISTA = ['NB', 'ES', 'LC', 'CM', 'MP', 'SV'];
+  const LISTA = ['NB', 'ES', 'LC', 'CM', 'MP'];
   const CLAVE = 'quempin_usuario';
   /* Hasta el 2026-10-16 cada navegador guardaba aparte las iniciales del Control de Documentos y un
      «Responsable por defecto» de texto libre: mientras no se elige, se adoptan de ahí si son del equipo. */

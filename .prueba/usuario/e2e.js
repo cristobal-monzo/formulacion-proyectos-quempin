@@ -47,7 +47,7 @@ async function elegirEnPop(page, titulo) {
     await page.click('#usuarioBtn');
     await page.waitForSelector('#pop:not([hidden]) .pop-item');
     const items = await page.$$eval('#pop .pop-item .pi-title', (els) => els.map((e) => e.textContent.trim()));
-    check('el selector ofrece las iniciales del equipo y «Sin usuario»', JSON.stringify(items) === JSON.stringify(['NB', 'ES', 'LC', 'CM', 'MP', 'SV', 'Sin usuario']), items);
+    check('el selector ofrece las iniciales del equipo y «Sin usuario»', JSON.stringify(items) === JSON.stringify(['NB', 'ES', 'LC', 'CM', 'MP', 'Sin usuario']), items);
     check('«Sin usuario» parte marcado', await page.$eval('#pop .pop-item:has(.pi-title:text-is("Sin usuario"))', (b) => b.getAttribute('aria-selected') === 'true'));
     check('el pie explica para qué sirve', /queda a tu nombre/.test(await texto(page, '#pop .pop-foot')) && /Portal QUEMPIN/.test(await texto(page, '#pop .pop-foot')));
     await foto(page, 'selector-abierto');
@@ -66,7 +66,7 @@ async function elegirEnPop(page, titulo) {
     check('responsable: el del usuario, marcado «(tú)»', (await page.inputValue('#f-responsable')) === 'LC' &&
       (await page.$eval('#f-responsable option:checked', (o) => o.textContent.trim())) === 'LC (tú)');
     const op = await opciones(page, '#f-responsable');
-    check('responsable: es una lista con el equipo y «Sin responsable»', JSON.stringify(op.map((o) => o[0])) === JSON.stringify(['', 'NB', 'ES', 'LC', 'CM', 'MP', 'SV']) && op[0][1] === 'Sin responsable', op);
+    check('responsable: es una lista con el equipo y «Sin responsable»', JSON.stringify(op.map((o) => o[0])) === JSON.stringify(['', 'NB', 'ES', 'LC', 'CM', 'MP']) && op[0][1] === 'Sin responsable', op);
     await page.selectOption('#f-responsable', 'MP');
     await wait(900);
     check('cambiar el responsable se guarda', ((await proyectoLS(page, uid)) || {}).responsable === 'MP');
@@ -102,10 +102,10 @@ async function elegirEnPop(page, titulo) {
     await page.click('[data-act="config"]');
     await page.waitForSelector('#modal[open] #cfg-usuario');
     check('configuración: «Tu usuario» en vez del responsable por defecto escrito', (await page.inputValue('#cfg-usuario')) === 'MP' && !(await hay(page, '#cfg-resp')));
-    await page.selectOption('#cfg-usuario', 'SV');
+    await page.selectOption('#cfg-usuario', 'ES');
     await page.click('#modal .modal-foot .btn-primario');
     await wait(400);
-    check('configuración: guardar cambia el usuario', (await texto(page, '#usuarioBtn')) === 'SV' && (await usuarioLS(page)) === 'SV');
+    check('configuración: guardar cambia el usuario', (await texto(page, '#usuarioBtn')) === 'ES' && (await usuarioLS(page)) === 'ES');
 
     // ---- Sin usuario ----
     await elegirEnPop(page, 'Sin usuario');
